@@ -1,0 +1,79 @@
+{
+  "entities": {
+    "VisionItem": {
+      "title": "Vision Item",
+      "description": "An image or card for the vision board.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "url": { "type": "string" },
+        "title": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "url", "title", "createdAt"]
+    },
+    "StepLog": {
+      "title": "Step Log",
+      "description": "Daily step count from Google Fit.",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string" },
+        "steps": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["date", "steps", "updatedAt"]
+    },
+    "Task": {
+      "title": "Task",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "text": { "type": "string" },
+        "done": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "text", "done"]
+    },
+    "Idea": {
+      "title": "Idea",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "desc": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "desc", "timestamp"]
+    },
+    "DailyState": {
+      "title": "Daily State",
+      "type": "object",
+      "properties": {
+        "water": { "type": "number" },
+        "rituals": { "type": "object" },
+        "exerciseAM": { "type": "object" },
+        "exercisePM": { "type": "object" },
+        "steps": { "type": "number" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}/visionBoard/{itemId}": {
+      "schema": "VisionItem",
+      "description": "User's individual vision board items."
+    },
+    "/users/{userId}/steps/{logId}": {
+      "schema": "StepLog",
+      "description": "Daily step logs synced from Google Fit."
+    },
+    "/users/{userId}/tasks/{taskId}": {
+      "schema": "Task"
+    },
+    "/users/{userId}/ideas/{ideaId}": {
+      "schema": "Idea"
+    },
+    "/users/{userId}/dailyStates/{date}": {
+      "schema": "DailyState"
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Ascend",
+  "description": "A high-performance life management protocol with habit stacking, physical recovery tracking, and business ideation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
