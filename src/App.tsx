@@ -125,28 +125,55 @@ export default function App() {
 
   const checkFitAuth = async () => {
     try {
-      const headers: HeadersInit = {};
       const localTokens = localStorage.getItem('fit_tokens');
-      if (localTokens) {
-        headers['x-fit-tokens'] = localTokens;
+      // If no tokens in localStorage, there's nothing to verify — mark disconnected
+      if (!localTokens) {
+        updateState(prev => ({ ...prev, isFitConnected: false, fitStatus: undefined }));
+        return;
       }
-
+      const headers: HeadersInit = { 'x-fit-tokens': localTokens };
       const res = await fetch('/api/auth/status', { headers });
       const data = await res.json();
-      
-      // If we don't have a valid connection, check if we thought we were connected
       if (data.connected) {
-        updateState(prev => ({ 
-           ...prev, 
-           isFitConnected: true,
-           fitStatus: 'Active (Auto-refresh)' 
-        }));
+        updateState(prev => ({ ...prev, isFitConnected: true, fitStatus: 'Active (Auto-refresh)' }));
       } else {
-        // Only set to disconnected if we actually failed auth
-        // instead of aggressively wiping it on launch.
+        localStorage.removeItem('fit_tokens');
+        updateState(prev => ({ ...prev, isFitConnected: false, fitStatus: undefined }));
       }
     } catch {
-      // Ignore
+      // Ignore network errors on startup
+    }
+  };
+
+  // Proactively refresh the Google access token if it expires within 5 minutes
+  const refreshTokensIfNeeded = async (): Promise<string | null> => {
+    const raw = localStorage.getItem('fit_tokens');
+    if (!raw) return null;
+    try {
+      const tokens = JSON.parse(raw);
+      const expiryDate: number | undefined = tokens.expiry_date;
+      const fiveMinutes = 5 * 60 * 1000;
+      const needsRefresh = !expiryDate || (expiryDate - Date.now()) < fiveMinutes;
+      if (!needsRefresh) return raw;
+
+      const res = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        headers: { 'x-fit-tokens': raw }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const newRaw = JSON.stringify(data.tokens);
+        localStorage.setItem('fit_tokens', newRaw);
+        return newRaw;
+      } else {
+        // Refresh failed — token likely revoked
+        localStorage.removeItem('fit_tokens');
+        updateState(prev => ({ ...prev, isFitConnected: false, fitStatus: 'Session Expired' }));
+        setFitSyncError("Google Fit session expired. Please reconnect.");
+        return null;
+      }
+    } catch {
+      return raw; // On network error, try with existing tokens
     }
   };
 
@@ -300,33 +327,38 @@ export default function App() {
         setIsSyncingSteps(true);
         logEvent("Starting Google Fit metrics sync query...");
         try {
-          // Calculate client-side start of day and current time in local timezone
+          // Proactively refresh token if expiring soon
+          const tokenStr = await refreshTokensIfNeeded();
+          if (!tokenStr) {
+            setIsSyncingSteps(false);
+            return; // refreshTokensIfNeeded already handled the error state
+          }
+
           const now = new Date();
           const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
           const startTime = startOfDay.getTime();
           const endTime = now.getTime();
 
-          const headers: HeadersInit = {};
-          const localTokens = localStorage.getItem('fit_tokens');
-          if (localTokens) {
-            headers['x-fit-tokens'] = localTokens;
-          }
-
           const res = await fetch(`/api/steps?startTime=${startTime}&endTime=${endTime}`, {
-            headers
+            headers: { 'x-fit-tokens': tokenStr }
           });
+
           if (res.ok) {
             const data = await res.json();
-            updateState(prev => ({ 
-              ...prev, 
-              steps: data.steps, 
+            // Save refreshed tokens if the server auto-refreshed them during the request
+            if (data.newTokens) {
+              localStorage.setItem('fit_tokens', JSON.stringify(data.newTokens));
+            }
+            updateState(prev => ({
+              ...prev,
+              steps: data.steps,
               fitLastSync: new Date().toISOString()
             }));
             setFitSyncError(null);
             logEvent(`Google Fit sync success: ${data.steps} steps registered`);
           } else {
             const errData = await res.json().catch(() => ({}));
-            if (res.status === 401 || (errData.error && errData.error.toLowerCase().includes('credentials'))) {
+            if (res.status === 401) {
               localStorage.removeItem('fit_tokens');
               updateState(prev => ({ ...prev, isFitConnected: false, fitStatus: 'Session Expired' }));
               setFitSyncError(errData.details || errData.error || "Session expired. Please reconnect.");
@@ -747,37 +779,4 @@ export default function App() {
         >
           <Sliders size={22} className="text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
         </button>
-        <button onClick={() => setView('review')} className={`flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all ${view === 'review' ? 'text-white bg-white/10' : 'text-white/40'}`}>
-          <BarChart3 size={20} />
-        </button>
-        <button onClick={() => setView('vision')} className={`flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all ${view === 'vision' ? 'text-white bg-white/10' : 'text-white/40'}`}>
-          <Eye size={20} />
-        </button>
-        <button onClick={() => setView('buy_list')} className={`relative flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all ${view === 'buy_list' ? 'text-white bg-white/10' : 'text-white/40'}`}>
-          <ShoppingCart size={20} />
-          {state.tasks.filter(t => !t.done).length > 0 && <span className="absolute -top-1 -right-1 bg-brand-500 text-white min-w-4 h-4 rounded-full text-[9px] flex items-center justify-center font-bold px-1 ring-2 ring-[#02040a]">{state.tasks.filter(t => !t.done).length}</span>}
-        </button>
-      </nav>
-
-      {/* DIAGNOSTIC POPUP & SERVICES CONSOLE */}
-      <SystemLogsModal 
-        isOpen={logsPanelOpen}
-        onClose={() => setLogsPanelOpen(false)}
-        state={state}
-        updateState={updateState}
-        user={user}
-        logout={logout}
-        logs={appLogs}
-        selectedAtmosphereMode={selectedAtmosphereMode}
-        setSelectedAtmosphereMode={setSelectedAtmosphereMode}
-      />
-
-      <RewardModal 
-        isOpen={rewardModalOpen}
-        onClose={() => setRewardModalOpen(false)}
-        rewardContent={currentReward}
-      />
-
-    </div>
-  );
-}
+        <button onClick={() => setView('review')} className={`flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all ${view === 'review' ? 'text-white 

@@ -277,8 +277,10 @@ app.get("/api/steps", async (req, res) => {
     const oauth2Client = new google.auth.OAuth2(clientId, clientSecret);
     oauth2Client.setCredentials(tokens);
 
+    let refreshedTokens: any = null;
     oauth2Client.on('tokens', (newTokens) => {
       const mergedTokens = { ...tokens, ...newTokens };
+      refreshedTokens = mergedTokens;
       res.cookie('fit_auth', JSON.stringify(mergedTokens), {
         httpOnly: true,
         secure: true,
@@ -354,7 +356,7 @@ app.get("/api/steps", async (req, res) => {
     const totalSteps = Math.max(stepsMerged, stepsEstimated, stepsDelta);
     console.log(`[Google Fit API] Resolved steps - Merged: ${stepsMerged}, Estimated: ${stepsEstimated}, Delta: ${stepsDelta}. Chosen Max: ${totalSteps}`);
 
-    res.json({ steps: totalSteps });
+    res.json({ steps: totalSteps, newTokens: refreshedTokens });
   } catch (error: any) {
     console.error("Step fetch error:", error);
     const errMsg = (error.message || '').toLowerCase();
@@ -451,6 +453,49 @@ END EVERY RESPONSE WITH:
   } catch (err: any) {
     console.error("[PhysioChat API] Error:", err);
     res.status(500).json({ error: err.message || "Failed to fetch response" });
+  }
+});
+
+// API: Refresh Google OAuth tokens using refresh_token
+app.post("/api/auth/refresh", async (req, res) => {
+  try {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+      return res.status(500).json({ error: "Missing Google credentials" });
+    }
+
+    let tokensStr = req.headers['x-fit-tokens'] as string || req.cookies.fit_auth;
+    if (!tokensStr) {
+      return res.status(401).json({ error: "No tokens provided" });
+    }
+
+    let tokens: any;
+    try { tokens = JSON.parse(tokensStr); } catch {
+      return res.status(401).json({ error: "Invalid token format" });
+    }
+
+    if (!tokens.refresh_token) {
+      return res.status(400).json({ error: "No refresh_token available — user must re-authenticate" });
+    }
+
+    const oauth2Client = new google.auth.OAuth2(clientId, clientSecret);
+    oauth2Client.setCredentials({ refresh_token: tokens.refresh_token });
+
+    const { credentials } = await oauth2Client.refreshAccessToken();
+    const merged = { ...tokens, ...credentials };
+
+    res.cookie('fit_auth', JSON.stringify(merged), {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+      maxAge: 30 * 24 * 60 * 60 * 1000
+    });
+
+    res.json({ tokens: merged });
+  } catch (error: any) {
+    console.error("[Auth Refresh] Error:", error);
+    res.status(401).json({ error: "Token refresh failed", details: error.message });
   }
 });
 
