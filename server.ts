@@ -1,5 +1,4 @@
 import express from "express";
-import path from "path";
 import { google } from "googleapis";
 import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
@@ -455,30 +454,5 @@ END EVERY RESPONSE WITH:
   }
 });
 
-// Production: serve built frontend
-if (process.env.NODE_ENV === "production") {
-  const distPath = path.join(process.cwd(), 'dist');
-  app.use(express.static(distPath));
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(distPath, 'index.html'));
-  });
-}
-
-// Export for Vercel serverless
+// Export for Vercel serverless — static files served by Vercel from dist/
 export default app;
-
-// Dev: start local server with Vite middleware
-if (process.env.NODE_ENV !== "production") {
-  const PORT = process.env.PORT || 3000;
-  (async () => {
-    const { createServer: createViteServer } = await import("vite");
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-    app.listen(PORT as number, "0.0.0.0", () => {
-      console.log(`Ascend Protocol Server running on http://localhost:${PORT}`);
-    });
-  })();
-}
