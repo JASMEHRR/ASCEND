@@ -31,7 +31,7 @@ import RewardModal from './components/RewardModal';
 import LoginScreen from './components/auth/LoginScreen';
 
 // Route views that aren't the default are code-split to keep the initial bundle small.
-const BusinessHub = lazy(() => import('./components/BusinessHub'));
+const LaunchHub = lazy(() => import('./features/launch/LaunchHub'));
 const WeeklyReview = lazy(() => import('./components/WeeklyReview'));
 const VisionBoard = lazy(() => import('./components/VisionBoard'));
 const ToBuyList = lazy(() => import('./components/ToBuyList'));
@@ -320,7 +320,7 @@ export default function App() {
             >
               <Suspense fallback={<ViewFallback />}>
                 {view === 'dashboard' && <Dashboard state={state} updateState={updateState} />}
-                {view === 'business' && <BusinessHub state={state} updateState={updateState} />}
+                {view === 'business' && <LaunchHub state={state} updateState={updateState} />}
                 {view === 'physio' && <PhysioAI state={state} updateState={updateState} />}
                 {view === 'review' && <WeeklyReview state={state} />}
                 {view === 'vision' && <VisionBoard state={state} updateState={updateState} />}

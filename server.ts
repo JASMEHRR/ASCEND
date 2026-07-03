@@ -12,12 +12,16 @@
  */
 import express from "express";
 import dotenv from "dotenv";
+import { launchRouter } from "./launch-routes";
 
 dotenv.config({ override: true });
 
 const app = express();
 app.set("trust proxy", true);
 app.use(express.json({ limit: "100kb" }));
+
+// LaunchKit AI endpoints (stateless; persistence lives client-side in Firestore).
+app.use("/api/launch", launchRouter);
 
 // The AI physiotherapist's persona and safety rules. Personalise the
 // conditions / trek details below as the user's situation changes.
