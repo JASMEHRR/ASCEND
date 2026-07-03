@@ -2,8 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-
-import { useState, useEffect } from 'react';
+import { Suspense, lazy, useEffect, useState, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   LayoutDashboard,
@@ -13,90 +12,155 @@ import {
   Activity,
   Clipboard,
   Sliders,
-  ShoppingCart
+  ShoppingCart,
+  LogOut,
+  Loader2,
 } from 'lucide-react';
-import { OSState } from './types';
+import type { OSState } from './types';
+import { useAuth } from './context/AuthContext';
+import { useDialog } from './context/DialogContext';
+import { useCloudSync } from './hooks/useCloudSync';
 import Dashboard from './components/Dashboard';
-import BusinessHub from './components/BusinessHub';
-import WeeklyReview from './components/WeeklyReview';
-import VisionBoard from './components/VisionBoard';
-import ToBuyList from './components/ToBuyList';
 import CountdownTimer from './components/CountdownTimer';
 import AtmosphereBackdrop, { getAutoAtmosphereId, ATMOSPHERES } from './components/AtmosphereBackdrop';
+import AtmosphereSelector from './components/AtmosphereSelector';
 import CondensationEffect from './components/CondensationEffect';
 import FlipClock from './components/FlipClock';
 import SystemLogsModal from './components/SystemLogsModal';
 import RewardModal from './components/RewardModal';
-import PhysioAI from './components/PhysioAI';
+import LoginScreen from './components/auth/LoginScreen';
+
+// Route views that aren't the default are code-split to keep the initial bundle small.
+const BusinessHub = lazy(() => import('./components/BusinessHub'));
+const WeeklyReview = lazy(() => import('./components/WeeklyReview'));
+const VisionBoard = lazy(() => import('./components/VisionBoard'));
+const ToBuyList = lazy(() => import('./components/ToBuyList'));
+const PhysioAI = lazy(() => import('./components/PhysioAI'));
+
+type View = 'dashboard' | 'business' | 'review' | 'vision' | 'buy_list' | 'physio';
 
 const REWARDS_LIST = [
-  "Take a 5-minute break outside.",
-  "Listen to your favorite song guilt-free.",
-  "You earned a small piece of chocolate or a treat.",
-  "Stretch your legs and grab a cold glass of water.",
-  "Watch one fun short video.",
-  "Give yourself a pat on the back. You're crushing it!"
+  'Take a 5-minute break outside.',
+  'Listen to your favorite song guilt-free.',
+  'You earned a small piece of chocolate or a treat.',
+  'Stretch your legs and grab a cold glass of water.',
+  'Watch one fun short video.',
+  "Give yourself a pat on the back. You're crushing it!",
 ];
 
-const INITIAL_STATE: OSState = {
-  lastVisit: new Date().toISOString().split('T')[0],
-  water: 0,
-  rituals: {},
-  exerciseAM: {},
-  exercisePM: {},
-  customAM: [],
-  customPM: [],
-  tasks: [],
-  ideas: [],
-  visionBoard: [],
-  steps: 0,
-  points: 0
-};
+const NAV_ITEMS: { key: View; label: string; icon: ReactNode }[] = [
+  { key: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={14} /> },
+  { key: 'physio', label: 'AI Physio', icon: <Activity size={14} /> },
+  { key: 'business', label: 'Strategic Command', icon: <Lightbulb size={14} /> },
+  { key: 'review', label: 'Weekly Review', icon: <BarChart3 size={14} /> },
+  { key: 'vision', label: 'Vision Board', icon: <Eye size={14} /> },
+  { key: 'buy_list', label: 'Purchases', icon: <ShoppingCart size={14} /> },
+];
 
-import { initAuth, logout } from './lib/firebase';
-import { db } from './lib/firebase';
-import { doc, getDoc, setDoc, collection, onSnapshot } from 'firebase/firestore';
-import type { User } from 'firebase/auth';
+function calculateProgress(state: OSState): number {
+  let score = 0;
+  score += Object.values(state.rituals).filter(Boolean).length * 4;
+  score += Object.values(state.exerciseAM).filter(Boolean).length * 5;
+  score += Object.values(state.exercisePM).filter(Boolean).length * 5;
+  if (state.water >= 3) score += 5;
+  if (state.water >= 5) score += 5;
+  if (state.steps > 5000) score += 10;
+  if (state.steps > 10000) score += 15;
+  if (state.primaryObjective?.done) score += 30;
+  score += state.tasks.filter((t) => t.done).length * 2;
+  return Math.min(100, Math.round(score));
+}
 
-export default function App() {
-  const [view, setView] = useState<'dashboard' | 'business' | 'review' | 'vision' | 'buy_list' | 'physio'>('dashboard');
-  const [user, setUser] = useState<User | null>(null);
-  const [state, setState] = useState<OSState | null>(null);
-  const [selectedAtmosphereMode, setSelectedAtmosphereMode] = useState<string>('auto');
-  const [timeTick, setTimeTick] = useState<number>(0);
-  const [logsPanelOpen, setLogsPanelOpen] = useState(false);
-  const [rewardModalOpen, setRewardModalOpen] = useState(false);
-  const [currentReward, setCurrentReward] = useState("");
-  const [lastPointMilestone, setLastPointMilestone] = useState(0);
-  const [appLogs, setAppLogs] = useState<string[]>([
-    "Initializing Ascend Protocol V6.0 Platform Module...",
-    "Loaded climate backdrop sheet: Ambient Mountains Renderer ready",
-    "Local server static mapping verified securely",
-    "Cloud database link initialized successfully",
-    "Ready for active sequence."
-  ]);
+function FullScreenLoader({ label }: { label: string }) {
+  return (
+    <div className="flex h-screen w-full items-center justify-center bg-[#02040a] text-white">
+      <div className="flex flex-col items-center gap-4">
+        <Loader2 className="h-9 w-9 animate-spin text-brand-500" />
+        <p className="text-white/50 text-sm font-mono uppercase tracking-widest">{label}</p>
+      </div>
+    </div>
+  );
+}
 
-  const logEvent = (msg: string) => {
-    setAppLogs(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev].slice(0, 200));
+function ViewFallback() {
+  return (
+    <div className="flex h-full min-h-[240px] w-full items-center justify-center">
+      <Loader2 className="h-6 w-6 animate-spin text-white/30" />
+    </div>
+  );
+}
+
+function HeaderAccount() {
+  const { user, logout } = useAuth();
+  const { confirm } = useDialog();
+  const initial = (user?.email ?? '?').charAt(0).toUpperCase();
+
+  const handleSignOut = async () => {
+    if (await confirm({ title: 'Sign out?', message: 'You can sign back in anytime.', confirmLabel: 'Sign out', danger: true })) {
+      await logout();
+    }
   };
 
-  // Auto-sync atmosphere minute-based updater
+  return (
+    <div className="flex items-center gap-2 rounded-[1.75rem] border border-white/12 bg-white/[0.04] px-2 py-1.5 backdrop-blur-3xl">
+      <div
+        className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-500/20 text-sm font-bold text-brand-300"
+        title={user?.email ?? undefined}
+        aria-hidden="true"
+      >
+        {initial}
+      </div>
+      <span className="hidden max-w-[9rem] truncate text-[11px] font-medium text-white/60 lg:block">
+        {user?.email}
+      </span>
+      <button
+        type="button"
+        onClick={handleSignOut}
+        aria-label="Sign out"
+        className="rounded-full p-2 text-white/45 transition-colors hover:bg-white/10 hover:text-white cursor-pointer"
+      >
+        <LogOut size={15} />
+      </button>
+    </div>
+  );
+}
+
+export default function App() {
+  const { user, initializing } = useAuth();
+  const { state, updateState } = useCloudSync(user?.uid ?? null);
+
+  const [view, setView] = useState<View>('dashboard');
+  const [selectedAtmosphereMode, setSelectedAtmosphereMode] = useState('auto');
+  const [, setTimeTick] = useState(0);
+  const [logsPanelOpen, setLogsPanelOpen] = useState(false);
+  const [rewardModalOpen, setRewardModalOpen] = useState(false);
+  const [currentReward, setCurrentReward] = useState('');
+  const [lastPointMilestone, setLastPointMilestone] = useState(0);
+  const [appLogs, setAppLogs] = useState<string[]>([
+    'Initializing Ascend Protocol platform module...',
+    'Loaded climate backdrop sheet: Ambient renderer ready',
+    'Cloud database link initialized successfully',
+    'Ready for active sequence.',
+  ]);
+
+  const logEvent = (msg: string) =>
+    setAppLogs((prev) => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev].slice(0, 200));
+
+  // Re-render every minute so the auto atmosphere tracks the time of day.
   useEffect(() => {
-    const timer = setInterval(() => {
-      setTimeTick(prev => prev + 1);
-    }, 60000);
+    const timer = setInterval(() => setTimeTick((n) => n + 1), 60000);
     return () => clearInterval(timer);
   }, []);
 
   const activeAtmosphereId = selectedAtmosphereMode === 'auto' ? getAutoAtmosphereId() : selectedAtmosphereMode;
-  const activeAtmosphere = ATMOSPHERES.find(a => a.id === activeAtmosphereId) || ATMOSPHERES[1];
+  const activeAtmosphere = ATMOSPHERES.find((a) => a.id === activeAtmosphereId) || ATMOSPHERES[1];
 
-  // Log atmosphere changes
   useEffect(() => {
-    logEvent(`Sanctuary Atmosphere shifted to [${activeAtmosphere.name}]`);
+    logEvent(`Sanctuary atmosphere shifted to [${activeAtmosphere.name}]`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeAtmosphereId]);
 
-  // Check milestones for rewards
+  // Reward the user on every 10-point milestone.
   useEffect(() => {
     if (!state) return;
     const pts = state.points || 0;
@@ -107,282 +171,38 @@ export default function App() {
     }
   }, [state?.points, lastPointMilestone]);
 
-  useEffect(() => {
-    return initAuth((user) => {
-      setUser(user);
-    }, () => {
-      setUser(null);
-    });
-  }, []);
+  // --- Auth / load gates (all hooks above run unconditionally) ---
+  if (initializing) return <FullScreenLoader label="Connecting…" />;
+  if (!user) return <LoginScreen />;
+  if (!state) return <FullScreenLoader label="Loading your protocol…" />;
 
-  // Sync state with Firestore if user is logged in
-  useEffect(() => {
-    if (user === null) {
-       // if we explicitly logged out or haven't logged in, use initialized state
-       setState(INITIAL_STATE);
-       return;
-    }
-
-    const today = new Date().toISOString().split('T')[0];
-    const userDocRef = doc(db, 'users', user.uid);
-    const dailyDocRef = doc(db, 'users', user.uid, 'dailyStates', today);
-
-    // Initial load
-    const loadData = async () => {
-      try {
-        console.log("[Firestore] Attempting to load user and daily states...");
-        const userSnap = await getDoc(userDocRef);
-        const dailySnap = await getDoc(dailyDocRef);
-
-        if (userSnap.exists() || dailySnap.exists()) {
-          const userData = userSnap.data() || {};
-          const dailyData = dailySnap.data() || {};
-          
-          setState((prev) => {
-            const base = prev || INITIAL_STATE;
-            return {
-              ...base,
-              ...userData,
-              ...dailyData,
-              lastVisit: today,
-              tasks: userData.tasks || [],
-              ideas: userData.ideas || [],
-              visionBoard: userData.visionBoard || [],
-              physioState: dailyData.physioState || base.physioState,
-              customAM: dailyData.customAM || userData.customAM || base.customAM || [],
-              customPM: dailyData.customPM || userData.customPM || base.customPM || [],
-            };
-          });
-          console.log("[Firestore] State successfully synchronized from cloud.");
-        } else {
-          setState(INITIAL_STATE);
-          console.log("[Firestore] New Firestore profile. Initialized default session.");
-        }
-      } catch (err: any) {
-        console.warn("[Firestore] Failed to fetch cloud documents. Using default state:", err);
-        setState(INITIAL_STATE);
-      }
-    };
-
-    loadData();
-  }, [user]);
-
-  // Save changes to Firestore and fallback to localStorage
-  useEffect(() => {
-    if (!state) return;
-
-    // Always update local storage for instant single-user continuity & offline support
-    localStorage.setItem('LIFE_OS_ULTIMATE', JSON.stringify(state));
-
-    if (!user) return;
-
-    const today = new Date().toISOString().split('T')[0];
-    const userDocRef = doc(db, 'users', user.uid);
-    const dailyDocRef = doc(db, 'users', user.uid, 'dailyStates', today);
-
-    const persist = async () => {
-      try {
-        await setDoc(userDocRef, {
-          tasks: state.tasks,
-          ideas: state.ideas,
-          visionBoard: state.visionBoard,
-        }, { merge: true });
-
-        await setDoc(dailyDocRef, {
-          water: state.water,
-          rituals: state.rituals,
-          exerciseAM: state.exerciseAM,
-          exercisePM: state.exercisePM,
-          customAM: state.customAM || [],
-          customPM: state.customPM || [],
-          steps: state.steps,
-          physioState: state.physioState,
-        }, { merge: true });
-      } catch (err: any) {
-        console.warn("[Firestore] Failed to save copy online (client is offline or rules propagating):", err.message || err);
-      }
-    };
-
-    const timeoutId = setTimeout(() => {
-      persist();
-    }, 800);
-
-    return () => clearTimeout(timeoutId);
-  }, [state, user]);
-
-  const updateState = (updater: (prev: OSState) => OSState) => {
-    setState(prev => {
-      if (!prev) return prev;
-      const next = updater(prev);
-      let gainedPoints = 0;
-      
-      // Calculate gains
-      if (next.water > prev.water) gainedPoints += (next.water - prev.water);
-      
-      const ritualsGain = Object.values(next.rituals).filter(Boolean).length - Object.values(prev.rituals).filter(Boolean).length;
-      if (ritualsGain > 0) gainedPoints += ritualsGain;
-      
-      const amGain = Object.values(next.exerciseAM).filter(Boolean).length - Object.values(prev.exerciseAM).filter(Boolean).length;
-      if (amGain > 0) gainedPoints += amGain;
-      
-      const pmGain = Object.values(next.exercisePM).filter(Boolean).length - Object.values(prev.exercisePM).filter(Boolean).length;
-      if (pmGain > 0) gainedPoints += pmGain;
-      
-      const tasksGain = next.tasks.filter(t => t.done).length - prev.tasks.filter(t => t.done).length;
-      if (tasksGain > 0) gainedPoints += tasksGain;
-
-      // also check primaryObjective
-      if (next.primaryObjective?.done && !prev.primaryObjective?.done) {
-        gainedPoints += 2; // Extra point for primary objective
-      }
-
-      if (gainedPoints > 0) {
-        next.points = (next.points || 0) + gainedPoints;
-      }
-      
-      return next;
-    });
-  };
-
-  const exportData = () => {
-    const data = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state));
-    const a = document.createElement('a');
-    a.href = data;
-    a.download = `life-os-data-${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-  };
-
-  const calculateProgress = () => {
-    let score = 0;
-    
-    const ritualDone = Object.values(state.rituals).filter(v => v).length;
-    const exAMDone = Object.values(state.exerciseAM).filter(v => v).length;
-    const exPMDone = Object.values(state.exercisePM).filter(v => v).length;
-    
-    score += ritualDone * 4;
-    score += exAMDone * 5;
-    score += exPMDone * 5;
-
-    if (state.water >= 3) score += 5;
-    if (state.water === 5) score += 5;
-
-    if (state.steps > 5000) score += 10;
-    if (state.steps > 10000) score += 15;
-
-    if (state.primaryObjective?.done) score += 30;
-
-    const tasksDone = state.tasks.filter(t => t.done).length;
-    score += tasksDone * 2;
-
-    return Math.min(100, Math.round(score));
-  };
-
-  const getDisciplinePhase = (score: number) => {
-    if (score < 30) return { name: "Entropy", color: "text-red-400 border-red-500/30 bg-red-500/5" };
-    if (score < 60) return { name: "Acclimatization", color: "text-amber-400 border-amber-500/30 bg-amber-500/5" };
-    if (score < 90) return { name: "Momentum", color: "text-brand-400 border-brand-500/30 bg-brand-500/5" };
-    return { name: "Execution", color: "text-indigo-400 border-indigo-500/30 bg-indigo-500/5" };
-  };
-
-  // Compute derived state variables only when state is loaded
-  const currentScore = state ? calculateProgress() : 0;
-  const phase = getDisciplinePhase(currentScore);
-
-  if (!state) {
-    return (
-      <div className="flex w-full h-screen items-center justify-center bg-[#02040a] text-white">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 border-4 border-brand-500/20 border-t-brand-500 rounded-full animate-spin"></div>
-          <p className="text-white/50 text-sm font-mono uppercase tracking-widest">Loading OSState...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // iOS 26 System State Atmosphere: Dynamic visual reaction mapping
-  let envStatus = "DRIFTING";
-  let ambientColors = ["rgba(255, 255, 255, 0.02)", "rgba(255, 255, 255, 0.01)"];
-  let envLabel = "Drifting Focus";
-  let statusThemeColor = "from-white/5 to-white/10 border-white/10 text-white/85";
-  let indicatorLight = "bg-white/40 shadow-[0_0_8px_rgba(255,255,255,0.3)]";
-
-  if (state.founderMode) {
-    envStatus = "DRIFTING";
-    ambientColors = ["rgba(255, 255, 255, 0.03)", "rgba(255, 255, 255, 0.015)"];
-    envLabel = "Drifting Command";
-    statusThemeColor = "from-white/10 to-white/5 border-white/15 text-white/90";
-    indicatorLight = "bg-white/60 shadow-[0_0_8px_rgba(255,255,255,0.4)]";
-  } else if (currentScore >= 90) {
-    envStatus = "LOCKED IN";
-    ambientColors = ["rgba(255, 255, 255, 0.04)", "rgba(255, 255, 255, 0.02)"];
-    envLabel = "Locked In";
-    statusThemeColor = "from-white/10 to-white/5 border-white/15 text-white/90";
-    indicatorLight = "bg-white shadow-[0_0_8px_rgba(255,255,255,0.5)]";
-  } else if (currentScore >= 60) {
-    envStatus = "MOMENTUM";
-    ambientColors = ["rgba(255, 255, 255, 0.03)", "rgba(255, 255, 255, 0.01)"];
-    envLabel = "Momentum Active";
-    statusThemeColor = "from-white/10 to-white/5 border-white/15 text-white/90";
-    indicatorLight = "bg-white/70 shadow-[0_0_8px_rgba(255,255,255,0.4)]";
-  } else if (currentScore >= 30) {
-    envStatus = "RECOVERY";
-    ambientColors = ["rgba(255, 255, 255, 0.02)", "rgba(255, 255, 255, 0.01)"];
-    envLabel = "Active Recovery";
-    statusThemeColor = "from-white/15 to-white/5 border-white/15 text-white/80";
-    indicatorLight = "bg-white/30 shadow-[0_0_8px_rgba(255,255,255,0.2)]";
-  } else {
-    envStatus = "BURNOUT RISK";
-    ambientColors = ["rgba(255, 255, 255, 0.02)", "rgba(255, 0, 0, 0.01)"];
-    envLabel = "Burnout Risk Warning";
-    statusThemeColor = "from-red-500/5 to-white/5 border-white/10 text-white/70";
-    indicatorLight = "bg-red-500/80 shadow-[0_0_8px_rgba(239,68,68,0.4)] animate-pulse";
-  }
+  const currentScore = calculateProgress(state);
+  const openTasks = state.tasks.filter((t) => !t.done).length;
 
   return (
     <div className="relative flex flex-col h-screen w-full bg-[#02040a] text-[#f4f4f5] font-plus p-4 md:p-6 pb-20 sm:pb-6 gap-5 overflow-hidden selection:bg-brand-500/30 selection:text-white">
-      
-      {/* ADAPTIVE TIME-BASED SPECTRAL BACKGROUND */}
       <AtmosphereBackdrop currentAtmosphere={activeAtmosphere} />
-
-      {/* DETAILED GLASS CONDENSATION WATER PARTICLES */}
       <CondensationEffect active={activeAtmosphere.condensationActive} />
 
-      {/* SYSTEM HEADER */}
-      <header className="relative flex flex-col md:flex-row justify-between items-center md:items-center pb-2 px-2 z-10 gap-5 shrink-0 w-full mb-2">
-        <div className="flex flex-col items-center md:items-start w-full md:w-auto">
-          <div className="flex flex-wrap items-center gap-2 mb-2">
-            <span className="px-2.5 py-0.5 bg-white/5 border border-white/10 text-white/80 text-[10px] font-mono tracking-widest uppercase rounded-full shadow-inner backdrop-blur-md">
-              PROTOCOL V6.0
-            </span>
-          </div>
-          <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)] flex items-center gap-2 font-plus whitespace-nowrap">
-            Ascend Protocol
-          </h1>
-        </div>
+      {/* HEADER */}
+      <header className="relative flex flex-col md:flex-row justify-between items-center pb-2 px-2 z-10 gap-5 shrink-0 w-full mb-2">
+        <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)] whitespace-nowrap">
+          Ascend Protocol
+        </h1>
 
-        <div className="flex gap-4 text-right items-center w-full md:w-auto self-stretch md:self-auto justify-end">
-          
-          <div className="relative overflow-hidden bg-brand-500/10 border border-brand-500/30 px-5 py-2.5 rounded-[1.75rem] shadow-[0_4px_24px_rgba(16,185,129,0.15)] flex flex-col items-center justify-center backdrop-blur-3xl saturate-150 transform transition hover:scale-105">
-            <span className="text-[8.5px] font-mono font-black uppercase text-brand-400 tracking-[0.2em] leading-none mb-1">GLOBAL XP</span>
-            <span className="text-xl font-bold font-sans text-white leading-none flex items-baseline gap-1">
+        <div className="flex gap-3 items-center w-full md:w-auto justify-end">
+          <div className="relative overflow-hidden bg-brand-500/10 border border-brand-500/30 px-5 py-2.5 rounded-[1.75rem] shadow-[0_4px_24px_rgba(16,185,129,0.15)] flex flex-col items-center justify-center backdrop-blur-3xl">
+            <span className="text-[8.5px] font-mono font-black uppercase text-brand-400 tracking-[0.2em] leading-none mb-1">Global XP</span>
+            <span className="text-xl font-bold text-white leading-none flex items-baseline gap-1">
               {state.points || 0}
               <span className="text-brand-400/50 text-[11px] font-mono">pts</span>
             </span>
           </div>
 
-          {/* STUNNING CHRONO VECTOR PROGRESS DISC SCORE */}
-          <div className="relative overflow-hidden bg-white/[0.04] border border-white/12 px-5 py-2.5 rounded-[1.75rem] shadow-[0_8px_32px_rgba(0,0,0,0.37)] flex items-center gap-3.5 backdrop-blur-3xl saturate-150">
+          <div className="relative overflow-hidden bg-white/[0.04] border border-white/12 px-5 py-2.5 rounded-[1.75rem] shadow-[0_8px_32px_rgba(0,0,0,0.37)] flex items-center gap-3.5 backdrop-blur-3xl">
             <div className="relative w-9 h-9 flex items-center justify-center shrink-0">
-              <svg className="w-full h-full -rotate-90">
-                <circle
-                  className="text-white/[0.06]"
-                  strokeWidth="2.5"
-                  stroke="currentColor"
-                  fill="transparent"
-                  r="15"
-                  cx="18"
-                  cy="18"
-                />
+              <svg className="w-full h-full -rotate-90" aria-hidden="true">
+                <circle className="text-white/[0.06]" strokeWidth="2.5" stroke="currentColor" fill="transparent" r="15" cx="18" cy="18" />
                 <circle
                   className="text-white transition-all duration-1000 ease-out"
                   strokeWidth="2.5"
@@ -394,128 +214,100 @@ export default function App() {
                   r="15"
                   cx="18"
                   cy="18"
-                  style={{
-                    filter: "drop-shadow(0 0 6px rgba(255, 255, 255, 0.45))"
-                  }}
+                  style={{ filter: 'drop-shadow(0 0 6px rgba(255, 255, 255, 0.45))' }}
                 />
               </svg>
               <span className="absolute text-[9.5px] font-mono font-black text-white/50 tracking-tighter">%</span>
             </div>
             <div className="flex flex-col text-left">
-              <span className="text-[8.5px] font-mono font-black uppercase text-white/40 tracking-[0.2em] leading-none">DISCIPLINE RATIO</span>
-              <span className="text-xl font-bold font-sans text-white leading-none mt-1.5 flex items-baseline gap-1">
+              <span className="text-[8.5px] font-mono font-black uppercase text-white/40 tracking-[0.2em] leading-none">Discipline Ratio</span>
+              <span className="text-xl font-bold text-white leading-none mt-1.5 flex items-baseline gap-1">
                 {currentScore}
                 <span className="text-white/40 text-[11px] font-normal font-mono">/100</span>
               </span>
             </div>
           </div>
+
+          <HeaderAccount />
         </div>
       </header>
- 
-      {/* CORE APP WRAPPER */}
+
+      {/* CORE */}
       <div className="relative flex flex-1 flex-col sm:flex-row gap-5 min-h-0 z-10">
-        
-        {/* LEFT COMPACT COMMAND BAR (ASIDE) */}
+        {/* SIDEBAR */}
         <aside className="hidden md:flex w-64 shrink-0 flex-col gap-4">
-            <div className="liquid-glass-panel rounded-[2rem] p-4 flex flex-col gap-5 h-full overflow-y-auto custom-scrollbar">
-              
-              {/* PRIMARY CLOCK WIDGET IN SIDEBAR */}
-              <div className="flex flex-col items-center justify-center -mx-2">
-                <FlipClock compact={true} />
-              </div>
+          <div className="liquid-glass-panel rounded-[2rem] p-4 flex flex-col gap-5 h-full overflow-y-auto custom-scrollbar">
+            <div className="flex flex-col items-center justify-center -mx-2">
+              <FlipClock compact />
+            </div>
 
-              {/* OUTWARD SANCTUARY ATMOSPHERE SELECTOR */}
-              <div className="space-y-2 border-t border-white/5 pt-3">
-                <p className="text-[9px] font-extrabold text-white/40 uppercase tracking-[0.18em] pl-1.5 leading-none font-mono">Sanctuary Atmosphere</p>
-                <div className="relative">
-                  <select
-                    value={selectedAtmosphereMode}
-                    onChange={(e) => {
-                      setSelectedAtmosphereMode(e.target.value);
-                    }}
-                    className="w-full bg-[#0a0c12]/60 hover:bg-[#0c0e16]/80 backdrop-blur-md border border-white/12 hover:border-white/20 text-white/80 rounded-2xl px-4 py-3 text-[10px] uppercase font-bold tracking-wider outline-none transition-all cursor-pointer shadow-sm appearance-none pr-10"
-                    style={{
-                      backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.4)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
-                      backgroundRepeat: "no-repeat",
-                      backgroundPosition: "right 14px center",
-                      backgroundSize: "16px"
-                    }}
-                  >
-                    <option value="auto" className="bg-[#090b10] text-white py-2 font-semibold">⚡ AUTO SYNC (Time of Day)</option>
-                    {ATMOSPHERES.map(atm => (
-                      <option key={atm.id} value={atm.id} className="bg-[#090b10] text-white py-2 font-semibold">
-                        {atm.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+            <div className="space-y-2 border-t border-white/5 pt-3">
+              <p className="text-[9px] font-extrabold text-white/40 uppercase tracking-[0.18em] pl-1.5 leading-none font-mono">Sanctuary Atmosphere</p>
+              <AtmosphereSelector value={selectedAtmosphereMode} onChange={setSelectedAtmosphereMode} />
+            </div>
 
-              {/* MINIMAL CATEGORY NAVIGATION */}
-              <nav className="space-y-1.5 pt-1 border-t border-white/5">
-                <p className="text-[9px] font-extrabold text-white/40 uppercase tracking-[0.18em] mb-2.5 pl-1.5 leading-none font-mono">Navigation</p>
-                <div className="grid grid-cols-1 gap-1.5">
-                  {[
-                    { key: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={14} /> },
-                    { key: 'physio', label: 'AI Physio', icon: <Activity size={14} /> },
-                    { key: 'business', label: 'Strategic Command', icon: <Lightbulb size={14} />, badge: state.ideas.length },
-                    { key: 'review', label: 'Weekly Review', icon: <BarChart3 size={14} /> },
-                    { key: 'vision', label: 'Vision Board', icon: <Eye size={14} /> },
-                    { key: 'buy_list', label: 'Purchases (Locked)', icon: <ShoppingCart size={14} />, badge: state.tasks.filter(t => !t.done).length }
-                  ].map(tab => (
-                    <button 
+            <nav className="space-y-1.5 pt-1 border-t border-white/5" aria-label="Primary">
+              <p className="text-[9px] font-extrabold text-white/40 uppercase tracking-[0.18em] mb-2.5 pl-1.5 leading-none font-mono">Navigation</p>
+              <div className="grid grid-cols-1 gap-1.5">
+                {NAV_ITEMS.map((tab) => {
+                  const badge = tab.key === 'business' ? state.ideas.length : tab.key === 'buy_list' ? openTasks : 0;
+                  const active = view === tab.key;
+                  return (
+                    <button
                       key={tab.key}
-                      onClick={() => setView(tab.key as any)} 
-                      className={`w-full relative flex items-center justify-between px-4.5 py-3 rounded-2xl text-[11px] font-bold uppercase tracking-wider transition-all border cursor-pointer ${view === tab.key ? 'bg-white/15 text-white border-white/20 shadow-sm backdrop-blur-md font-extrabold' : 'text-white/40 border-transparent bg-white/[0.01] hover:text-white/85 hover:bg-white/[0.07] hover:border-white/10'}`}
+                      onClick={() => setView(tab.key)}
+                      aria-current={active ? 'page' : undefined}
+                      className={`w-full relative flex items-center justify-between px-4.5 py-3 rounded-2xl text-[11px] font-bold uppercase tracking-wider transition-all border cursor-pointer ${
+                        active
+                          ? 'bg-white/15 text-white border-white/20 shadow-sm backdrop-blur-md font-extrabold'
+                          : 'text-white/40 border-transparent bg-white/[0.01] hover:text-white/85 hover:bg-white/[0.07] hover:border-white/10'
+                      }`}
                     >
                       <div className="flex items-center gap-3.5">
-                        <span className={view === tab.key ? 'text-white' : 'text-white/40'}>{tab.icon}</span> 
+                        <span className={active ? 'text-white' : 'text-white/40'}>{tab.icon}</span>
                         {tab.label}
                       </div>
-                      {typeof tab.badge !== 'undefined' && tab.badge > 0 && (
+                      {badge > 0 && (
                         <span className="bg-brand-500/20 text-brand-400 min-w-5 h-5 flex items-center justify-center rounded-full text-[9px] px-1.5 ml-2 font-mono ring-1 ring-brand-500/50">
-                          {tab.badge}
+                          {badge}
                         </span>
                       )}
                     </button>
-                  ))}
-                </div>
-              </nav>
- 
-              {/* TIMING REGISTERS */}
-              <div>
-                <p className="text-[9px] font-extrabold text-white/40 uppercase tracking-[0.18em] mb-2.5 pl-1.5 leading-none font-mono">Protocol Countdowns</p>
-                <div className="space-y-2.5">
-                  <CountdownTimer label="Trip Expedition" targetDate="2026-06-10T00:00:00" />
-                  <CountdownTimer label="Launch milestone" targetDate="2026-06-29T00:00:00" />
-                </div>
+                  );
+                })}
               </div>
+            </nav>
 
-              {/* TELEMETRY DIAGNOSTIC TRIGGERS */}
-              <div className="pt-2">
-                <button
-                  onClick={() => setLogsPanelOpen(true)}
-                  className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 text-white/85 hover:text-white rounded-2xl transition-all cursor-pointer shadow-sm text-[11px] font-bold uppercase tracking-wider"
-                >
-                  <div className="flex items-center gap-3">
-                    <Clipboard size={14} className="text-white/50" />
-                    <span>System Logs</span>
-                  </div>
-                  <svg className="w-3.5 h-3.5 text-white/35" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-                </button>
+            <div>
+              <p className="text-[9px] font-extrabold text-white/40 uppercase tracking-[0.18em] mb-2.5 pl-1.5 leading-none font-mono">Protocol Countdowns</p>
+              <div className="space-y-2.5">
+                <CountdownTimer label="Trip Expedition" targetDate="2026-06-10T00:00:00" />
+                <CountdownTimer label="Launch milestone" targetDate="2026-06-29T00:00:00" />
               </div>
-
-              {/* INTEGRATED ARCHITECTURAL COPYRIGHT */}
-              <div className="mt-auto pt-4 border-t border-white/5 flex items-center justify-between text-[8px] font-mono font-bold text-white/30 uppercase tracking-[0.16em]">
-                <span>ASCEND PROTOCOL</span>
-                <span>© 2025</span>
-
-              </div>
-
             </div>
-          </aside>
 
-        {/* CONTAINER VIEWPORTS (MAIN BODY) */}
+            <div className="pt-2">
+              <button
+                onClick={() => setLogsPanelOpen(true)}
+                className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 text-white/85 hover:text-white rounded-2xl transition-all cursor-pointer shadow-sm text-[11px] font-bold uppercase tracking-wider"
+              >
+                <div className="flex items-center gap-3">
+                  <Clipboard size={14} className="text-white/50" />
+                  <span>System &amp; Settings</span>
+                </div>
+                <svg className="w-3.5 h-3.5 text-white/35" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="mt-auto pt-4 border-t border-white/5 text-[8px] font-mono font-bold text-white/25 uppercase tracking-[0.16em] text-center">
+              Ascend Protocol
+            </div>
+          </div>
+        </aside>
+
+        {/* MAIN */}
         <main className="flex-1 flex flex-col gap-6 min-w-0 overflow-y-auto custom-scrollbar">
           <AnimatePresence mode="wait">
             <motion.div
@@ -523,76 +315,92 @@ export default function App() {
               initial={{ opacity: 0, y: 15, filter: 'blur(6px)' }}
               animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
               exit={{ opacity: 0, y: -15, filter: 'blur(6px)' }}
-              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
               className="h-full"
             >
-              {view === 'dashboard' && (
-                <Dashboard
-                  state={state}
-                  updateState={updateState}
-                />
-              )}
-              {view === 'business' && <BusinessHub state={state} updateState={updateState} />}
-              {view === 'physio' && <PhysioAI state={state} updateState={updateState} />}
-              {view === 'review' && <WeeklyReview state={state} />}
-              {view === 'vision' && <VisionBoard state={state} updateState={updateState} />}
-              {view === 'buy_list' && <ToBuyList state={state} updateState={updateState} />}
+              <Suspense fallback={<ViewFallback />}>
+                {view === 'dashboard' && <Dashboard state={state} updateState={updateState} />}
+                {view === 'business' && <BusinessHub state={state} updateState={updateState} />}
+                {view === 'physio' && <PhysioAI state={state} updateState={updateState} />}
+                {view === 'review' && <WeeklyReview state={state} />}
+                {view === 'vision' && <VisionBoard state={state} updateState={updateState} />}
+                {view === 'buy_list' && <ToBuyList state={state} updateState={updateState} />}
+              </Suspense>
             </motion.div>
           </AnimatePresence>
         </main>
       </div>
 
-      {/* MOBILE BOTTOM GLASS NAVIGATION BAR */}
-      <nav className="sm:hidden fixed bottom-3 left-4 right-4 bg-[#02040a]/85 backdrop-blur-md border border-white/12 py-3 px-5 flex justify-between items-center z-50 rounded-[2.5rem] shadow-lg overflow-x-auto">
-        <button onClick={() => setView('dashboard')} className={`flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all ${view === 'dashboard' ? 'text-white bg-white/10' : 'text-white/40'}`}>
-          <LayoutDashboard size={20} />
-        </button>
-        <button onClick={() => setView('business')} className={`relative flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all ${view === 'business' ? 'text-white bg-white/10' : 'text-white/40'}`}>
-          <Lightbulb size={20} />
-          {state.ideas.length > 0 && <span className="absolute -top-1 -right-1 bg-brand-500 text-white min-w-4 h-4 rounded-full text-[9px] flex items-center justify-center font-bold px-1 ring-2 ring-[#02040a]">{state.ideas.length}</span>}
-        </button>
-        <button onClick={() => setView('physio')} className={`flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all ${view === 'physio' ? 'text-white bg-white/10' : 'text-white/40'}`}>
-          <Activity size={20} />
-        </button>
-        {/* MOBILE DYNAMIC SYSTEM COMMANDS CENTER BUTTON */}
-        <button 
-          onClick={() => setLogsPanelOpen(true)} 
+      {/* MOBILE BOTTOM NAV */}
+      <nav
+        className="sm:hidden fixed bottom-3 left-4 right-4 bg-[#02040a]/85 backdrop-blur-md border border-white/12 py-3 px-5 flex justify-between items-center z-50 rounded-[2.5rem] shadow-lg overflow-x-auto"
+        aria-label="Primary"
+      >
+        {(['dashboard', 'business', 'physio'] as View[]).map((key) => (
+          <MobileNavButton key={key} view={key} current={view} onSelect={setView} badge={key === 'business' ? state.ideas.length : 0} />
+        ))}
+        <button
+          onClick={() => setLogsPanelOpen(true)}
+          aria-label="System and settings"
           className="w-14 h-14 shrink-0 mx-2 rounded-full flex items-center justify-center border transition-all glass-shimmer cursor-pointer -translate-y-5 shadow-lg bg-white/[0.08] hover:bg-white/[0.15] text-white border-white/20 pb-0.5"
-          title="System Command Panel"
         >
           <Sliders size={22} className="text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
         </button>
-        <button onClick={() => setView('review')} className={`flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all ${view === 'review' ? 'text-white bg-white/10' : 'text-white/40'}`}>
-          <BarChart3 size={20} />
-        </button>
-        <button onClick={() => setView('vision')} className={`flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all ${view === 'vision' ? 'text-white bg-white/10' : 'text-white/40'}`}>
-          <Eye size={20} />
-        </button>
-        <button onClick={() => setView('buy_list')} className={`relative flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all ${view === 'buy_list' ? 'text-white bg-white/10' : 'text-white/40'}`}>
-          <ShoppingCart size={20} />
-          {state.tasks.filter(t => !t.done).length > 0 && <span className="absolute -top-1 -right-1 bg-brand-500 text-white min-w-4 h-4 rounded-full text-[9px] flex items-center justify-center font-bold px-1 ring-2 ring-[#02040a]">{state.tasks.filter(t => !t.done).length}</span>}
-        </button>
+        {(['review', 'vision', 'buy_list'] as View[]).map((key) => (
+          <MobileNavButton key={key} view={key} current={view} onSelect={setView} badge={key === 'buy_list' ? openTasks : 0} />
+        ))}
       </nav>
 
-      {/* DIAGNOSTIC POPUP & SERVICES CONSOLE */}
-      <SystemLogsModal 
+      <SystemLogsModal
         isOpen={logsPanelOpen}
         onClose={() => setLogsPanelOpen(false)}
-        state={state}
         updateState={updateState}
-        user={user}
-        logout={logout}
         logs={appLogs}
         selectedAtmosphereMode={selectedAtmosphereMode}
         setSelectedAtmosphereMode={setSelectedAtmosphereMode}
       />
 
-      <RewardModal 
-        isOpen={rewardModalOpen}
-        onClose={() => setRewardModalOpen(false)}
-        rewardContent={currentReward}
-      />
-
+      <RewardModal isOpen={rewardModalOpen} onClose={() => setRewardModalOpen(false)} rewardContent={currentReward} />
     </div>
+  );
+}
+
+const MOBILE_ICONS: Record<View, ReactNode> = {
+  dashboard: <LayoutDashboard size={20} />,
+  business: <Lightbulb size={20} />,
+  physio: <Activity size={20} />,
+  review: <BarChart3 size={20} />,
+  vision: <Eye size={20} />,
+  buy_list: <ShoppingCart size={20} />,
+};
+
+function MobileNavButton({
+  view,
+  current,
+  onSelect,
+  badge,
+}: {
+  view: View;
+  current: View;
+  onSelect: (v: View) => void;
+  badge: number;
+}) {
+  const label = NAV_ITEMS.find((n) => n.key === view)?.label ?? view;
+  return (
+    <button
+      onClick={() => onSelect(view)}
+      aria-label={label}
+      aria-current={current === view ? 'page' : undefined}
+      className={`relative flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all ${
+        current === view ? 'text-white bg-white/10' : 'text-white/40'
+      }`}
+    >
+      {MOBILE_ICONS[view]}
+      {badge > 0 && (
+        <span className="absolute -top-1 -right-1 bg-brand-500 text-white min-w-4 h-4 rounded-full text-[9px] flex items-center justify-center font-bold px-1 ring-2 ring-[#02040a]">
+          {badge}
+        </span>
+      )}
+    </button>
   );
 }

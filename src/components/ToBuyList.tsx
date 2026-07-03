@@ -3,6 +3,8 @@ import { motion } from 'motion/react';
 import { Lock, Unlock, Plus, ShoppingCart, KeyRound } from 'lucide-react';
 import AnimatedCheckboxItem from './AnimatedCheckboxItem';
 import { OSState } from '../types';
+import { useAuth } from '../context/AuthContext';
+import { useDialog } from '../context/DialogContext';
 
 interface BuyItem {
   id: string;
@@ -15,38 +17,47 @@ interface ToBuyListProps {
   updateState: (updater: (prev: OSState) => OSState) => void;
 }
 
-export default function ToBuyList({ state, updateState }: ToBuyListProps) {
+export default function ToBuyList(_props: ToBuyListProps) {
+  const { user } = useAuth();
+  const { prompt, confirm } = useDialog();
+
+  // Namespace per user so the vault is isolated on shared devices.
+  const itemsKey = `ascend_tobuy_items_${user?.uid ?? 'guest'}`;
+  const passKey = `ascend_tobuy_passcode_${user?.uid ?? 'guest'}`;
+
   const [passcode, setPasscode] = useState('');
   const [inputCode, setInputCode] = useState('');
   const [isUnlocked, setIsUnlocked] = useState(false);
-  const [items, setItems] = useState<BuyItem[]>(() => {
+  const [error, setError] = useState('');
+  const [items, setItems] = useState<BuyItem[]>([]);
+
+  // Load this user's vault whenever the user changes.
+  useEffect(() => {
     try {
-      const stored = localStorage.getItem('ascend_tobuy_items');
-      return stored ? JSON.parse(stored) : [];
+      const storedItems = localStorage.getItem(itemsKey);
+      setItems(storedItems ? JSON.parse(storedItems) : []);
+      setPasscode(localStorage.getItem(passKey) || '');
     } catch {
-      return [];
+      setItems([]);
     }
-  });
+    setIsUnlocked(false);
+    setInputCode('');
+    setError('');
+  }, [itemsKey, passKey]);
 
   useEffect(() => {
-    try {
-      const savedCode = localStorage.getItem('ascend_tobuy_passcode');
-      if (savedCode) setPasscode(savedCode);
-    } catch (e) {}
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem('ascend_tobuy_items', JSON.stringify(items));
-  }, [items]);
+    localStorage.setItem(itemsKey, JSON.stringify(items));
+  }, [items, itemsKey]);
 
   const handleSetPasscode = () => {
     if (inputCode.length >= 4) {
       setPasscode(inputCode);
-      localStorage.setItem('ascend_tobuy_passcode', inputCode);
+      localStorage.setItem(passKey, inputCode);
       setIsUnlocked(true);
       setInputCode('');
+      setError('');
     } else {
-      alert("Passcode must be at least 4 characters long.");
+      setError('Passcode must be at least 4 characters long.');
     }
   };
 
@@ -54,15 +65,16 @@ export default function ToBuyList({ state, updateState }: ToBuyListProps) {
     if (inputCode === passcode) {
       setIsUnlocked(true);
       setInputCode('');
+      setError('');
     } else {
-      alert("Incorrect passcode");
+      setError('Incorrect passcode.');
     }
   };
 
-  const addItem = () => {
-    const text = prompt("Enter item to buy:");
+  const addItem = async () => {
+    const text = await prompt({ title: 'Add item', placeholder: 'What do you need to buy?' });
     if (text) {
-      setItems(prev => [...prev, { id: Math.random().toString(36).substr(2, 9), name: text, done: false }]);
+      setItems(prev => [...prev, { id: crypto.randomUUID(), name: text, done: false }]);
     }
   };
 
@@ -74,10 +86,10 @@ export default function ToBuyList({ state, updateState }: ToBuyListProps) {
     setItems(prev => prev.filter(item => item.id !== id));
   };
 
-  const resetPasscode = () => {
-    if (confirm("Are you sure you want to reset your master passcode?")) {
+  const resetPasscode = async () => {
+    if (await confirm({ title: 'Reset passcode?', message: 'You will set a new master passcode on next unlock.', confirmLabel: 'Reset', danger: true })) {
       setPasscode('');
-      localStorage.removeItem('ascend_tobuy_passcode');
+      localStorage.removeItem(passKey);
       setIsUnlocked(false);
     }
   };
@@ -106,9 +118,11 @@ export default function ToBuyList({ state, updateState }: ToBuyListProps) {
                 }
             }}
             placeholder="••••"
-            className="w-full bg-black/40 border border-white/20 text-white font-mono text-center text-xl tracking-[0.5em] rounded-xl px-4 py-4 outline-none focus:border-amber-400/50 transition-colors mb-4 placeholder:text-white/20"
+            className="w-full bg-black/40 border border-white/20 text-white font-mono text-center text-xl tracking-[0.5em] rounded-xl px-4 py-4 outline-none focus:border-amber-400/50 transition-colors mb-2 placeholder:text-white/20"
             autoFocus
           />
+
+          {error && <p className="text-[11px] text-red-400 mb-3" role="alert">{error}</p>}
 
           <button
             onClick={passcode ? handleUnlock : handleSetPasscode}

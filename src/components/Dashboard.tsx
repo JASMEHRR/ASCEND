@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { OSState, Task } from '../types';
+import { OSState } from '../types';
 import { RITUALS, HEALTH_STACK, STOIC_QUOTES } from '../constants';
 import {
   Droplets,
@@ -29,6 +29,8 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 
 import AnimatedCheckboxItem from './AnimatedCheckboxItem';
+import { useDialog } from '../context/DialogContext';
+import { useAuth } from '../context/AuthContext';
 
 interface Props {
   state: OSState;
@@ -67,6 +69,16 @@ const DEFAULT_WIDGETS = [
 ];
 
 export default function Dashboard({ state, updateState }: Props) {
+  const { prompt } = useDialog();
+  const { user } = useAuth();
+  const uid = user?.uid ?? 'guest';
+  // Device-local preferences, namespaced per user for isolation on shared devices.
+  const K = {
+    widgets: `ascend_widget_config_${uid}`,
+    quests: `ascend_quests_${uid}`,
+    scratch: `ascend_scratchpad_${uid}`,
+  };
+
   const [isEditingSteps, setIsEditingSteps] = useState(false);
   const [inputStepsVal, setInputStepsVal] = useState<string>("");
 
@@ -77,7 +89,7 @@ export default function Dashboard({ state, updateState }: Props) {
 
   const [widgetConfig, setWidgetConfig] = useState<{ id: string, visible: boolean }[]>(() => {
     try {
-      const saved = localStorage.getItem('ascend_widget_config');
+      const saved = localStorage.getItem(K.widgets);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -92,21 +104,11 @@ export default function Dashboard({ state, updateState }: Props) {
   const [isEditingWidgets, setIsEditingWidgets] = useState(false);
 
   useEffect(() => {
-    localStorage.setItem('ascend_widget_config', JSON.stringify(widgetConfig));
-  }, [widgetConfig]);
+    localStorage.setItem(K.widgets, JSON.stringify(widgetConfig));
+  }, [K.widgets, widgetConfig]);
 
   const toggleWidget = (id: string) => {
     setWidgetConfig(prev => prev.map(w => w.id === id ? { ...w, visible: !w.visible } : w));
-  };
-
-  const moveWidget = (index: number, direction: -1 | 1) => {
-    const newConfig = [...widgetConfig];
-    if (index + direction >= 0 && index + direction < newConfig.length) {
-      const temp = newConfig[index];
-      newConfig[index] = newConfig[index + direction];
-      newConfig[index + direction] = temp;
-      setWidgetConfig(newConfig);
-    }
   };
 
   const handleStartEditingSteps = () => {
@@ -137,12 +139,12 @@ export default function Dashboard({ state, updateState }: Props) {
     }));
   };
 
-  const addTask = () => {
-    const text = prompt("Enter new task:");
+  const addTask = async () => {
+    const text = await prompt({ title: 'New task', placeholder: 'What needs doing today?' });
     if (text) {
       updateState(prev => ({
         ...prev,
-        tasks: [...prev.tasks, { id: Math.random().toString(36).substr(2, 9), text, done: false }]
+        tasks: [...prev.tasks, { id: crypto.randomUUID(), text, done: false }]
       }));
     }
   };
@@ -161,8 +163,12 @@ export default function Dashboard({ state, updateState }: Props) {
     }));
   };
 
-  const setPrimary = () => {
-    const text = prompt("WHAT IS YOUR PRIMARY OBJECTIVE TODAY?");
+  const setPrimary = async () => {
+    const text = await prompt({
+      title: 'Primary objective',
+      message: 'Your single most important mission for today.',
+      placeholder: 'e.g. Ship the landing page',
+    });
     if (text) {
       updateState(prev => ({ ...prev, primaryObjective: { text, done: false } }));
     }
@@ -178,7 +184,7 @@ export default function Dashboard({ state, updateState }: Props) {
   const [currentQuest, setCurrentQuest] = useState("");
   const [questsCompleted, setQuestsCompleted] = useState(() => {
     try {
-      const saved = localStorage.getItem('ascend_quests_completed_today');
+      const saved = localStorage.getItem(K.quests);
       const todayStr = new Date().toISOString().split('T')[0];
       if (saved) {
         const parsed = JSON.parse(saved);
@@ -189,11 +195,11 @@ export default function Dashboard({ state, updateState }: Props) {
   });
 
   useEffect(() => {
-    localStorage.setItem('ascend_quests_completed_today', JSON.stringify({
+    localStorage.setItem(K.quests, JSON.stringify({
       count: questsCompleted,
       date: new Date().toISOString().split('T')[0]
     }));
-  }, [questsCompleted]);
+  }, [K.quests, questsCompleted]);
 
   useEffect(() => {
     setCurrentQuest(SIDE_QUESTS[Math.floor(Math.random() * SIDE_QUESTS.length)]);
@@ -223,32 +229,11 @@ export default function Dashboard({ state, updateState }: Props) {
     setCurrentQuest(nextQuest);
   };
 
-  const [waterGlasses, setWaterGlasses] = useState(() => {
-    try {
-      const saved = localStorage.getItem('ascend_water_glasses');
-      const todayStr = new Date().toISOString().split('T')[0];
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.date === todayStr) return parsed.count || 0;
-      }
-    } catch {}
-    return 0;
-  });
-
+  // Hydration is part of the synced daily state — single source of truth.
+  const waterGlasses = state.water;
   const updateWater = (val: number) => {
-    setWaterGlasses(val);
-    updateState(prev => ({
-      ...prev,
-      water: val
-    }));
+    updateState(prev => ({ ...prev, water: Math.max(0, val) }));
   };
-
-  useEffect(() => {
-    localStorage.setItem('ascend_water_glasses', JSON.stringify({
-      count: waterGlasses,
-      date: new Date().toISOString().split('T')[0]
-    }));
-  }, [waterGlasses]);
 
   const [pomoTime, setPomoTime] = useState(25 * 60);
   const [pomoRunning, setPomoRunning] = useState(false);
@@ -268,13 +253,11 @@ export default function Dashboard({ state, updateState }: Props) {
   const togglePomo = () => setPomoRunning(!pomoRunning);
   const resetPomo = () => { setPomoRunning(false); setPomoTime(25 * 60); };
 
-  const [scratchpad, setScratchpad] = useState(() => {
-    return localStorage.getItem('ascend_scratchpad') || "";
-  });
+  const [scratchpad, setScratchpad] = useState(() => localStorage.getItem(K.scratch) || "");
 
   useEffect(() => {
-    localStorage.setItem('ascend_scratchpad', scratchpad);
-  }, [scratchpad]);
+    localStorage.setItem(K.scratch, scratchpad);
+  }, [K.scratch, scratchpad]);
   
   const [draggedWidgetIdx, setDraggedWidgetIdx] = useState<number | null>(null);
 
@@ -525,7 +508,7 @@ export default function Dashboard({ state, updateState }: Props) {
                 </div>
               </div>
               <button 
-                onClick={() => { const text = prompt("Enter morning workout target:"); if (text) updateState(prev => ({ ...prev, customAM: [...(prev.customAM || []), text] })); }}
+                onClick={async () => { const text = await prompt({ title: 'Morning workout target', placeholder: 'e.g. 20 min mobility' }); if (text) updateState(prev => ({ ...prev, customAM: [...(prev.customAM || []), text] })); }}
                 className="w-full py-3.5 border border-dashed border-white/10 hover:border-white/25 rounded-[1.2rem] text-[9.5px] font-mono font-bold uppercase tracking-widest text-white/45 hover:text-white/75 transition-all cursor-pointer mt-5 bg-white/[0.005] hover:bg-white/[0.02]"
               >+ ADD TARGET</button>
             </div>
@@ -548,7 +531,7 @@ export default function Dashboard({ state, updateState }: Props) {
                 </div>
               </div>
               <button 
-                onClick={() => { const text = prompt("Enter evening workout target:"); if (text) updateState(prev => ({ ...prev, customPM: [...(prev.customPM || []), text] })); }}
+                onClick={async () => { const text = await prompt({ title: 'Evening workout target', placeholder: 'e.g. 30 min incline walk' }); if (text) updateState(prev => ({ ...prev, customPM: [...(prev.customPM || []), text] })); }}
                 className="w-full py-3.5 border border-dashed border-white/10 hover:border-white/25 rounded-[1.2rem] text-[9.5px] font-mono font-bold uppercase tracking-widest text-white/45 hover:text-white/75 transition-all cursor-pointer mt-5 bg-white/[0.005] hover:bg-white/[0.02]"
               >+ ADD TARGET</button>
             </div>
