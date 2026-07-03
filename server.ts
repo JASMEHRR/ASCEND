@@ -1,14 +1,14 @@
 /**
  * Ascend Protocol — API server.
  *
- * Runtime shapes:
- *  - Vercel serverless: `api/index.ts` re-exports the default `app`; Vercel's
- *    CDN serves the built client from `dist/` (see `vercel.json`). The
- *    dev/prod bootstrap block at the bottom is skipped (guarded by `VERCEL`).
- *  - Local dev (`npm run dev` -> `tsx server.ts`): Vite runs as Express
- *    middleware so a single process on PORT serves both the API and the app.
- *  - Local prod (`npm run build && npm run start`): the bundled server serves
- *    the static client from `dist/`.
+ * This module defines the Express app and API routes ONLY. It is imported by:
+ *  - Vercel serverless via `api/index.ts` (which re-exports the default `app`);
+ *    Vercel's CDN serves the built client from `dist/` (see `vercel.json`).
+ *  - `dev-server.ts` for local dev/prod, which adds Vite middleware (dev) or
+ *    static `dist/` serving (prod) and calls `listen`.
+ *
+ * Keep this file free of dev-only imports (Vite, etc.) so the serverless
+ * function bundle stays lean.
  */
 import express from "express";
 import dotenv from "dotenv";
@@ -105,33 +105,7 @@ app.post("/api/physio-chat", async (req, res) => {
 });
 
 // Exported for the Vercel serverless handler (see api/index.ts).
+// NOTE: this file must stay free of any dev-only imports (e.g. Vite) so the
+// serverless function bundle stays small. The local dev/prod server that wires
+// up Vite / static file serving lives in the separate `dev-server.ts` entry.
 export default app;
-
-// Standalone server for local dev / prod. Skipped on Vercel serverless.
-if (!process.env.VERCEL) {
-  const port = Number(process.env.PORT) || 3000;
-
-  (async () => {
-    const path = await import("node:path");
-    const isProd = process.env.NODE_ENV === "production";
-
-    if (isProd) {
-      const distIndex = path.resolve("dist/index.html");
-      // Serve the pre-built client.
-      app.use(express.static(path.resolve("dist")));
-      app.get("*", (_req, res) => res.sendFile(distIndex));
-    } else {
-      // Serve the client through Vite in middleware mode (single-port dev).
-      const { createServer } = await import("vite");
-      const vite = await createServer({
-        server: { middlewareMode: true },
-        appType: "spa",
-      });
-      app.use(vite.middlewares);
-    }
-
-    app.listen(port, () => {
-      console.log(`\n  ➜  Ascend Protocol running at http://localhost:${port}\n`);
-    });
-  })();
-}
