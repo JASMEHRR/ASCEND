@@ -5,29 +5,17 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  LayoutDashboard, 
-  Lightbulb, 
-  BarChart3, 
-  Download, 
-  Plus, 
-  Check, 
-  X,
-  Droplets,
-  Zap,
-  Sun,
-  Moon,
+import {
+  LayoutDashboard,
+  Lightbulb,
+  BarChart3,
   Eye,
   Activity,
-  Timer,
-  ShieldCheck,
-  Sparkles,
   Clipboard,
   Sliders,
   ShoppingCart
 } from 'lucide-react';
-import { OSState, Task, Idea, VisionItem } from './types';
-import { RITUALS, HEALTH_STACK, STOIC_QUOTES } from './constants';
+import { OSState } from './types';
 import Dashboard from './components/Dashboard';
 import BusinessHub from './components/BusinessHub';
 import WeeklyReview from './components/WeeklyReview';
@@ -62,11 +50,10 @@ const INITIAL_STATE: OSState = {
   ideas: [],
   visionBoard: [],
   steps: 0,
-  isFitConnected: false,
   points: 0
 };
 
-import { googleSignIn, initAuth, logout } from './lib/firebase';
+import { initAuth, logout } from './lib/firebase';
 import { db } from './lib/firebase';
 import { doc, getDoc, setDoc, collection, onSnapshot } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
@@ -75,9 +62,6 @@ export default function App() {
   const [view, setView] = useState<'dashboard' | 'business' | 'review' | 'vision' | 'buy_list' | 'physio'>('dashboard');
   const [user, setUser] = useState<User | null>(null);
   const [state, setState] = useState<OSState | null>(null);
-  const [syncTrigger, setSyncTrigger] = useState(0);
-  const [isSyncingSteps, setIsSyncingSteps] = useState(false);
-  const [fitSyncError, setFitSyncError] = useState<string | null>(null);
   const [selectedAtmosphereMode, setSelectedAtmosphereMode] = useState<string>('auto');
   const [timeTick, setTimeTick] = useState<number>(0);
   const [logsPanelOpen, setLogsPanelOpen] = useState(false);
@@ -123,107 +107,12 @@ export default function App() {
     }
   }, [state?.points, lastPointMilestone]);
 
-  const checkFitAuth = async () => {
-    try {
-      const localTokens = localStorage.getItem('fit_tokens');
-      // If no tokens in localStorage, there's nothing to verify — mark disconnected
-      if (!localTokens) {
-        updateState(prev => ({ ...prev, isFitConnected: false, fitStatus: undefined }));
-        return;
-      }
-      const headers: HeadersInit = { 'x-fit-tokens': localTokens };
-      const res = await fetch('/api/auth/status', { headers });
-      const data = await res.json();
-      if (data.connected) {
-        updateState(prev => ({ ...prev, isFitConnected: true, fitStatus: 'Active (Auto-refresh)' }));
-      } else {
-        localStorage.removeItem('fit_tokens');
-        updateState(prev => ({ ...prev, isFitConnected: false, fitStatus: undefined }));
-      }
-    } catch {
-      // Ignore network errors on startup
-    }
-  };
-
-  // Proactively refresh the Google access token if it expires within 5 minutes
-  const refreshTokensIfNeeded = async (): Promise<string | null> => {
-    const raw = localStorage.getItem('fit_tokens');
-    if (!raw) return null;
-    try {
-      const tokens = JSON.parse(raw);
-      const expiryDate: number | undefined = tokens.expiry_date;
-      const fiveMinutes = 5 * 60 * 1000;
-      const needsRefresh = !expiryDate || (expiryDate - Date.now()) < fiveMinutes;
-      if (!needsRefresh) return raw;
-
-      const res = await fetch('/api/auth/refresh', {
-        method: 'POST',
-        headers: { 'x-fit-tokens': raw }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const newRaw = JSON.stringify(data.tokens);
-        localStorage.setItem('fit_tokens', newRaw);
-        return newRaw;
-      } else {
-        // Refresh failed — token likely revoked
-        localStorage.removeItem('fit_tokens');
-        updateState(prev => ({ ...prev, isFitConnected: false, fitStatus: 'Session Expired' }));
-        setFitSyncError("Google Fit session expired. Please reconnect.");
-        return null;
-      }
-    } catch {
-      return raw; // On network error, try with existing tokens
-    }
-  };
-
   useEffect(() => {
-    checkFitAuth();
     return initAuth((user) => {
       setUser(user);
     }, () => {
       setUser(null);
     });
-  }, []);
-
-  // Listen for Google Fit authentication popup success message
-  useEffect(() => {
-    const handleOAuthMessage = (event: MessageEvent) => {
-      console.log("[OAuth Listener] Received message from origin:", event.origin);
-      console.log("[OAuth Listener] Message data:", event.data);
-      
-      // Ensure the message comes from the exact same origin (our backend)
-      // Allow dynamic AI Studio preview domains and localhost
-      if (!event.origin.endsWith('.run.app') && !event.origin.includes('localhost') && !event.origin.includes('127.0.0.1') && event.origin !== window.location.origin) {
-        console.warn("[OAuth Listener] Origin rejected:", event.origin);
-        return;
-      }
-
-      if (event.data?.type === 'GOOGLE_FIT_AUTH_SUCCESS') {
-        console.log("[Google Fit Popup] Received success from auth popup. Checking backend state...");
-        
-        if (event.data.tokens) {
-          localStorage.setItem('fit_tokens', JSON.stringify(event.data.tokens));
-        }
-
-        logEvent("[OAuth] Token exchange successful, verifying auth state...");
-        updateState(prev => ({ 
-           ...prev, 
-           isFitConnected: true,
-           fitStatus: 'Active (Auto-refresh)' 
-        }));
-        
-        console.log("[Google Fit Popup] State updated. Triggering sync.");
-        logEvent("[OAuth] Fit credentials validated. Initiating Google Fit synchronization...");
-        setSyncTrigger(prev => prev + 1);
-        setFitSyncError(null);
-      }
-    };
-
-    window.addEventListener('message', handleOAuthMessage);
-    return () => {
-      window.removeEventListener('message', handleOAuthMessage);
-    };
   }, []);
 
   // Sync state with Firestore if user is logged in
@@ -320,108 +209,6 @@ export default function App() {
 
     return () => clearTimeout(timeoutId);
   }, [state, user]);
-
-  useEffect(() => {
-    if (state?.isFitConnected) {
-      const fetchSteps = async () => {
-        setIsSyncingSteps(true);
-        logEvent("Starting Google Fit metrics sync query...");
-        try {
-          // Proactively refresh token if expiring soon
-          const tokenStr = await refreshTokensIfNeeded();
-          if (!tokenStr) {
-            setIsSyncingSteps(false);
-            return; // refreshTokensIfNeeded already handled the error state
-          }
-
-          const now = new Date();
-          const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-          const startTime = startOfDay.getTime();
-          const endTime = now.getTime();
-
-          const res = await fetch(`/api/steps?startTime=${startTime}&endTime=${endTime}`, {
-            headers: { 'x-fit-tokens': tokenStr }
-          });
-
-          if (res.ok) {
-            const data = await res.json();
-            // Save refreshed tokens if the server auto-refreshed them during the request
-            if (data.newTokens) {
-              localStorage.setItem('fit_tokens', JSON.stringify(data.newTokens));
-            }
-            updateState(prev => ({
-              ...prev,
-              steps: data.steps,
-              fitLastSync: new Date().toISOString()
-            }));
-            setFitSyncError(null);
-            logEvent(`Google Fit sync success: ${data.steps} steps registered`);
-          } else {
-            const errData = await res.json().catch(() => ({}));
-            if (res.status === 401) {
-              localStorage.removeItem('fit_tokens');
-              updateState(prev => ({ ...prev, isFitConnected: false, fitStatus: 'Session Expired' }));
-              setFitSyncError(errData.details || errData.error || "Session expired. Please reconnect.");
-              logEvent("Google Fit credentials expired or invalid, re-auth required.");
-              setIsSyncingSteps(false);
-              return;
-            }
-            setFitSyncError(errData.details || errData.error || "Failed to sync steps");
-            logEvent(`Google Fit error: ${errData.error || 'General sync failure'}`);
-          }
-        } catch (e: any) {
-          console.error("Failed to sync steps", e);
-          setFitSyncError(e.message || "Failed to sync steps");
-          logEvent(`Google Fit network exception: ${e.message}`);
-        } finally {
-          setIsSyncingSteps(false);
-        }
-      };
-      
-      fetchSteps();
-      const interval = setInterval(fetchSteps, 300000);
-      return () => clearInterval(interval);
-    }
-  }, [state?.isFitConnected, syncTrigger, user]);
-
-  const connectGoogleFit = async () => {
-    try {
-      const origin = window.location.origin;
-      const res = await fetch(`/api/auth/google/url?origin=${encodeURIComponent(origin)}`);
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.details || errData.error || "Failed to get Google Fit Auth URL from server");
-      }
-      const { url, exactRedirectUri, clientIdSuffix } = await res.json();
-      
-      console.log(`[Google Fit OAuth] Exact redirect_uri: ${exactRedirectUri}, Client ID Suffix: ...${clientIdSuffix}`);
-      logEvent(`OAuth initialized. Client suffix: ...${clientIdSuffix}, URI: ${exactRedirectUri}`);
-      
-      const width = 600;
-      const height = 700;
-      const left = window.screen.width / 2 - width / 2;
-      const top = window.screen.height / 2 - height / 2;
-      
-      const popup = window.open(
-        url,
-        "google_fit_oauth",
-        `width=${width},height=${height},left=${left},top=${top},status=no,resizable=yes,scrollbars=yes`
-      );
-
-      if (!popup) {
-        setFitSyncError("Popup was blocked by the browser. Please enable popups to link Google Fit.");
-      }
-    } catch (e: any) {
-      console.error("OAuth init failed", e);
-      setFitSyncError(e.message || "Failed to start Google Fit Connection");
-    }
-  };
-
-  const triggerStepSync = () => {
-    if (state?.isFitConnected) {
-      setSyncTrigger(prev => prev + 1);
-    }
-  };
 
   const updateState = (updater: (prev: OSState) => OSState) => {
     setState(prev => {
@@ -740,13 +527,9 @@ export default function App() {
               className="h-full"
             >
               {view === 'dashboard' && (
-                <Dashboard 
-                  state={state} 
-                  updateState={updateState} 
-                  onConnectGoogleFit={connectGoogleFit}
-                  onTriggerStepSync={triggerStepSync}
-                  isSyncingSteps={isSyncingSteps}
-                  fitSyncError={fitSyncError}
+                <Dashboard
+                  state={state}
+                  updateState={updateState}
                 />
               )}
               {view === 'business' && <BusinessHub state={state} updateState={updateState} />}
@@ -779,4 +562,37 @@ export default function App() {
         >
           <Sliders size={22} className="text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
         </button>
-        <button onClick={() => setView('review')} className={`flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all ${view === 'review' ? 'text-white 
+        <button onClick={() => setView('review')} className={`flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all ${view === 'review' ? 'text-white bg-white/10' : 'text-white/40'}`}>
+          <BarChart3 size={20} />
+        </button>
+        <button onClick={() => setView('vision')} className={`flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all ${view === 'vision' ? 'text-white bg-white/10' : 'text-white/40'}`}>
+          <Eye size={20} />
+        </button>
+        <button onClick={() => setView('buy_list')} className={`relative flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all ${view === 'buy_list' ? 'text-white bg-white/10' : 'text-white/40'}`}>
+          <ShoppingCart size={20} />
+          {state.tasks.filter(t => !t.done).length > 0 && <span className="absolute -top-1 -right-1 bg-brand-500 text-white min-w-4 h-4 rounded-full text-[9px] flex items-center justify-center font-bold px-1 ring-2 ring-[#02040a]">{state.tasks.filter(t => !t.done).length}</span>}
+        </button>
+      </nav>
+
+      {/* DIAGNOSTIC POPUP & SERVICES CONSOLE */}
+      <SystemLogsModal 
+        isOpen={logsPanelOpen}
+        onClose={() => setLogsPanelOpen(false)}
+        state={state}
+        updateState={updateState}
+        user={user}
+        logout={logout}
+        logs={appLogs}
+        selectedAtmosphereMode={selectedAtmosphereMode}
+        setSelectedAtmosphereMode={setSelectedAtmosphereMode}
+      />
+
+      <RewardModal 
+        isOpen={rewardModalOpen}
+        onClose={() => setRewardModalOpen(false)}
+        rewardContent={currentReward}
+      />
+
+    </div>
+  );
+}

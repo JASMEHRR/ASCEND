@@ -54,9 +54,6 @@ export interface OSState {
   ideas: Idea[];
   visionBoard: VisionItem[];
   steps: number;
-  isFitConnected: boolean;
-  fitLastSync?: string;
-  fitStatus?: string;
   primaryObjective?: PrimaryObjective;
   founderMode?: boolean;
   mentalState?: MentalState;

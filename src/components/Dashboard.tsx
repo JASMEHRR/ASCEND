@@ -8,12 +8,8 @@ import {
   Plus,
   Check,
   X,
-  ShieldCheck,
   Zap,
   RefreshCw,
-  Clipboard,
-  ClipboardCheck,
-  HelpCircle,
   Activity,
   Award,
   CircleDot,
@@ -37,10 +33,6 @@ import AnimatedCheckboxItem from './AnimatedCheckboxItem';
 interface Props {
   state: OSState;
   updateState: (updater: (prev: OSState) => OSState) => void;
-  onConnectGoogleFit?: () => void;
-  onTriggerStepSync?: () => void;
-  isSyncingSteps?: boolean;
-  fitSyncError?: string | null;
 }
 
 const SIDE_QUESTS = [
@@ -74,16 +66,7 @@ const DEFAULT_WIDGETS = [
   { id: 'scratchpad', label: 'Quick Notes' }
 ];
 
-export default function Dashboard({ 
-  state, 
-  updateState,
-  onConnectGoogleFit,
-  onTriggerStepSync,
-  isSyncingSteps,
-  fitSyncError
-}: Props) {
-  const [exactUri, setExactUri] = useState<string>("");
-  const [copied, setCopied] = useState(false);
+export default function Dashboard({ state, updateState }: Props) {
   const [isEditingSteps, setIsEditingSteps] = useState(false);
   const [inputStepsVal, setInputStepsVal] = useState<string>("");
 
@@ -137,24 +120,6 @@ export default function Dashboard({
       updateState(prev => ({ ...prev, steps: parsed }));
     }
     setIsEditingSteps(false);
-  };
-
-  useEffect(() => {
-    // Fetch the exact redirect URI from the server
-    const origin = window.location.origin;
-    fetch(`/api/auth/google/url?origin=${encodeURIComponent(origin)}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.exactRedirectUri) setExactUri(data.exactRedirectUri);
-      })
-      .catch(console.error);
-  }, []);
-
-  const handleCopyUri = () => {
-    const uriToCopy = exactUri || `${window.location.origin}/api/auth/callback/google`;
-    navigator.clipboard.writeText(uriToCopy);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
   };
 
   const toggleRitual = (id: string) => {
@@ -438,9 +403,6 @@ export default function Dashboard({
         const stepGoal = 10000;
         const stepPct = Math.min(100, (steps / stepGoal) * 100);
         const goalReached = steps >= stepGoal;
-        const lastSync = state.fitLastSync
-          ? new Date(state.fitLastSync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          : null;
         return (
           <div className="w-full space-y-3">
             <div className={`bg-white/[0.02] backdrop-blur-[24px] saturate-125 border rounded-[2rem] shadow-[15px_15px_30px_rgba(0,0,0,0.4)] p-5 flex flex-col gap-4 transition-all duration-500 ${goalReached ? 'border-emerald-500/25' : 'border-white/12'}`}>
@@ -497,48 +459,24 @@ export default function Dashboard({
                         </button>
                       </div>
                     )}
-                    {lastSync && state.isFitConnected && (
+                    {!isEditingSteps && (
                       <span className="text-[9px] text-white/25 font-mono mt-0.5 block">
-                        Last sync: {lastSync}
-                      </span>
-                    )}
-                    {!state.isFitConnected && (
-                      <span className="text-[9px] text-white/25 font-mono mt-0.5 block">
-                        Tap the pencil to enter steps manually
+                        Tap to log your steps for today
                       </span>
                     )}
                   </div>
                 </div>
 
-                {/* Right: action buttons */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  {state.isFitConnected ? (
-                    <>
-                      <button
-                        onClick={onTriggerStepSync}
-                        disabled={isSyncingSteps}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-white/[0.04] hover:bg-white/[0.1] text-white rounded-xl text-[10px] font-extrabold uppercase tracking-widest transition-all border border-white/10 disabled:opacity-50 cursor-pointer shadow-sm"
-                      >
-                        <RefreshCw size={11} className={isSyncingSteps ? 'animate-spin text-white/50' : ''} />
-                        {isSyncingSteps ? 'Syncing...' : 'Sync Now'}
-                      </button>
-                      <button
-                        onClick={onConnectGoogleFit}
-                        className="flex items-center gap-1.5 px-4 py-2.5 bg-white/5 hover:bg-white/12 text-white/60 hover:text-white rounded-xl text-[10px] font-extrabold uppercase tracking-widest transition-all border border-white/5 cursor-pointer"
-                      >
-                        Reconnect
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      onClick={onConnectGoogleFit}
-                      className="flex items-center gap-2 px-5 py-3 bg-white/[0.06] hover:bg-white/[0.12] text-white border border-white/15 hover:border-white/25 rounded-2xl text-[10px] font-extrabold uppercase tracking-[0.12em] transition-all cursor-pointer shadow-sm"
-                    >
-                      <Zap size={12} className="text-amber-400" />
-                      Connect Google Fit
-                    </button>
-                  )}
-                </div>
+                {/* Right: log action */}
+                {!isEditingSteps && (
+                  <button
+                    onClick={handleStartEditingSteps}
+                    className="flex items-center gap-2 px-5 py-3 bg-white/[0.06] hover:bg-white/[0.12] text-white border border-white/15 hover:border-white/25 rounded-2xl text-[10px] font-extrabold uppercase tracking-[0.12em] transition-all cursor-pointer shadow-sm"
+                  >
+                    <Pencil size={12} className="text-white/60" />
+                    Log Steps
+                  </button>
+                )}
               </div>
 
               {/* Progress bar with milestones */}
@@ -563,20 +501,6 @@ export default function Dashboard({
                 </div>
               </div>
             </div>
-
-            {fitSyncError && (
-              <div className="bg-red-500/10 border border-red-500/25 rounded-[2rem] p-6 space-y-5 shadow-2xl relative overflow-hidden">
-                <p className="text-[10.5px] text-white/60 leading-relaxed font-sans">{fitSyncError}</p>
-                <div className="border-t border-white/5 pt-4 space-y-3">
-                  <p className="text-[9.5px] font-mono font-bold text-white/40 uppercase tracking-widest">Authorized Redirect URI:</p>
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                    <span className="flex-1 font-mono text-[10.5px] bg-black/50 px-4 py-3.5 rounded-xl border border-white/8 text-white/85 select-all overflow-x-auto whitespace-nowrap shadow-sm">
-                      {exactUri || `${window.location.origin}/api/auth/callback/google`}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         );
       }
