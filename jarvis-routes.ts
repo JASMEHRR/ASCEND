@@ -11,7 +11,7 @@
  * key/deploy shape as the other routes.
  */
 import { Router, type Request, type Response } from 'express';
-import { getGemini, GEMINI_MODEL, extractJson, GeminiError } from './gemini';
+import { getGemini, GEMINI_MODEL, GEMINI_FALLBACK_MODEL, extractJson, GeminiError, isQuotaError } from './gemini';
 
 export const jarvisRouter = Router();
 
@@ -84,15 +84,32 @@ jarvisRouter.post('/', async (req: Request, res: Response) => {
     }));
 
     const ai = await getGemini();
-    const response = await ai.models.generateContent({
-      model: GEMINI_MODEL,
-      contents,
-      config: {
-        systemInstruction: buildSystem(toolDecls, context),
-        responseMimeType: 'application/json',
-        maxOutputTokens: 4096,
-      },
-    });
+    const config = {
+      systemInstruction: buildSystem(toolDecls, context),
+      responseMimeType: 'application/json',
+      maxOutputTokens: 4096,
+    };
+
+    // Free-tier daily quotas are per-model, so a quota failure on the primary
+    // model gets one shot on the lite model before giving up — Jarvis staying
+    // responsive matters more than which flash variant answered.
+    let response;
+    try {
+      response = await ai.models.generateContent({ model: GEMINI_MODEL, contents, config });
+    } catch (err) {
+      if (!isQuotaError(err)) throw err;
+      try {
+        response = await ai.models.generateContent({ model: GEMINI_FALLBACK_MODEL, contents, config });
+      } catch (err2) {
+        if (isQuotaError(err2)) {
+          throw new GeminiError(
+            429,
+            "I've hit the AI quota for today, sir. The Gemini free tier resets daily — or upgrade the API key's plan for uninterrupted service.",
+          );
+        }
+        throw err2;
+      }
+    }
 
     // Pass the model's JSON through; the client fully validates/normalizes it.
     const raw = response.text ?? '';

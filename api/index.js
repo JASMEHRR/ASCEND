@@ -4,6 +4,11 @@ import dotenv from "dotenv";
 
 // gemini.ts
 var GEMINI_MODEL = "gemini-2.5-flash";
+var GEMINI_FALLBACK_MODEL = "gemini-2.5-flash-lite";
+function isQuotaError(err) {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /RESOURCE_EXHAUSTED|"code"\s*:\s*429|exceeded your current quota|rate.?limit/i.test(msg);
+}
 var GeminiError = class extends Error {
   constructor(status, message) {
     super(message);
@@ -346,15 +351,28 @@ jarvisRouter.post("/", async (req, res) => {
       parts: [{ text: String(m.content ?? "") }]
     }));
     const ai = await getGemini();
-    const response = await ai.models.generateContent({
-      model: GEMINI_MODEL,
-      contents,
-      config: {
-        systemInstruction: buildSystem(toolDecls, context),
-        responseMimeType: "application/json",
-        maxOutputTokens: 4096
+    const config = {
+      systemInstruction: buildSystem(toolDecls, context),
+      responseMimeType: "application/json",
+      maxOutputTokens: 4096
+    };
+    let response;
+    try {
+      response = await ai.models.generateContent({ model: GEMINI_MODEL, contents, config });
+    } catch (err) {
+      if (!isQuotaError(err)) throw err;
+      try {
+        response = await ai.models.generateContent({ model: GEMINI_FALLBACK_MODEL, contents, config });
+      } catch (err2) {
+        if (isQuotaError(err2)) {
+          throw new GeminiError(
+            429,
+            "I've hit the AI quota for today, sir. The Gemini free tier resets daily \u2014 or upgrade the API key's plan for uninterrupted service."
+          );
+        }
+        throw err2;
       }
-    });
+    }
     const raw = response.text ?? "";
     try {
       const obj = JSON.parse(extractJson(raw));

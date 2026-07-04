@@ -8,6 +8,14 @@
 import type { GoogleGenAI } from '@google/genai';
 
 export const GEMINI_MODEL = 'gemini-2.5-flash';
+/** Fallback when the primary model's (tiny) free-tier daily quota is exhausted. */
+export const GEMINI_FALLBACK_MODEL = 'gemini-2.5-flash-lite';
+
+/** Does this upstream error mean "quota/rate exhausted for this model"? */
+export function isQuotaError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /RESOURCE_EXHAUSTED|"code"\s*:\s*429|exceeded your current quota|rate.?limit/i.test(msg);
+}
 
 /** Error carrying an HTTP status for the route error handlers. */
 export class GeminiError extends Error {
