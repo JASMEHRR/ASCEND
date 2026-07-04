@@ -137,11 +137,11 @@ export const FEATURES: FeatureModule[] = [
   {
     id: 'gmail',
     label: 'Gmail',
-    description: 'Inbox summaries and reply drafts you approve before sending.',
+    description: 'Inbox summaries, urgent flags, and reply drafts — it never sends for you.',
     icon: Mail,
     nav: false,
-    defaultEnabled: false,
-    status: 'coming-soon',
+    defaultEnabled: true,
+    status: 'active',
   },
   {
     id: 'stocks',
