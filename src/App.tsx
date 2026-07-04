@@ -20,6 +20,8 @@ import type { OSState } from './types';
 import { useAuth } from './context/AuthContext';
 import { useDialog } from './context/DialogContext';
 import { useCloudSync } from './hooks/useCloudSync';
+import { useStreak } from './hooks/useStreak';
+import { disciplineScore } from './lib/discipline';
 import Dashboard from './components/Dashboard';
 import CountdownTimer from './components/CountdownTimer';
 import AtmosphereBackdrop, { getAutoAtmosphereId, ATMOSPHERES } from './components/AtmosphereBackdrop';
@@ -58,19 +60,6 @@ const NAV_ITEMS: { key: View; label: string; icon: ReactNode }[] = [
   { key: 'buy_list', label: 'Purchases', icon: <ShoppingCart size={14} /> },
 ];
 
-function calculateProgress(state: OSState): number {
-  let score = 0;
-  score += Object.values(state.rituals).filter(Boolean).length * 4;
-  score += Object.values(state.exerciseAM).filter(Boolean).length * 5;
-  score += Object.values(state.exercisePM).filter(Boolean).length * 5;
-  if (state.water >= 3) score += 5;
-  if (state.water >= 5) score += 5;
-  if (state.steps > 5000) score += 10;
-  if (state.steps > 10000) score += 15;
-  if (state.primaryObjective?.done) score += 30;
-  score += state.tasks.filter((t) => t.done).length * 2;
-  return Math.min(100, Math.round(score));
-}
 
 function FullScreenLoader({ label }: { label: string }) {
   return (
@@ -172,12 +161,15 @@ export default function App() {
     }
   }, [state?.points, lastPointMilestone]);
 
+  // Maintain the daily activity streak once there's any progress today.
+  useStreak(state, updateState, !!state && disciplineScore(state) > 0);
+
   // --- Auth / load gates (all hooks above run unconditionally) ---
   if (initializing) return <FullScreenLoader label="Connecting…" />;
   if (!user) return <LoginScreen />;
   if (!state) return <FullScreenLoader label="Loading your protocol…" />;
 
-  const currentScore = calculateProgress(state);
+  const currentScore = disciplineScore(state);
   const openTasks = state.tasks.filter((t) => !t.done).length;
 
   return (

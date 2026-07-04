@@ -39,6 +39,8 @@ function syncPayload(s: OSState) {
     customPM: s.customPM ?? [],
     steps: s.steps,
     weight: s.weight ?? null,
+    streak: s.streak ?? 0,
+    streakDate: s.streakDate ?? null,
     physioState: s.physioState ?? null,
     primaryObjective: s.primaryObjective ?? null,
   };
@@ -121,6 +123,8 @@ export function useCloudSync(uid: string | null): CloudSync {
           customPM: latestDaily.customPM ?? base.customPM,
           steps: latestDaily.steps ?? base.steps,
           weight: latestDaily.weight ?? base.weight,
+          streak: latestUser.streak ?? base.streak,
+          streakDate: latestUser.streakDate ?? base.streakDate,
           physioState: latestDaily.physioState ?? base.physioState,
           primaryObjective: latestDaily.primaryObjective ?? base.primaryObjective,
           lastVisit: todayStr(),
@@ -175,7 +179,7 @@ export function useCloudSync(uid: string | null): CloudSync {
       try {
         await setDoc(
           doc(db, 'users', uid),
-          { tasks: p.tasks, ideas: p.ideas, visionBoard: p.visionBoard, points: p.points },
+          { tasks: p.tasks, ideas: p.ideas, visionBoard: p.visionBoard, points: p.points, streak: p.streak, streakDate: p.streakDate },
           { merge: true },
         );
         await setDoc(

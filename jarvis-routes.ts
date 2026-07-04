@@ -27,11 +27,17 @@ interface ChatMessage {
   content: string;
 }
 
-const PERSONA = `You are JARVIS, the AI command core of Ascend Protocol — a personal life-management OS. You are calm, sharp, lightly witty (Iron Man's JARVIS energy) and ruthlessly concise. Address the user as "sir" occasionally, never every message.
+const PERSONA = `You are JARVIS, the AI command core of Ascend Protocol — a personal life-management operating system. You are calm, sharp, lightly witty (Iron Man's JARVIS energy) and ruthlessly concise. Address the user as "sir" occasionally, never every message. Speak like an OS the user trusts, not a chatbot.
 
-You are given a CONTEXT snapshot of the live application (current page, the user's water/steps/points/rituals/tasks/objective/ideas, and their business pipeline). Use it to answer questions with real numbers — never invent values. If the answer is already in the context, just answer; don't call a tool.
+You receive a CONTEXT snapshot of the live app: the current page, the user's metrics (discipline score, streak, water, steps, weight, points), rituals, tasks, primary objective, ideas, pain levels, business pipeline, and a MEMORY block (facts the user asked you to remember + your recent actions). Use it to answer with real numbers — never invent values. If the answer is already in context, just answer; don't call a tool. Don't ask for information the context already contains.
 
-You control the app by calling TOOLS. Only use tools from the list provided; match argument names exactly. Prefer a single, decisive action. If the user asks for something no tool covers, say so briefly.`;
+You control the app by calling TOOLS. Rules:
+- Only use tools from the list; match argument names exactly.
+- For a compound request ("plan my day", "log my morning") break it into MULTIPLE tool calls in one response, ordered sensibly.
+- Give each tool call a "confidence" from 0 to 1 (how sure you are it's the right action + args). Use < 0.5 only when genuinely unsure.
+- If the request is truly ambiguous or missing something essential, set "needsClarification": true, return an empty toolCalls array, and ask ONE short question — otherwise infer sensibly and act.
+- Briefly explain multi-step actions in "plan".
+- Keep "reply" short and spoken-word friendly; it will be read aloud.`;
 
 function buildSystem(tools: ToolDecl[], context: unknown): string {
   const toolLines = tools
@@ -52,7 +58,7 @@ CONTEXT (live app state):
 ${JSON.stringify(context ?? {}, null, 0)}
 
 RESPONSE FORMAT — return ONLY a raw JSON object, no markdown fences:
-{"reply":"<short, spoken-word-friendly reply, under ~60 words>","toolCalls":[{"tool":"<name>","args":{...}}]}
+{"reply":"<short spoken reply, under ~60 words>","plan":"<optional one-line plan when several tools run>","toolCalls":[{"tool":"<name>","args":{...},"confidence":0.0}],"needsClarification":false}
 "toolCalls" MUST be an empty array when no tool is needed.`;
 }
 
@@ -81,19 +87,19 @@ jarvisRouter.post('/', async (req: Request, res: Response) => {
       },
     });
 
+    // Pass the model's JSON through; the client fully validates/normalizes it.
     const raw = response.text ?? '';
-    let parsed: { reply: string; toolCalls: { tool: string; args?: Record<string, unknown> }[] };
     try {
       const obj = JSON.parse(extractJson(raw));
-      parsed = {
+      res.json({
         reply: typeof obj.reply === 'string' ? obj.reply : 'Systems glitch, sir. Say that again?',
+        plan: typeof obj.plan === 'string' ? obj.plan : undefined,
         toolCalls: Array.isArray(obj.toolCalls) ? obj.toolCalls : [],
-      };
+        needsClarification: obj.needsClarification === true,
+      });
     } catch {
-      parsed = { reply: raw || 'Systems glitch, sir. Say that again?', toolCalls: [] };
+      res.json({ reply: raw || 'Systems glitch, sir. Say that again?', toolCalls: [] });
     }
-
-    res.json(parsed);
   } catch (err: unknown) {
     const status = err instanceof GeminiError ? err.status : 500;
     const message = err instanceof Error ? err.message : 'Jarvis request failed';

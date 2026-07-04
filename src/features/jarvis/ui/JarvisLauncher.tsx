@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Sparkles } from 'lucide-react';
-import { useJarvis } from './JarvisContext';
+import { useJarvis } from '../engine/JarvisProvider';
 
 /** The always-present floating orb that opens Jarvis. Also binds Cmd/Ctrl+J. */
 export default function JarvisLauncher() {
@@ -18,6 +18,8 @@ export default function JarvisLauncher() {
     return () => window.removeEventListener('keydown', onKey);
   }, [toggle]);
 
+  const active = voice.listening || voice.speaking;
+
   return (
     <motion.button
       onClick={toggle}
@@ -28,7 +30,7 @@ export default function JarvisLauncher() {
     >
       <motion.div
         animate={
-          voice.listening
+          active
             ? { scale: [1, 1.25, 1], opacity: [1, 0.7, 1] }
             : thinking
               ? { rotate: 360 }
@@ -37,13 +39,13 @@ export default function JarvisLauncher() {
         transition={
           thinking
             ? { repeat: Infinity, duration: 1.2, ease: 'linear' }
-            : { repeat: Infinity, duration: voice.listening ? 0.9 : 3 }
+            : { repeat: Infinity, duration: active ? 0.9 : 3 }
         }
         className="text-brand-400"
       >
         <Sparkles size={22} />
       </motion.div>
-      {voice.listening && <span className="absolute inset-0 rounded-full animate-ping bg-brand-400/20" />}
+      {active && <span className="absolute inset-0 rounded-full animate-ping bg-brand-400/20" />}
     </motion.button>
   );
 }

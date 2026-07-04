@@ -55,6 +55,10 @@ export interface OSState {
   visionBoard: VisionItem[];
   steps: number;
   weight?: number;
+  /** Consecutive days with activity; maintained by useStreak. */
+  streak?: number;
+  /** YYYY-MM-DD the streak was last credited. */
+  streakDate?: string;
   primaryObjective?: PrimaryObjective;
   founderMode?: boolean;
   mentalState?: MentalState;

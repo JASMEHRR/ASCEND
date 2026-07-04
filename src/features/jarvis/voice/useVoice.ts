@@ -20,6 +20,7 @@ interface UseVoiceOptions {
  */
 export function useVoice({ onResult }: UseVoiceOptions) {
   const [listening, setListening] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
   const [interim, setInterim] = useState('');
   const [muted, setMuted] = useState(false);
 
@@ -34,7 +35,7 @@ export function useVoice({ onResult }: UseVoiceOptions) {
   const speak = useCallback((text: string) => {
     if (mutedRef.current || !synthAvailable || !text) return;
     window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
+    const u = new SpeechSynthesisUtterance(text.replace(/[*_`#>]/g, ''));
     u.rate = 1.05;
     u.pitch = 0.9;
     const voices = window.speechSynthesis.getVoices();
@@ -43,16 +44,18 @@ export function useVoice({ onResult }: UseVoiceOptions) {
       voices.find((v) => /en[-_]GB/i.test(v.lang)) ||
       voices.find((v) => /en/i.test(v.lang));
     if (preferred) u.voice = preferred;
+    u.onstart = () => setSpeaking(true);
+    u.onend = () => setSpeaking(false);
+    u.onerror = () => setSpeaking(false);
     window.speechSynthesis.speak(u);
   }, []);
 
   const stopSpeaking = useCallback(() => {
     if (synthAvailable) window.speechSynthesis.cancel();
+    setSpeaking(false);
   }, []);
 
-  const stop = useCallback(() => {
-    recogRef.current?.stop();
-  }, []);
+  const stop = useCallback(() => recogRef.current?.stop(), []);
 
   const start = useCallback(() => {
     if (!SpeechRecognitionImpl || listening) return;
@@ -93,8 +96,7 @@ export function useVoice({ onResult }: UseVoiceOptions) {
     });
   }, [stopSpeaking]);
 
-  // Cancel any speech on unmount.
   useEffect(() => stopSpeaking, [stopSpeaking]);
 
-  return { listening, interim, muted, inputSupported, start, stop, speak, stopSpeaking, toggleMuted };
+  return { listening, speaking, interim, muted, inputSupported, start, stop, speak, stopSpeaking, toggleMuted };
 }
