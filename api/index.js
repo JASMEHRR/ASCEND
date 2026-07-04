@@ -298,7 +298,11 @@ launchRouter.use((err, _req, res, _next) => {
 // jarvis-routes.ts
 import { Router as Router2 } from "express";
 var jarvisRouter = Router2();
-var PERSONA = `You are JARVIS, the AI command core of Ascend Protocol \u2014 a personal life-management operating system. You are calm, sharp, lightly witty (Iron Man's JARVIS energy) and ruthlessly concise. Address the user as "sir" occasionally, never every message. Speak like an OS the user trusts, not a chatbot.
+var PERSONA = `You are JARVIS, the AI command core of Ascend Protocol \u2014 a personal life-management operating system. You are calm, sharp, lightly witty (Iron Man's JARVIS energy). Address the user as "sir" occasionally, never every message. Speak like an OS the user trusts, not a chatbot.
+
+You are ALSO a fully capable general-purpose assistant. When the user asks about anything unrelated to Ascend \u2014 general knowledge, explanations, advice, math, writing, current topics, casual conversation \u2014 answer it directly and completely, exactly as a top-tier AI assistant would. NEVER refuse, deflect, or say you can only help with app-related things. App awareness layers on top of general capability; it never limits it.
+
+This is an ongoing conversation: the message history contains the prior turns of this session. Maintain continuity \u2014 remember and reference what was said earlier in the conversation, resolve pronouns and follow-ups against previous messages, and never treat a follow-up as a brand-new request.
 
 You receive a CONTEXT snapshot of the live app: the current page, the user's metrics (discipline score, streak, water, steps, weight, points), rituals, tasks, primary objective, ideas, pain levels, business pipeline, and a MEMORY block (facts the user asked you to remember + your recent actions). Use it to answer with real numbers \u2014 never invent values. If the answer is already in context, just answer; don't call a tool. Don't ask for information the context already contains.
 
@@ -308,7 +312,10 @@ You control the app by calling TOOLS. Rules:
 - Give each tool call a "confidence" from 0 to 1 (how sure you are it's the right action + args). Use < 0.5 only when genuinely unsure.
 - If the request is truly ambiguous or missing something essential, set "needsClarification": true, return an empty toolCalls array, and ask ONE short question \u2014 otherwise infer sensibly and act.
 - Briefly explain multi-step actions in "plan".
-- Keep "reply" short and spoken-word friendly; it will be read aloud.`;
+
+Reply lengths:
+- "reply" is what is DISPLAYED. For confirmations of actions, keep it to a sentence or two. For informational or general-knowledge questions, give a genuinely useful, complete answer \u2014 markdown lists, tables, and code blocks are supported. Do not artificially truncate a real answer.
+- "speak" is the short spoken version (under ~40 words), read aloud via text-to-speech. Include it whenever "reply" is more than a couple of sentences; omit it when "reply" is already short.`;
 function buildSystem(tools, context) {
   const toolLines = tools.map((t) => {
     const params = t.parameters && Object.keys(t.parameters).length ? Object.entries(t.parameters).map(([k, d]) => `${k} (${d})`).join(", ") : "none";
@@ -323,7 +330,7 @@ CONTEXT (live app state):
 ${JSON.stringify(context ?? {}, null, 0)}
 
 RESPONSE FORMAT \u2014 return ONLY a raw JSON object, no markdown fences:
-{"reply":"<short spoken reply, under ~60 words>","plan":"<optional one-line plan when several tools run>","toolCalls":[{"tool":"<name>","args":{...},"confidence":0.0}],"needsClarification":false}
+{"reply":"<displayed answer \u2014 complete for questions, brief for actions>","speak":"<optional short spoken version, under ~40 words>","plan":"<optional one-line plan when several tools run>","toolCalls":[{"tool":"<name>","args":{...},"confidence":0.0}],"needsClarification":false}
 "toolCalls" MUST be an empty array when no tool is needed.`;
 }
 jarvisRouter.post("/", async (req, res) => {
@@ -345,7 +352,7 @@ jarvisRouter.post("/", async (req, res) => {
       config: {
         systemInstruction: buildSystem(toolDecls, context),
         responseMimeType: "application/json",
-        maxOutputTokens: 2048
+        maxOutputTokens: 4096
       }
     });
     const raw = response.text ?? "";
@@ -353,6 +360,7 @@ jarvisRouter.post("/", async (req, res) => {
       const obj = JSON.parse(extractJson(raw));
       res.json({
         reply: typeof obj.reply === "string" ? obj.reply : "Systems glitch, sir. Say that again?",
+        speak: typeof obj.speak === "string" ? obj.speak : void 0,
         plan: typeof obj.plan === "string" ? obj.plan : void 0,
         toolCalls: Array.isArray(obj.toolCalls) ? obj.toolCalls : [],
         needsClarification: obj.needsClarification === true
@@ -368,6 +376,78 @@ jarvisRouter.post("/", async (req, res) => {
   }
 });
 
+// stocks-routes.ts
+import { Router as Router3 } from "express";
+var stocksRouter = Router3();
+var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36";
+var cache = /* @__PURE__ */ new Map();
+var CACHE_MS = 6e4;
+async function fetchQuote(symbol) {
+  const hit = cache.get(symbol);
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.quote;
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=1d`;
+  const res = await fetch(url, { headers: { "User-Agent": UA, Accept: "application/json" } });
+  if (!res.ok) return null;
+  const data = await res.json().catch(() => null);
+  const meta = data?.chart?.result?.[0]?.meta;
+  if (!meta || typeof meta.regularMarketPrice !== "number") return null;
+  const prevClose = typeof meta.chartPreviousClose === "number" ? meta.chartPreviousClose : null;
+  const quote = {
+    symbol: meta.symbol ?? symbol,
+    name: meta.shortName ?? meta.longName ?? null,
+    price: meta.regularMarketPrice,
+    prevClose,
+    changePct: prevClose ? (meta.regularMarketPrice - prevClose) / prevClose * 100 : null,
+    currency: meta.currency ?? null,
+    exchange: meta.exchangeName ?? null
+  };
+  cache.set(symbol, { at: Date.now(), quote });
+  return quote;
+}
+stocksRouter.get("/quotes", async (req, res) => {
+  const raw = String(req.query.symbols ?? "").trim();
+  if (!raw) {
+    res.status(400).json({ error: "`symbols` query param is required (comma-separated)." });
+    return;
+  }
+  const symbols = [...new Set(raw.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean))].slice(0, 25);
+  try {
+    const results = await Promise.all(
+      symbols.map(async (s) => {
+        try {
+          return await fetchQuote(s);
+        } catch {
+          return null;
+        }
+      })
+    );
+    const quotes = results.filter((q) => q !== null);
+    const failed = symbols.filter((s) => !quotes.some((q) => q.symbol.toUpperCase() === s));
+    res.json({ quotes, failed });
+  } catch (err) {
+    console.error("[stocks]", err);
+    res.status(502).json({ error: "Market data is unavailable right now (upstream error)." });
+  }
+});
+stocksRouter.get("/search", async (req, res) => {
+  const q = String(req.query.q ?? "").trim();
+  if (!q) {
+    res.status(400).json({ error: "`q` query param is required." });
+    return;
+  }
+  try {
+    const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=8&newsCount=0`;
+    const res2 = await fetch(url, { headers: { "User-Agent": UA, Accept: "application/json" } });
+    if (!res2.ok) throw new Error(`upstream ${res2.status}`);
+    const data = await res2.json();
+    const matches = (data?.quotes ?? []).filter((m) => m.symbol && (m.quoteType === "EQUITY" || m.quoteType === "ETF" || m.quoteType === "INDEX" || m.quoteType === "MUTUALFUND")).map((m) => ({ symbol: m.symbol, name: m.shortname ?? m.longname ?? null, exchange: m.exchDisp ?? m.exchange ?? null }));
+    res.json({ matches });
+  } catch (err) {
+    console.error("[stocks:search]", err);
+    res.status(502).json({ error: "Symbol search is unavailable right now (upstream error)." });
+  }
+});
+
 // server.ts
 dotenv.config({ override: true });
 var app = express();
@@ -375,6 +455,7 @@ app.set("trust proxy", true);
 app.use(express.json({ limit: "256kb" }));
 app.use("/api/launch", launchRouter);
 app.use("/api/jarvis", jarvisRouter);
+app.use("/api/stocks", stocksRouter);
 var PHYSIO_SYSTEM_PROMPT = `You are Alex, a highly knowledgeable personal AI physiotherapist assistant specialising in spinal rehab, posture correction, gait mechanics, sports recovery, and mobility training.
 
 Your role is to help the user safely manage and improve these conditions:

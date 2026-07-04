@@ -28,32 +28,30 @@ prompt; decisions already made are recorded here so nothing needs re-asking.
 
 ## Phase checklist
 
-- [x] Phase 0 — Housekeeping: this file; fixed dangling `review` view in
-      `appTools.ts` navigate tool; de-hardcoded the stale "Launch Before June 29"
-      BusinessHub header (now shows `state.primaryObjective`).
-- [ ] Phase 1 — Conversational quality: keep ✓/⚠ status suffixes out of the
-      model-bound transcript; allow full-length answers for informational/general
-      questions (drop the blanket ~60-word cap; keep spoken reply short separately);
-      reinforce general-purpose scope in PERSONA. Test: reference something from
-      2+ messages earlier.
-- [ ] Phase 2 — Voice: deterministic persisted voice pick (en-GB male chain,
-      `onvoiceschanged`-safe), settings picker, persist mute.
-- [ ] Phase 3 — UI overhaul: canvas particle-network orb (state → density/motion/
-      glow); minimal home (orb + input); collapsible secondary panels, one-at-a-time
-      on small viewports; cap recent-action chips at 3; persistent settings icon
-      near orb; light+dark themes; de-duplicate header stats.
-- [ ] Phase 4 — Toggle framework: flagship features become real toggleable modules;
-      per-Launch-subtab toggles; instant dashboard updates.
-- [ ] Phase 5 — Google GIS OAuth + Calendar read/write + daily planning
-      (propose → approve → sync). GOOGLE_SETUP.md for the user.
-- [ ] Phase 6 — Gmail: inbox summary, urgent flags, draft replies (never auto-send).
-- [ ] Phase 7 — Stocks/finance: Yahoo proxy routes; portfolio, watchlist+alerts,
-      budgeting, net worth via `updateState`.
-- [ ] Phase 8 — Journaling: text+voice, Obsidian `Journal/` sync, toggleable.
-- [ ] Phase 9 — Proactive insights: toast system, active-hours gate (default
-      08:00–22:00, configurable), toast + voice delivery, throttled.
-- [ ] Phase 10 — `tsc --noEmit` clean, build, push main, verify LIVE on deployed
-      site (multi-turn memory test, voice, toggles, declutter).
+- [x] Phase 0 — Housekeeping (e9da9bc)
+- [x] Phase 1 — Conversational quality (5534d2f): clean model transcript, `speak`
+      vs `reply` split, general-purpose + continuity persona, 4096 max tokens.
+      Multi-turn verified against the deployed API (recalled facts from 2 and 4
+      messages back). UI-level live test pending below.
+- [x] Phase 2 — Voice pinned + persisted, settings picker, mute persists (e62e5a4)
+- [x] Phase 3 — UI overhaul (e77ab38): canvas particle orb, minimal orb-first
+      home, collapsible dock (one panel at a time), chips capped at 3,
+      Customize button in dock, light+dark liquid glass, header de-duplicated
+- [x] Phase 4 — Per-sub-tool toggles for Strategic Command (33ccde7)
+- [x] Phase 5 — GIS OAuth + Calendar + planning propose→approve (b3d0a8a).
+      NOTE: needs `VITE_GOOGLE_CLIENT_ID` env in Vercel — user action, see
+      GOOGLE_SETUP.md. UI degrades gracefully until then.
+- [x] Phase 6 — Gmail drafts-only module (94097c8)
+- [x] Phase 7 — Stocks & Finance, Yahoo proxy verified live for .NS + US (8f60291)
+- [x] Phase 8 — Journaling + Obsidian vault sync (cbf5435)
+- [x] Phase 9 — Proactive insights, toasts + voice, active hours (826895e)
+- [ ] Phase 10 — push main, deploy, live verification (in progress)
+
+## User actions still required
+
+1. Create the Google OAuth client + set `VITE_GOOGLE_CLIENT_ID` in Vercel
+   (full steps: GOOGLE_SETUP.md). Until then the Google section in Settings
+   shows a "not configured" notice and planning falls back to tasks.
 
 ## Architecture invariants (do not break)
 
