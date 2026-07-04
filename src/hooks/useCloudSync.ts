@@ -7,14 +7,9 @@ export const INITIAL_STATE: OSState = {
   lastVisit: todayStr(),
   water: 0,
   rituals: {},
-  exerciseAM: {},
-  exercisePM: {},
-  customAM: [],
-  customPM: [],
   tasks: [],
   ideas: [],
   visionBoard: [],
-  steps: 0,
   points: 0,
 };
 
@@ -33,11 +28,6 @@ function syncPayload(s: OSState) {
     // users/{uid}/dailyStates/{today}
     water: s.water,
     rituals: s.rituals,
-    exerciseAM: s.exerciseAM,
-    exercisePM: s.exercisePM,
-    customAM: s.customAM ?? [],
-    customPM: s.customPM ?? [],
-    steps: s.steps,
     weight: s.weight ?? null,
     streak: s.streak ?? 0,
     streakDate: s.streakDate ?? null,
@@ -56,8 +46,6 @@ function accruePoints(prev: OSState, next: OSState): number {
   const doneDelta = (a: Record<string, boolean>, b: Record<string, boolean>) =>
     Object.values(b).filter(Boolean).length - Object.values(a).filter(Boolean).length;
   gained += Math.max(0, doneDelta(prev.rituals, next.rituals));
-  gained += Math.max(0, doneDelta(prev.exerciseAM, next.exerciseAM));
-  gained += Math.max(0, doneDelta(prev.exercisePM, next.exercisePM));
 
   const tasksDelta = next.tasks.filter((t) => t.done).length - prev.tasks.filter((t) => t.done).length;
   gained += Math.max(0, tasksDelta);
@@ -117,11 +105,6 @@ export function useCloudSync(uid: string | null): CloudSync {
           points: latestUser.points ?? base.points,
           water: latestDaily.water ?? base.water,
           rituals: latestDaily.rituals ?? base.rituals,
-          exerciseAM: latestDaily.exerciseAM ?? base.exerciseAM,
-          exercisePM: latestDaily.exercisePM ?? base.exercisePM,
-          customAM: latestDaily.customAM ?? base.customAM,
-          customPM: latestDaily.customPM ?? base.customPM,
-          steps: latestDaily.steps ?? base.steps,
           weight: latestDaily.weight ?? base.weight,
           streak: latestUser.streak ?? base.streak,
           streakDate: latestUser.streakDate ?? base.streakDate,
@@ -187,11 +170,6 @@ export function useCloudSync(uid: string | null): CloudSync {
           {
             water: p.water,
             rituals: p.rituals,
-            exerciseAM: p.exerciseAM,
-            exercisePM: p.exercisePM,
-            customAM: p.customAM,
-            customPM: p.customPM,
-            steps: p.steps,
             weight: p.weight,
             physioState: p.physioState,
             primaryObjective: p.primaryObjective,

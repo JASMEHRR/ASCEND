@@ -4,13 +4,6 @@ export interface Ritual {
   category: 'morning' | 'growth' | 'evening';
 }
 
-export interface Exercise {
-  id: string;
-  name: string;
-  meta: string;
-  type: 'back' | 'trek';
-}
-
 export interface Task {
   id: string;
   text: string;
@@ -36,33 +29,19 @@ export interface PrimaryObjective {
   done: boolean;
 }
 
-export interface MentalState {
-  energy: number;
-  focus: number;
-  stress: number;
-}
-
 export interface OSState {
   lastVisit: string;
   water: number;
   rituals: Record<string, boolean>;
-  exerciseAM: Record<string, boolean>;
-  exercisePM: Record<string, boolean>;
-  customAM?: string[];
-  customPM?: string[];
   tasks: Task[];
   ideas: Idea[];
   visionBoard: VisionItem[];
-  steps: number;
   weight?: number;
   /** Consecutive days with activity; maintained by useStreak. */
   streak?: number;
   /** YYYY-MM-DD the streak was last credited. */
   streakDate?: string;
   primaryObjective?: PrimaryObjective;
-  founderMode?: boolean;
-  mentalState?: MentalState;
-  ascendScore?: number;
   points?: number;
   physioState?: {
     back: number;

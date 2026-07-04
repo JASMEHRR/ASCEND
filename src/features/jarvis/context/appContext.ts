@@ -2,13 +2,12 @@ import type { OSState } from '../../../types';
 import { RITUALS } from '../../../constants';
 import type { LaunchState, ProspectStatus } from '../../launch/types';
 
-export type View = 'dashboard' | 'physio' | 'business' | 'review' | 'vision' | 'buy_list';
+export type View = 'dashboard' | 'physio' | 'business' | 'vision' | 'buy_list';
 
 export const VIEW_LABELS: Record<View, string> = {
   dashboard: 'Dashboard',
   physio: 'AI Physio',
   business: 'Strategic Command',
-  review: 'Weekly Review',
   vision: 'Vision Board',
   buy_list: 'Purchases',
 };
@@ -47,7 +46,6 @@ export function buildAppContext({ state, launch, view, userEmail, disciplineScor
       streakDays: streak,
       points: state.points ?? 0,
       water: state.water,
-      steps: state.steps,
       weight: state.weight ?? null,
     },
     rituals: { done: ritualsDone, available: RITUALS.map((r) => r.name) },

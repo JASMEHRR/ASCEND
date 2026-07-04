@@ -1,12 +1,12 @@
 import { Suspense, lazy } from 'react';
 import { AnimatePresence } from 'motion/react';
 import type { OSState } from '../../types';
-import { JarvisProvider, useJarvis } from './engine/JarvisProvider';
+import { useJarvis } from './engine/JarvisProvider';
 import CoreRegistrar from './tools/CoreRegistrar';
 import JarvisLauncher from './ui/JarvisLauncher';
 import type { View } from './context/appContext';
 
-// The conversation UI (+ markdown renderer) is code-split — loads on first open.
+// The floating panel is code-split — loads only when opened.
 const JarvisPanel = lazy(() => import('./ui/JarvisPanel'));
 
 function PanelHost() {
@@ -26,16 +26,22 @@ interface Props {
 }
 
 /**
- * Jarvis — ASCEND's AI command core. Mount once inside the authenticated app.
- * The engine (registry + memory + conversation + voice) lives in JarvisProvider;
- * CoreRegistrar wires ASCEND's tools + context; the panel is lazy-loaded.
+ * Mounts Jarvis into the authenticated app: registers ASCEND's tools/context,
+ * and shows the floating orb + panel on every page EXCEPT the dashboard, where
+ * Jarvis is the page itself (inline console). The engine lives in JarvisProvider
+ * (mounted app-wide in main.tsx) so the dashboard can drive the same conversation.
  */
-export default function Jarvis(props: Props) {
+export default function Jarvis({ state, updateState, view, setView }: Props) {
+  const onDashboard = view === 'dashboard';
   return (
-    <JarvisProvider>
-      <CoreRegistrar {...props} />
-      <JarvisLauncher />
-      <PanelHost />
-    </JarvisProvider>
+    <>
+      <CoreRegistrar state={state} updateState={updateState} view={view} setView={setView} />
+      {!onDashboard && (
+        <>
+          <JarvisLauncher />
+          <PanelHost />
+        </>
+      )}
+    </>
   );
 }

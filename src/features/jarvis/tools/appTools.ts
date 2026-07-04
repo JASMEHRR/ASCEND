@@ -44,18 +44,6 @@ export function createAppTools({ stateRef, updateState, setView }: Deps): Jarvis
       },
     },
     {
-      name: 'logSteps',
-      module: 'Health',
-      description: "Set today's total step count.",
-      parameters: { steps: 'total steps for today' },
-      validate: (a) => (num(a.steps, -1) >= 0 ? null : 'steps must be a number'),
-      execute: (a) => {
-        const s = Math.max(0, Math.round(num(a.steps)));
-        updateState((p) => ({ ...p, steps: s }));
-        return { ok: true, message: `steps → ${s.toLocaleString()}` };
-      },
-    },
-    {
       name: 'logWeight',
       module: 'Health',
       description: 'Record the latest body weight in kilograms.',

@@ -4,6 +4,8 @@ import App from './App.tsx';
 import { AuthProvider } from './context/AuthContext';
 import { DialogProvider } from './context/DialogContext';
 import { LaunchStateProvider } from './features/launch/LaunchStateContext';
+import { JarvisProvider } from './features/jarvis/engine/JarvisProvider';
+import { ObsidianProvider } from './features/obsidian/ObsidianContext';
 import './index.css';
 
 createRoot(document.getElementById('root')!).render(
@@ -11,7 +13,11 @@ createRoot(document.getElementById('root')!).render(
     <AuthProvider>
       <LaunchStateProvider>
         <DialogProvider>
-          <App />
+          <ObsidianProvider>
+            <JarvisProvider>
+              <App />
+            </JarvisProvider>
+          </ObsidianProvider>
         </DialogProvider>
       </LaunchStateProvider>
     </AuthProvider>

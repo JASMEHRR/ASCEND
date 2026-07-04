@@ -7,10 +7,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   LayoutDashboard,
   Lightbulb,
-  BarChart3,
   Eye,
   Activity,
-  Clipboard,
   Sliders,
   ShoppingCart,
   LogOut,
@@ -22,25 +20,24 @@ import { useDialog } from './context/DialogContext';
 import { useCloudSync } from './hooks/useCloudSync';
 import { useStreak } from './hooks/useStreak';
 import { disciplineScore } from './lib/discipline';
-import Dashboard from './components/Dashboard';
-import CountdownTimer from './components/CountdownTimer';
+import JarvisDashboard from './features/jarvis/ui/JarvisDashboard';
 import AtmosphereBackdrop, { getAutoAtmosphereId, ATMOSPHERES } from './components/AtmosphereBackdrop';
 import AtmosphereSelector from './components/AtmosphereSelector';
 import CondensationEffect from './components/CondensationEffect';
 import FlipClock from './components/FlipClock';
-import SystemLogsModal from './components/SystemLogsModal';
+import SettingsModal from './components/SettingsModal';
 import RewardModal from './components/RewardModal';
 import LoginScreen from './components/auth/LoginScreen';
 import Jarvis from './features/jarvis/Jarvis';
+import ObsidianRegistrar from './features/obsidian/ObsidianRegistrar';
 
 // Route views that aren't the default are code-split to keep the initial bundle small.
 const LaunchHub = lazy(() => import('./features/launch/LaunchHub'));
-const WeeklyReview = lazy(() => import('./components/WeeklyReview'));
 const VisionBoard = lazy(() => import('./components/VisionBoard'));
 const ToBuyList = lazy(() => import('./components/ToBuyList'));
 const PhysioAI = lazy(() => import('./components/PhysioAI'));
 
-type View = 'dashboard' | 'business' | 'review' | 'vision' | 'buy_list' | 'physio';
+type View = 'dashboard' | 'business' | 'vision' | 'buy_list' | 'physio';
 
 const REWARDS_LIST = [
   'Take a 5-minute break outside.',
@@ -55,7 +52,6 @@ const NAV_ITEMS: { key: View; label: string; icon: ReactNode }[] = [
   { key: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={14} /> },
   { key: 'physio', label: 'AI Physio', icon: <Activity size={14} /> },
   { key: 'business', label: 'Strategic Command', icon: <Lightbulb size={14} /> },
-  { key: 'review', label: 'Weekly Review', icon: <BarChart3 size={14} /> },
   { key: 'vision', label: 'Vision Board', icon: <Eye size={14} /> },
   { key: 'buy_list', label: 'Purchases', icon: <ShoppingCart size={14} /> },
 ];
@@ -122,19 +118,10 @@ export default function App() {
   const [view, setView] = useState<View>('dashboard');
   const [selectedAtmosphereMode, setSelectedAtmosphereMode] = useState('auto');
   const [, setTimeTick] = useState(0);
-  const [logsPanelOpen, setLogsPanelOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [rewardModalOpen, setRewardModalOpen] = useState(false);
   const [currentReward, setCurrentReward] = useState('');
   const [lastPointMilestone, setLastPointMilestone] = useState(0);
-  const [appLogs, setAppLogs] = useState<string[]>([
-    'Initializing Ascend Protocol platform module...',
-    'Loaded climate backdrop sheet: Ambient renderer ready',
-    'Cloud database link initialized successfully',
-    'Ready for active sequence.',
-  ]);
-
-  const logEvent = (msg: string) =>
-    setAppLogs((prev) => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev].slice(0, 200));
 
   // Re-render every minute so the auto atmosphere tracks the time of day.
   useEffect(() => {
@@ -144,11 +131,6 @@ export default function App() {
 
   const activeAtmosphereId = selectedAtmosphereMode === 'auto' ? getAutoAtmosphereId() : selectedAtmosphereMode;
   const activeAtmosphere = ATMOSPHERES.find((a) => a.id === activeAtmosphereId) || ATMOSPHERES[1];
-
-  useEffect(() => {
-    logEvent(`Sanctuary atmosphere shifted to [${activeAtmosphere.name}]`);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeAtmosphereId]);
 
   // Reward the user on every 10-point milestone.
   useEffect(() => {
@@ -271,22 +253,14 @@ export default function App() {
               </div>
             </nav>
 
-            <div>
-              <p className="text-[9px] font-extrabold text-white/40 uppercase tracking-[0.18em] mb-2.5 pl-1.5 leading-none font-mono">Protocol Countdowns</p>
-              <div className="space-y-2.5">
-                <CountdownTimer label="Trip Expedition" targetDate="2026-06-10T00:00:00" />
-                <CountdownTimer label="Launch milestone" targetDate="2026-06-29T00:00:00" />
-              </div>
-            </div>
-
             <div className="pt-2">
               <button
-                onClick={() => setLogsPanelOpen(true)}
+                onClick={() => setSettingsOpen(true)}
                 className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 text-white/85 hover:text-white rounded-2xl transition-all cursor-pointer shadow-sm text-[11px] font-bold uppercase tracking-wider"
               >
                 <div className="flex items-center gap-3">
-                  <Clipboard size={14} className="text-white/50" />
-                  <span>System &amp; Settings</span>
+                  <Sliders size={14} className="text-white/50" />
+                  <span>Settings</span>
                 </div>
                 <svg className="w-3.5 h-3.5 text-white/35" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <polyline points="9 18 15 12 9 6" />
@@ -312,10 +286,9 @@ export default function App() {
               className="h-full"
             >
               <Suspense fallback={<ViewFallback />}>
-                {view === 'dashboard' && <Dashboard state={state} updateState={updateState} />}
+                {view === 'dashboard' && <JarvisDashboard state={state} updateState={updateState} setView={setView} />}
                 {view === 'business' && <LaunchHub state={state} updateState={updateState} />}
                 {view === 'physio' && <PhysioAI state={state} updateState={updateState} />}
-                {view === 'review' && <WeeklyReview state={state} />}
                 {view === 'vision' && <VisionBoard state={state} updateState={updateState} />}
                 {view === 'buy_list' && <ToBuyList state={state} updateState={updateState} />}
               </Suspense>
@@ -333,22 +306,21 @@ export default function App() {
           <MobileNavButton key={key} view={key} current={view} onSelect={setView} badge={key === 'business' ? state.ideas.length : 0} />
         ))}
         <button
-          onClick={() => setLogsPanelOpen(true)}
-          aria-label="System and settings"
+          onClick={() => setSettingsOpen(true)}
+          aria-label="Settings"
           className="w-14 h-14 shrink-0 mx-2 rounded-full flex items-center justify-center border transition-all glass-shimmer cursor-pointer -translate-y-5 shadow-lg bg-white/[0.08] hover:bg-white/[0.15] text-white border-white/20 pb-0.5"
         >
           <Sliders size={22} className="text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
         </button>
-        {(['review', 'vision', 'buy_list'] as View[]).map((key) => (
+        {(['vision', 'buy_list'] as View[]).map((key) => (
           <MobileNavButton key={key} view={key} current={view} onSelect={setView} badge={key === 'buy_list' ? openTasks : 0} />
         ))}
       </nav>
 
-      <SystemLogsModal
-        isOpen={logsPanelOpen}
-        onClose={() => setLogsPanelOpen(false)}
+      <SettingsModal
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
         updateState={updateState}
-        logs={appLogs}
         selectedAtmosphereMode={selectedAtmosphereMode}
         setSelectedAtmosphereMode={setSelectedAtmosphereMode}
       />
@@ -356,6 +328,7 @@ export default function App() {
       <RewardModal isOpen={rewardModalOpen} onClose={() => setRewardModalOpen(false)} rewardContent={currentReward} />
 
       <Jarvis state={state} updateState={updateState} view={view} setView={setView} />
+      <ObsidianRegistrar />
     </div>
   );
 }
@@ -364,7 +337,6 @@ const MOBILE_ICONS: Record<View, ReactNode> = {
   dashboard: <LayoutDashboard size={20} />,
   business: <Lightbulb size={20} />,
   physio: <Activity size={20} />,
-  review: <BarChart3 size={20} />,
   vision: <Eye size={20} />,
   buy_list: <ShoppingCart size={20} />,
 };
