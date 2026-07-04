@@ -42,12 +42,18 @@ Gemini-backed AI Physio chat, and Firebase (Auth + Firestore).
 ## Deploy on Vercel
 
 The client is built by Vercel's CDN and the Express app runs as a serverless
-function (`api/index.ts` re-exports it); routing is configured in `vercel.json`.
+function; `vercel-build` bundles the server into `api/index.js` and routing is
+configured in `vercel.json`.
 
 1. Import the repo in Vercel (framework preset: **Other** / Vite).
 2. Add the `GEMINI_API_KEY` environment variable in the Vercel project settings.
 3. Deploy. Vercel runs `npm run vercel-build` and serves `dist/` from the CDN,
    with `/api/*` handled by the serverless function.
 
-Firestore rules live in `firestore.rules` and the Firebase web config in
-`firebase-applet-config.json`.
+## Firebase
+
+The app runs on the Firebase project **`ascend-57d4e`** (Auth + Firestore).
+The public web config lives in `firebase-config.json` (overridable via
+`VITE_FIREBASE_*` env vars); security rules are in `firestore.rules` and deploy
+with `firebase deploy --only firestore:rules`. Firestore uses the default
+database in `asia-south1`.

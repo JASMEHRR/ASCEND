@@ -4,7 +4,7 @@
  * The Firebase *web* config (apiKey, projectId, ...) is public by design — access
  * is controlled by Firestore Security Rules, not by hiding these values. They are
  * read from `VITE_FIREBASE_*` env vars when present (so dev/prod can use different
- * projects) and fall back to the committed `firebase-applet-config.json`.
+ * projects) and fall back to the committed `firebase-config.json`.
  *
  * Genuine secrets (e.g. GEMINI_API_KEY) live server-side only — never here.
  */
@@ -23,7 +23,7 @@ import {
   type UserCredential,
 } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
-import fallbackConfig from '../../firebase-applet-config.json';
+import fallbackConfig from '../../firebase-config.json';
 
 const env = import.meta.env as Record<string, string | undefined>;
 
