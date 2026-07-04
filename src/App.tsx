@@ -25,6 +25,7 @@ import ObsidianRegistrar from './features/obsidian/ObsidianRegistrar';
 import PlanningRegistrar from './features/planning/PlanningRegistrar';
 import GmailRegistrar from './features/gmail/GmailRegistrar';
 import StocksRegistrar from './features/stocks/StocksRegistrar';
+import JournalRegistrar from './features/journal/JournalRegistrar';
 
 // Route views that aren't the default are code-split to keep the initial bundle small.
 const LaunchHub = lazy(() => import('./features/launch/LaunchHub'));
@@ -32,8 +33,9 @@ const VisionBoard = lazy(() => import('./components/VisionBoard'));
 const ToBuyList = lazy(() => import('./components/ToBuyList'));
 const PhysioAI = lazy(() => import('./components/PhysioAI'));
 const StocksHub = lazy(() => import('./features/stocks/StocksHub'));
+const JournalHub = lazy(() => import('./features/journal/JournalHub'));
 
-type View = 'dashboard' | 'business' | 'vision' | 'buy_list' | 'physio' | 'stocks';
+type View = 'dashboard' | 'business' | 'vision' | 'buy_list' | 'physio' | 'stocks' | 'journal';
 
 const REWARDS_LIST = [
   'Take a 5-minute break outside.',
@@ -255,6 +257,7 @@ export default function App() {
                 {view === 'vision' && <VisionBoard state={state} updateState={updateState} />}
                 {view === 'buy_list' && <ToBuyList state={state} updateState={updateState} />}
                 {view === 'stocks' && <StocksHub state={state} updateState={updateState} />}
+                {view === 'journal' && <JournalHub state={state} updateState={updateState} />}
               </Suspense>
             </motion.div>
           </AnimatePresence>
@@ -298,6 +301,7 @@ export default function App() {
       {isFeatureEnabled(state, 'planning') && <PlanningRegistrar />}
       {isFeatureEnabled(state, 'gmail') && <GmailRegistrar />}
       {isFeatureEnabled(state, 'stocks') && <StocksRegistrar state={state} updateState={updateState} />}
+      {isFeatureEnabled(state, 'journal') && <JournalRegistrar state={state} updateState={updateState} />}
     </div>
   );
 }

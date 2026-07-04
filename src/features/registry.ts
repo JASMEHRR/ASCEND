@@ -130,9 +130,9 @@ export const FEATURES: FeatureModule[] = [
     label: 'Journaling & Reflection',
     description: 'Text or voice journaling that syncs to your Obsidian vault.',
     icon: NotebookPen,
-    nav: false,
-    defaultEnabled: false,
-    status: 'coming-soon',
+    nav: true,
+    defaultEnabled: true,
+    status: 'active',
   },
   {
     id: 'gmail',

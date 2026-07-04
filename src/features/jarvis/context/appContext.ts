@@ -3,7 +3,7 @@ import { RITUALS } from '../../../constants';
 import type { LaunchState, ProspectStatus } from '../../launch/types';
 import { FEATURES, isFeatureEnabled } from '../../registry';
 
-export type View = 'dashboard' | 'physio' | 'business' | 'vision' | 'buy_list' | 'stocks';
+export type View = 'dashboard' | 'physio' | 'business' | 'vision' | 'buy_list' | 'stocks' | 'journal';
 
 export const VIEW_LABELS: Record<View, string> = {
   dashboard: 'Dashboard',
@@ -12,6 +12,7 @@ export const VIEW_LABELS: Record<View, string> = {
   vision: 'Vision Board',
   buy_list: 'Purchases',
   stocks: 'Stocks & Finance',
+  journal: 'Journal',
 };
 
 interface ContextInputs {

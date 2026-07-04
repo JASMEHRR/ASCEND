@@ -62,6 +62,21 @@ export interface OSState {
   };
   /** Stocks & Finance module (manual entries; live quotes come from /api/stocks). */
   finance?: FinanceState;
+  /**
+   * Journaling & Reflection. A capped recent-entries cache lives here (so the
+   * journal works offline / without Obsidian); entries also append to the
+   * user's Obsidian vault (Journal/YYYY-MM-DD.md) when connected.
+   */
+  journal?: { entries: JournalEntry[] };
+}
+
+export interface JournalEntry {
+  id: string;
+  text: string;
+  at: string;
+  mode: 'text' | 'voice';
+  /** Whether the entry also landed in the Obsidian vault. */
+  inVault: boolean;
 }
 
 export interface Holding {
