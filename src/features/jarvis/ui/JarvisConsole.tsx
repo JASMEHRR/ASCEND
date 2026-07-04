@@ -29,6 +29,24 @@ function Bubble({ message, animate, stopSignal }: { message: JarvisMessage; anim
       <div className="max-w-[90%] rounded-2xl border border-white/10 bg-white/[0.06] px-3.5 py-2.5 text-[13px] text-white/90">
         <MessageContent text={shown} />
         {!done && <span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse rounded-sm bg-brand-400/80" />}
+        {done && message.status && message.status.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5 border-t border-white/5 pt-2">
+            {message.status.map((s, i) => (
+              <span
+                key={i}
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-mono ${
+                  s.kind === 'ok'
+                    ? 'bg-brand-500/15 text-brand-300 ring-1 ring-brand-500/25'
+                    : s.kind === 'warn'
+                      ? 'bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/25'
+                      : 'bg-white/[0.06] text-white/45 ring-1 ring-white/10'
+                }`}
+              >
+                {s.kind === 'ok' ? '✓' : s.kind === 'warn' ? '⚠' : '·'} {s.text}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

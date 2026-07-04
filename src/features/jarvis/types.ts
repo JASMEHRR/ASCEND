@@ -26,6 +26,17 @@ export interface JarvisTool {
 export interface JarvisMessage {
   role: 'user' | 'assistant';
   content: string;
+  /**
+   * UI-only outcome chips (tool results / skips) rendered under the bubble.
+   * Never sent to the model — keeping decorations out of the transcript keeps
+   * multi-turn context clean.
+   */
+  status?: StatusLine[];
+}
+
+export interface StatusLine {
+  kind: 'ok' | 'warn' | 'info';
+  text: string;
 }
 
 /** A slice of live app context that a module contributes to Jarvis's awareness. */
@@ -49,6 +60,8 @@ export interface ToolCall {
 /** The validated shape returned by the /api/jarvis relay. */
 export interface JarvisResponse {
   reply: string;
+  /** Optional short spoken version of the reply (TTS); reply itself may be long. */
+  speak?: string;
   /** Optional one-line plan when several tools run together. */
   plan?: string;
   toolCalls: ToolCall[];
