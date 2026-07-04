@@ -61,6 +61,20 @@ export function createObsidianTools(client: ObsidianClient): JarvisTool[] {
       },
     },
     {
+      name: 'saveMemory',
+      module: 'Obsidian',
+      description:
+        "Save something the user told you into long-term memory (their vault). Use for lasting facts, preferences, decisions, or anything worth remembering across sessions.",
+      parameters: { memory: 'one concise sentence to remember', topic: 'optional short topic tag' },
+      validate: (a) => (str(a.memory) ? null : 'a memory is required'),
+      execute: async (a) => {
+        const stamp = new Date().toISOString().slice(0, 10);
+        const topic = str(a.topic);
+        await client.appendNote('Jarvis/Memory.md', `- ${stamp}${topic ? ` [${topic}]` : ''} — ${str(a.memory)}`);
+        return { ok: true, message: 'saved to long-term memory' };
+      },
+    },
+    {
       name: 'listNotes',
       module: 'Obsidian',
       description: 'List note paths in the vault or a specific folder.',
