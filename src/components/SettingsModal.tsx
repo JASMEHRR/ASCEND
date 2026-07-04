@@ -63,21 +63,46 @@ export default function SettingsModal({ isOpen, onClose, state, updateState, fea
               {features.toggleable.map((mod) => {
                 const Icon = mod.icon;
                 const on = features.isEnabled(mod.id);
+                const subs = features.subFeaturesOf(mod.id);
                 return (
-                  <button
-                    key={mod.id}
-                    onClick={() => features.toggle(mod.id)}
-                    role="switch"
-                    aria-checked={on}
-                    className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl bg-white/[0.03] border border-white/8 hover:bg-white/[0.06] hover:border-white/15 transition-all cursor-pointer text-left"
-                  >
-                    <span className={on ? 'text-brand-300' : 'text-white/35'}><Icon size={16} /></span>
-                    <span className="flex-1 min-w-0">
-                      <span className="block text-[12px] font-bold text-white/85 leading-tight">{mod.label}</span>
-                      <span className="block text-[10.5px] text-white/35 truncate">{mod.description}</span>
-                    </span>
-                    <ToggleTrack on={on} />
-                  </button>
+                  <div key={mod.id}>
+                    <button
+                      onClick={() => features.toggle(mod.id)}
+                      role="switch"
+                      aria-checked={on}
+                      className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl bg-white/[0.03] border border-white/8 hover:bg-white/[0.06] hover:border-white/15 transition-all cursor-pointer text-left"
+                    >
+                      <span className={on ? 'text-brand-300' : 'text-white/35'}><Icon size={16} /></span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-[12px] font-bold text-white/85 leading-tight">{mod.label}</span>
+                        <span className="block text-[10.5px] text-white/35 truncate">{mod.description}</span>
+                      </span>
+                      <ToggleTrack on={on} />
+                    </button>
+                    {/* Sub-tools: individually deactivatable while the module is on. */}
+                    {on && subs.length > 0 && (
+                      <div className="ml-6 mt-1.5 space-y-1 border-l border-white/8 pl-3">
+                        {subs.map((sub) => {
+                          const subOn = features.isSubEnabled(sub.id);
+                          return (
+                            <button
+                              key={sub.id}
+                              onClick={() => features.toggleSub(sub.id)}
+                              role="switch"
+                              aria-checked={subOn}
+                              className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-xl hover:bg-white/[0.05] transition-all cursor-pointer text-left"
+                            >
+                              <span className="flex-1 min-w-0">
+                                <span className={`block text-[11.5px] font-semibold leading-tight ${subOn ? 'text-white/75' : 'text-white/40'}`}>{sub.label}</span>
+                                <span className="block text-[10px] text-white/30 truncate">{sub.description}</span>
+                              </span>
+                              <ToggleTrack on={subOn} />
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>

@@ -1,6 +1,15 @@
 import { useCallback, useMemo } from 'react';
 import type { OSState } from '../types';
-import { FEATURES, isFeatureEnabled, type FeatureId, type FeatureModule } from './registry';
+import {
+  FEATURES,
+  SUB_FEATURES,
+  isFeatureEnabled,
+  isSubFeatureEnabled,
+  type FeatureId,
+  type FeatureModule,
+  type SubFeature,
+  type SubFeatureId,
+} from './registry';
 
 export interface FeaturesApi {
   /** Is this module active for the current user? */
@@ -13,6 +22,12 @@ export interface FeaturesApi {
   navModules: FeatureModule[];
   /** Every user-toggleable module (active, non-core) for the settings panel. */
   toggleable: FeatureModule[];
+  /** Is a sub-tool inside a module active (parent must be on too)? */
+  isSubEnabled: (id: SubFeatureId) => boolean;
+  /** Flip a sub-tool on/off. */
+  toggleSub: (id: SubFeatureId) => void;
+  /** The sub-tools of a module, for nested settings rows. */
+  subFeaturesOf: (parent: FeatureId) => SubFeature[];
 }
 
 /**
@@ -53,5 +68,19 @@ export function useFeatures(
 
   const toggleable = useMemo(() => FEATURES.filter((f) => !f.core && f.status === 'active'), []);
 
-  return { isEnabled, toggle, setEnabled, navModules, toggleable };
+  const isSubEnabled = useCallback((id: SubFeatureId) => isSubFeatureEnabled(state, id), [state]);
+
+  const toggleSub = useCallback(
+    (id: SubFeatureId) => {
+      updateState((prev) => {
+        const current = isSubFeatureEnabled(prev, id);
+        return { ...prev, features: { ...(prev.features ?? {}), [id]: !current } };
+      });
+    },
+    [updateState],
+  );
+
+  const subFeaturesOf = useCallback((parent: FeatureId) => SUB_FEATURES.filter((s) => s.parent === parent), []);
+
+  return { isEnabled, toggle, setEnabled, navModules, toggleable, isSubEnabled, toggleSub, subFeaturesOf };
 }
