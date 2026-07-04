@@ -1,7 +1,8 @@
-import { X, Settings2, Lock } from 'lucide-react';
+import { X, Settings2, Lock, Volume2 } from 'lucide-react';
 import { OSState } from '../types';
 import AtmosphereSelector from './AtmosphereSelector';
 import { useDialog } from '../context/DialogContext';
+import { useJarvis } from '../features/jarvis/engine/JarvisProvider';
 import ObsidianSettings from '../features/obsidian/ObsidianSettings';
 import type { FeaturesApi } from '../features/useFeatures';
 import { FEATURES, type FeatureModule } from '../features/registry';
@@ -21,7 +22,11 @@ const COMING_SOON: FeatureModule[] = FEATURES.filter((f) => f.status === 'coming
 /** Lightweight settings: modules, sanctuary atmosphere + reset today's progress. */
 export default function SettingsModal({ isOpen, onClose, state, updateState, features, selectedAtmosphereMode, setSelectedAtmosphereMode }: Props) {
   const { confirm } = useDialog();
+  const { voice } = useJarvis();
   if (!isOpen) return null;
+
+  const englishVoices = voice.voices.filter((v) => /^en[-_]/i.test(v.lang));
+  const pickerVoices = englishVoices.length ? englishVoices : voice.voices;
 
   const greetOnLogin = state.jarvisPrefs?.greetOnLogin ?? true;
   const toggleGreet = () =>
@@ -109,6 +114,34 @@ export default function SettingsModal({ isOpen, onClose, state, updateState, fea
               </span>
               <ToggleTrack on={greetOnLogin} />
             </button>
+
+            {pickerVoices.length > 0 && (
+              <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-white/[0.03] border border-white/8">
+                <span className="flex-1 min-w-0">
+                  <span className="block text-[12px] font-bold text-white/85 leading-tight">Voice</span>
+                  <span className="block text-[10.5px] text-white/35">Pinned — Jarvis sounds the same every session.</span>
+                </span>
+                <select
+                  value={voice.voiceURI ?? ''}
+                  onChange={(e) => voice.setVoiceURI(e.target.value)}
+                  aria-label="Jarvis voice"
+                  className="max-w-[40%] rounded-xl border border-white/12 bg-[#0b0d13] px-2 py-1.5 text-[11px] text-white/85 outline-none focus:border-brand-400/40 cursor-pointer"
+                >
+                  {pickerVoices.map((v) => (
+                    <option key={v.voiceURI} value={v.voiceURI}>
+                      {v.name} ({v.lang})
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => voice.speak('Voice check complete. All systems nominal, sir.')}
+                  aria-label="Test voice"
+                  className="p-2 rounded-full bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/15 transition-colors cursor-pointer shrink-0"
+                >
+                  <Volume2 size={14} />
+                </button>
+              </div>
+            )}
           </section>
 
           <section className="space-y-2 border-t border-white/8 pt-4">
