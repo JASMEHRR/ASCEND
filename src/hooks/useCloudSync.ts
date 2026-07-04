@@ -38,6 +38,7 @@ function syncPayload(s: OSState) {
     customAM: s.customAM ?? [],
     customPM: s.customPM ?? [],
     steps: s.steps,
+    weight: s.weight ?? null,
     physioState: s.physioState ?? null,
     primaryObjective: s.primaryObjective ?? null,
   };
@@ -119,6 +120,7 @@ export function useCloudSync(uid: string | null): CloudSync {
           customAM: latestDaily.customAM ?? base.customAM,
           customPM: latestDaily.customPM ?? base.customPM,
           steps: latestDaily.steps ?? base.steps,
+          weight: latestDaily.weight ?? base.weight,
           physioState: latestDaily.physioState ?? base.physioState,
           primaryObjective: latestDaily.primaryObjective ?? base.primaryObjective,
           lastVisit: todayStr(),
@@ -186,6 +188,7 @@ export function useCloudSync(uid: string | null): CloudSync {
             customAM: p.customAM,
             customPM: p.customPM,
             steps: p.steps,
+            weight: p.weight,
             physioState: p.physioState,
             primaryObjective: p.primaryObjective,
           },

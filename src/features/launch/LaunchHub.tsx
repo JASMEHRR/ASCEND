@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { LayoutDashboard, Crosshair, Package, Users, Send, Lightbulb, Loader2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { OSState } from '../../types';
-import { useAuth } from '../../context/AuthContext';
-import { useLaunchState } from './useLaunchState';
+import { useLaunchStateContext } from './LaunchStateContext';
 import BusinessHub from '../../components/BusinessHub';
 import LaunchDashboard from './panels/LaunchDashboard';
 import OpportunityMatrix from './panels/OpportunityMatrix';
@@ -34,8 +33,7 @@ export default function LaunchHub({
   state: OSState;
   updateState: (fn: (prev: OSState) => OSState) => void;
 }) {
-  const { user } = useAuth();
-  const { state, update } = useLaunchState(user?.uid ?? null);
+  const { state, update } = useLaunchStateContext();
   const [tab, setTab] = useState<Tab>('command');
 
   const launchReady = state !== null;

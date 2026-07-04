@@ -12,16 +12,20 @@
  */
 import express from "express";
 import dotenv from "dotenv";
+import { getGemini, GEMINI_MODEL } from "./gemini";
 import { launchRouter } from "./launch-routes";
+import { jarvisRouter } from "./jarvis-routes";
 
 dotenv.config({ override: true });
 
 const app = express();
 app.set("trust proxy", true);
-app.use(express.json({ limit: "100kb" }));
+app.use(express.json({ limit: "256kb" }));
 
 // LaunchKit AI endpoints (stateless; persistence lives client-side in Firestore).
 app.use("/api/launch", launchRouter);
+// Jarvis AI command core (tool-registry relay).
+app.use("/api/jarvis", jarvisRouter);
 
 // The AI physiotherapist's persona and safety rules. Personalise the
 // conditions / trek details below as the user's situation changes.
@@ -83,16 +87,9 @@ app.post("/api/physio-chat", async (req, res) => {
       return res.status(400).json({ error: "`history` must be an array of messages." });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return res.status(500).json({ error: "Missing GEMINI_API_KEY environment variable." });
-    }
-
-    const { GoogleGenAI } = await import("@google/genai");
-    const ai = new GoogleGenAI({ apiKey });
-
+    const ai = await getGemini();
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: GEMINI_MODEL,
       contents: history.map((m: { role: string; content: string }) => ({
         role: m.role === "user" ? "user" : "model",
         parts: [{ text: m.content }],

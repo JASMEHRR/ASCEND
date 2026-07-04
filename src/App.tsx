@@ -29,6 +29,7 @@ import FlipClock from './components/FlipClock';
 import SystemLogsModal from './components/SystemLogsModal';
 import RewardModal from './components/RewardModal';
 import LoginScreen from './components/auth/LoginScreen';
+import Jarvis from './features/jarvis/Jarvis';
 
 // Route views that aren't the default are code-split to keep the initial bundle small.
 const LaunchHub = lazy(() => import('./features/launch/LaunchHub'));
@@ -361,6 +362,8 @@ export default function App() {
       />
 
       <RewardModal isOpen={rewardModalOpen} onClose={() => setRewardModalOpen(false)} rewardContent={currentReward} />
+
+      <Jarvis state={state} updateState={updateState} view={view} setView={setView} />
     </div>
   );
 }

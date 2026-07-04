@@ -54,6 +54,7 @@ export interface OSState {
   ideas: Idea[];
   visionBoard: VisionItem[];
   steps: number;
+  weight?: number;
   primaryObjective?: PrimaryObjective;
   founderMode?: boolean;
   mentalState?: MentalState;

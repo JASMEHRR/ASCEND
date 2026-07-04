@@ -7,74 +7,17 @@
  * or API keys. Mounted under /api/launch by server.ts.
  */
 import { Router, type Request, type Response, type NextFunction } from 'express';
+import { generateStructured, GeminiError } from './gemini';
 
 export const launchRouter = Router();
-
-class HttpError extends Error {
-  constructor(public status: number, message: string) {
-    super(message);
-  }
-}
 
 const wrap =
   (fn: (req: Request, res: Response) => Promise<void>) =>
   (req: Request, res: Response, next: NextFunction) =>
     fn(req, res).catch(next);
 
-/**
- * Pull a JSON object out of a model response, tolerating ```json fences,
- * a leading <think>…</think> block, or prose around the object.
- */
-function extractJson(raw: string): string {
-  let text = raw.trim();
-  const thinkEnd = text.lastIndexOf('</think>');
-  if (thinkEnd !== -1) text = text.slice(thinkEnd + '</think>'.length).trim();
-  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fence) text = fence[1].trim();
-  if (text.startsWith('{') && text.endsWith('}')) return text;
-  const first = text.indexOf('{');
-  const last = text.lastIndexOf('}');
-  if (first !== -1 && last > first) return text.slice(first, last + 1);
-  return text;
-}
-
-/** One structured-output call to Gemini: returns JSON parsed to T. */
-async function structuredGenerate<T>(opts: {
-  system: string;
-  prompt: string;
-  schema: object;
-  maxTokens?: number;
-}): Promise<T> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new HttpError(500, 'Missing GEMINI_API_KEY environment variable.');
-
-  const { GoogleGenAI } = await import('@google/genai');
-  const ai = new GoogleGenAI({ apiKey });
-
-  const system = `${opts.system}
-
-Respond with a single JSON object and nothing else — no prose, no markdown fences. It must conform exactly to this JSON Schema (every required field, correct types):
-
-${JSON.stringify(opts.schema, null, 2)}`;
-
-  const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash',
-    contents: opts.prompt,
-    config: {
-      systemInstruction: system,
-      responseMimeType: 'application/json',
-      maxOutputTokens: opts.maxTokens ?? 8192,
-    },
-  });
-
-  const text = response.text ?? '';
-  if (!text) throw new HttpError(502, 'The model returned no output. Please try again.');
-  try {
-    return JSON.parse(extractJson(text)) as T;
-  } catch {
-    throw new HttpError(502, 'The model did not return valid JSON. Please try again.');
-  }
-}
+/** Structured Gemini generation, shared with the rest of the AI stack. */
+const structuredGenerate = generateStructured;
 
 // --- JSON schemas (in-prompt; describe the expected output shape) ---
 const matrixSchema = {
@@ -316,7 +259,7 @@ WHO IT'S FOR: ${offer.whoYouSellTo}`,
 
 // Central error handler for this router.
 launchRouter.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-  const status = err instanceof HttpError ? err.status : 500;
+  const status = err instanceof GeminiError ? err.status : 500;
   const message = err instanceof Error ? err.message : 'Launch AI request failed';
   if (status >= 500) console.error('[launch]', err);
   res.status(status).json({ error: message });
