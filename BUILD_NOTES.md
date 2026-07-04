@@ -45,13 +45,37 @@ prompt; decisions already made are recorded here so nothing needs re-asking.
 - [x] Phase 7 — Stocks & Finance, Yahoo proxy verified live for .NS + US (8f60291)
 - [x] Phase 8 — Journaling + Obsidian vault sync (cbf5435)
 - [x] Phase 9 — Proactive insights, toasts + voice, active hours (826895e)
-- [ ] Phase 10 — push main, deploy, live verification (in progress)
+- [x] Phase 10 — pushed to main, auto-deployed, verified LIVE (2026-07-05):
+      multi-turn recall in the real UI (facts referenced from 2+ messages back),
+      general-knowledge answers, tool status chips, particle orb states,
+      collapsible dock + one-panel-at-a-time, Customize entry, light+dark theme
+      flip, stocks page pulling a real RELIANCE.NS quote (₹1,304, +0.04%),
+      voice pinned to "Google UK English Male". Test data cleaned from memory
+      afterwards; RELIANCE.NS left on the watchlist as a working demo.
+
+## Post-verification fixes (also live)
+
+- View switches could land invisible (AnimatePresence mode="wait" dropped the
+  enter animation) → enter-only keyed fade (7afa4ee).
+- ROOT CAUSE of "Jarvis randomly broken" in production: the Gemini key is on
+  the FREE tier — 20 requests/day for gemini-2.5-flash. Added automatic
+  fallback to gemini-2.5-flash-lite on quota errors + human-readable quota
+  message (dc37a2a). Verified live with the primary quota exhausted.
 
 ## User actions still required
 
 1. Create the Google OAuth client + set `VITE_GOOGLE_CLIENT_ID` in Vercel
    (full steps: GOOGLE_SETUP.md). Until then the Google section in Settings
    shows a "not configured" notice and planning falls back to tasks.
+2. STRONGLY RECOMMENDED: upgrade the Gemini API key to a paid tier (or raise
+   quota) — 20 req/day is a handful of Jarvis exchanges. The flash-lite
+   fallback softens this but has its own daily cap.
+
+## Watch items
+
+- Proactive-greeting toggle rendered "off" in Settings while the greeting still
+  fired once — possible read-before-Firestore-load race in CoreRegistrar
+  (pre-existing). Re-check if the user reports greeting misbehaviour.
 
 ## Architecture invariants (do not break)
 
