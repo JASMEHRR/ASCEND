@@ -26,6 +26,7 @@ function syncPayload(s: OSState) {
     visionBoard: s.visionBoard,
     points: s.points ?? 0,
     features: s.features ?? null,
+    jarvisPrefs: s.jarvisPrefs ?? null,
     // users/{uid}/dailyStates/{today}
     water: s.water,
     rituals: s.rituals,
@@ -105,6 +106,7 @@ export function useCloudSync(uid: string | null): CloudSync {
           visionBoard: latestUser.visionBoard ?? base.visionBoard,
           points: latestUser.points ?? base.points,
           features: latestUser.features ?? base.features,
+          jarvisPrefs: latestUser.jarvisPrefs ?? base.jarvisPrefs,
           water: latestDaily.water ?? base.water,
           rituals: latestDaily.rituals ?? base.rituals,
           weight: latestDaily.weight ?? base.weight,
@@ -164,7 +166,7 @@ export function useCloudSync(uid: string | null): CloudSync {
       try {
         await setDoc(
           doc(db, 'users', uid),
-          { tasks: p.tasks, ideas: p.ideas, visionBoard: p.visionBoard, points: p.points, streak: p.streak, streakDate: p.streakDate, features: p.features },
+          { tasks: p.tasks, ideas: p.ideas, visionBoard: p.visionBoard, points: p.points, streak: p.streak, streakDate: p.streakDate, features: p.features, jarvisPrefs: p.jarvisPrefs },
           { merge: true },
         );
         await setDoc(

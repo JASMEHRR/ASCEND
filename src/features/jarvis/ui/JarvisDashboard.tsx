@@ -11,6 +11,7 @@ import Panel from '../../../components/ui/Panel';
 import { useJarvis } from '../engine/JarvisProvider';
 import type { View } from '../context/appContext';
 import JarvisConsole from './JarvisConsole';
+import JarvisOrb, { useOrbState, type OrbState } from './JarvisOrb';
 
 interface Props {
   state: OSState;
@@ -27,35 +28,12 @@ function greeting() {
   return 'Working late';
 }
 
-/** Live status ring around the Jarvis mark. */
-function StatusOrb() {
-  const { thinking, voice } = useJarvis();
-  const active = thinking || voice.listening || voice.speaking;
-  const label = voice.listening ? 'Listening' : thinking ? 'Thinking' : voice.speaking ? 'Speaking' : 'Online';
-  return (
-    <div className="flex items-center gap-3">
-      <div className="relative flex h-11 w-11 items-center justify-center">
-        <motion.span
-          className="absolute inset-0 rounded-full border border-brand-400/40"
-          animate={active ? { scale: [1, 1.35, 1], opacity: [0.6, 0, 0.6] } : { opacity: 0.25 }}
-          transition={active ? { repeat: Infinity, duration: 1.4 } : {}}
-        />
-        <div className="flex h-11 w-11 items-center justify-center rounded-full border border-brand-400/30 bg-brand-500/15 backdrop-blur-xl">
-          <motion.div animate={thinking ? { rotate: 360 } : { scale: [1, 1.1, 1] }} transition={thinking ? { repeat: Infinity, duration: 1.2, ease: 'linear' } : { repeat: Infinity, duration: 3 }} className="text-brand-400">
-            <Sparkles size={18} />
-          </motion.div>
-        </div>
-      </div>
-      <div>
-        <p className="text-[10px] font-mono font-black uppercase tracking-[0.25em] text-brand-400">Jarvis</p>
-        <p className="flex items-center gap-1.5 text-[11px] text-white/50">
-          <span className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-brand-400 animate-pulse' : 'bg-white/40'}`} />
-          {label}
-        </p>
-      </div>
-    </div>
-  );
-}
+const ORB_LABEL: Record<OrbState, string> = {
+  idle: 'Online',
+  listening: 'Listening',
+  thinking: 'Thinking',
+  speaking: 'Speaking',
+};
 
 const SUGGESTIONS = ['Plan my day', 'How am I doing?', "What should I focus on?", 'Give me a daily briefing'];
 
@@ -63,6 +41,7 @@ export default function JarvisDashboard({ state, updateState, setView }: Props) 
   const { user } = useAuth();
   const { prompt } = useDialog();
   const { sendMessage, memory } = useJarvis();
+  const orbState = useOrbState();
 
   const score = disciplineScore(state);
   const streak = effectiveStreak(state);
@@ -88,15 +67,21 @@ export default function JarvisDashboard({ state, updateState, setView }: Props) 
 
   return (
     <div className="flex flex-col gap-5 pb-8">
-      {/* Hero */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      {/* Hero — Jarvis front and centre */}
+      <div className="flex flex-col items-center gap-3 pt-1 text-center">
+        <motion.div initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: 'spring', stiffness: 220, damping: 22 }}>
+          <JarvisOrb state={orbState} size={104} />
+        </motion.div>
         <div>
-          <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
+          <p className="flex items-center justify-center gap-1.5 text-[10px] font-mono font-black uppercase tracking-[0.3em] text-brand-400">
+            Jarvis
+            <span className="font-normal normal-case tracking-normal text-white/40">· {ORB_LABEL[orbState]}</span>
+          </p>
+          <h2 className="mt-1.5 text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
             {greeting()}, <span className="capitalize">{name}</span>.
           </h2>
           <p className="mt-1 text-[13px] text-white/45">{briefing}</p>
         </div>
-        <StatusOrb />
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[1fr_20rem]">

@@ -314,6 +314,7 @@ export default function App() {
       <SettingsModal
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
+        state={state}
         updateState={updateState}
         features={features}
         selectedAtmosphereMode={selectedAtmosphereMode}

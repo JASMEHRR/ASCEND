@@ -9,6 +9,7 @@ import { FEATURES, type FeatureModule } from '../features/registry';
 interface Props {
   isOpen: boolean;
   onClose: () => void;
+  state: OSState;
   updateState: (updater: (prev: OSState) => OSState) => void;
   features: FeaturesApi;
   selectedAtmosphereMode: string;
@@ -18,9 +19,16 @@ interface Props {
 const COMING_SOON: FeatureModule[] = FEATURES.filter((f) => f.status === 'coming-soon');
 
 /** Lightweight settings: modules, sanctuary atmosphere + reset today's progress. */
-export default function SettingsModal({ isOpen, onClose, updateState, features, selectedAtmosphereMode, setSelectedAtmosphereMode }: Props) {
+export default function SettingsModal({ isOpen, onClose, state, updateState, features, selectedAtmosphereMode, setSelectedAtmosphereMode }: Props) {
   const { confirm } = useDialog();
   if (!isOpen) return null;
+
+  const greetOnLogin = state.jarvisPrefs?.greetOnLogin ?? true;
+  const toggleGreet = () =>
+    updateState((s) => ({
+      ...s,
+      jarvisPrefs: { ...(s.jarvisPrefs ?? {}), greetOnLogin: !(s.jarvisPrefs?.greetOnLogin ?? true) },
+    }));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md" onClick={onClose}>
@@ -85,6 +93,22 @@ export default function SettingsModal({ isOpen, onClose, updateState, features, 
                 })}
               </div>
             )}
+          </section>
+
+          <section className="space-y-2 border-t border-white/8 pt-4">
+            <span className="text-[10px] font-mono font-extrabold text-white/40 uppercase tracking-[0.18em]">Jarvis</span>
+            <button
+              onClick={toggleGreet}
+              role="switch"
+              aria-checked={greetOnLogin}
+              className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl bg-white/[0.03] border border-white/8 hover:bg-white/[0.06] hover:border-white/15 transition-all cursor-pointer text-left"
+            >
+              <span className="flex-1 min-w-0">
+                <span className="block text-[12px] font-bold text-white/85 leading-tight">Proactive greeting on login</span>
+                <span className="block text-[10.5px] text-white/35">When off, Jarvis stays idle until you speak first.</span>
+              </span>
+              <ToggleTrack on={greetOnLogin} />
+            </button>
           </section>
 
           <section className="space-y-2 border-t border-white/8 pt-4">

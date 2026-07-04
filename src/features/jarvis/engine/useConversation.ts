@@ -22,6 +22,8 @@ export interface Conversation {
   messages: JarvisMessage[];
   thinking: boolean;
   sendMessage: (text: string) => void;
+  /** Proactively push (and speak) an assistant line without an LLM round-trip. */
+  greet: (text: string) => void;
   abort: () => void;
 }
 
@@ -42,6 +44,15 @@ export function useConversation(deps: ConversationDeps): Conversation {
   const push = (msg: JarvisMessage) => setMessages((prev) => [...prev, msg]);
 
   const abort = useCallback(() => abortRef.current?.abort(), []);
+
+  const greet = useCallback(
+    (text: string) => {
+      if (!text.trim()) return;
+      push({ role: 'assistant', content: text });
+      deps.speak(text);
+    },
+    [deps],
+  );
 
   const sendMessage = useCallback(
     async (raw: string) => {
@@ -151,5 +162,5 @@ export function useConversation(deps: ConversationDeps): Conversation {
     [deps],
   );
 
-  return { messages, thinking, sendMessage, abort };
+  return { messages, thinking, sendMessage, greet, abort };
 }

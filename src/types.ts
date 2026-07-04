@@ -48,6 +48,11 @@ export interface OSState {
    * features/registry.ts). Absent keys fall back to each module's default.
    */
   features?: Record<string, boolean>;
+  /** Per-user Jarvis behaviour preferences (persisted in users/{uid}). */
+  jarvisPrefs?: {
+    /** Jarvis greets proactively on login (default true). */
+    greetOnLogin?: boolean;
+  };
   physioState?: {
     back: number;
     tailbone: number;
