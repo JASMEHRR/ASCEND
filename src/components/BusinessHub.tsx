@@ -43,13 +43,13 @@ export default function BusinessHub({ state, updateState }: Props) {
         <div className="space-y-2 relative z-10">
           <p className="text-[10px] font-extrabold text-white/50 uppercase tracking-[0.2em] flex items-center gap-2">
             <Zap size={12} className="text-white/40" />
-            PRIMARY OPERATIONAL MILESTONE // VENTURE ALPHA
+            PRIMARY OPERATIONAL MILESTONE
           </p>
           <h3 className="text-2xl sm:text-3.5xl font-black text-white tracking-tight leading-none">
-            Launch Before June 29
+            {state.primaryObjective?.text || 'Set your primary objective'}
           </h3>
           <p className="text-xs text-[#94a3b8] font-medium tracking-wide">
-            21st Birthday Target Exit // Decentralized Performance Identity
+            {state.primaryObjective ? 'Ideas feed the mission — capture everything.' : 'Ask Jarvis: “set my primary objective”.'}
           </p>
         </div>
         

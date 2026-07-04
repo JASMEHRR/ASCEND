@@ -24,7 +24,7 @@ export function createAppTools({ stateRef, updateState, setView }: Deps): Jarvis
       name: 'navigate',
       module: 'Navigation',
       description: 'Switch the app to another page/module.',
-      parameters: { view: 'one of: dashboard, physio, business, review, vision, buy_list' },
+      parameters: { view: `one of: ${Object.keys(VIEW_LABELS).join(', ')}` },
       validate: (a) => (str(a.view) in VIEW_LABELS ? null : `unknown page "${str(a.view)}"`),
       execute: (a) => {
         const target = str(a.view) as View;
