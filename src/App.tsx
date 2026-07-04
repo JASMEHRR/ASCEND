@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { Suspense, lazy, useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { Sliders, LogOut, Loader2 } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import { useDialog } from './context/DialogContext';
@@ -242,15 +242,15 @@ export default function App() {
 
         {/* MAIN */}
         <main className="flex-1 flex flex-col gap-6 min-w-0 overflow-y-auto custom-scrollbar">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={view}
-              initial={{ opacity: 0, y: 15, filter: 'blur(6px)' }}
-              animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-              exit={{ opacity: 0, y: -15, filter: 'blur(6px)' }}
-              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              className="h-full"
-            >
+          {/* Enter-only fade: an exit/enter handoff (mode="wait") could drop the
+              enter animation and leave the new view stuck invisible at opacity 0. */}
+          <motion.div
+            key={view}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            className="h-full"
+          >
               <Suspense fallback={<ViewFallback />}>
                 {view === 'dashboard' && <JarvisDashboard state={state} updateState={updateState} setView={setView} openSettings={() => setSettingsOpen(true)} />}
                 {view === 'business' && <LaunchHub state={state} updateState={updateState} />}
@@ -260,8 +260,7 @@ export default function App() {
                 {view === 'stocks' && <StocksHub state={state} updateState={updateState} />}
                 {view === 'journal' && <JournalHub state={state} updateState={updateState} />}
               </Suspense>
-            </motion.div>
-          </AnimatePresence>
+          </motion.div>
         </main>
       </div>
 
