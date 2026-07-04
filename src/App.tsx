@@ -2,23 +2,15 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-import { Suspense, lazy, useEffect, useState, type ReactNode } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import {
-  LayoutDashboard,
-  Lightbulb,
-  Eye,
-  Activity,
-  Sliders,
-  ShoppingCart,
-  LogOut,
-  Loader2,
-} from 'lucide-react';
-import type { OSState } from './types';
+import { Sliders, LogOut, Loader2 } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import { useDialog } from './context/DialogContext';
 import { useCloudSync } from './hooks/useCloudSync';
 import { useStreak } from './hooks/useStreak';
+import { useFeatures } from './features/useFeatures';
+import { isFeatureEnabled, type FeatureId, type FeatureModule } from './features/registry';
 import { disciplineScore } from './lib/discipline';
 import JarvisDashboard from './features/jarvis/ui/JarvisDashboard';
 import AtmosphereBackdrop, { getAutoAtmosphereId, ATMOSPHERES } from './components/AtmosphereBackdrop';
@@ -47,15 +39,6 @@ const REWARDS_LIST = [
   'Watch one fun short video.',
   "Give yourself a pat on the back. You're crushing it!",
 ];
-
-const NAV_ITEMS: { key: View; label: string; icon: ReactNode }[] = [
-  { key: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={14} /> },
-  { key: 'physio', label: 'AI Physio', icon: <Activity size={14} /> },
-  { key: 'business', label: 'Strategic Command', icon: <Lightbulb size={14} /> },
-  { key: 'vision', label: 'Vision Board', icon: <Eye size={14} /> },
-  { key: 'buy_list', label: 'Purchases', icon: <ShoppingCart size={14} /> },
-];
-
 
 function FullScreenLoader({ label }: { label: string }) {
   return (
@@ -114,6 +97,7 @@ function HeaderAccount() {
 export default function App() {
   const { user, initializing } = useAuth();
   const { state, updateState } = useCloudSync(user?.uid ?? null);
+  const features = useFeatures(state, updateState);
 
   const [view, setView] = useState<View>('dashboard');
   const [selectedAtmosphereMode, setSelectedAtmosphereMode] = useState('auto');
@@ -146,6 +130,13 @@ export default function App() {
   // Maintain the daily activity streak once there's any progress today.
   useStreak(state, updateState, !!state && disciplineScore(state) > 0);
 
+  // If the active view's module gets disabled, fall back to the Jarvis home.
+  useEffect(() => {
+    if (view !== 'dashboard' && !isFeatureEnabled(state, view as FeatureId)) {
+      setView('dashboard');
+    }
+  }, [state, view]);
+
   // --- Auth / load gates (all hooks above run unconditionally) ---
   if (initializing) return <FullScreenLoader label="Connecting…" />;
   if (!user) return <LoginScreen />;
@@ -153,6 +144,8 @@ export default function App() {
 
   const currentScore = disciplineScore(state);
   const openTasks = state.tasks.filter((t) => !t.done).length;
+  const mobileModules = features.navModules.filter((m) => m.mobile);
+  const mobileMid = Math.ceil(mobileModules.length / 2);
 
   return (
     <div className="relative flex flex-col h-screen w-full bg-[#02040a] text-[#f4f4f5] font-plus p-4 md:p-6 pb-20 sm:pb-6 gap-5 overflow-hidden selection:bg-brand-500/30 selection:text-white">
@@ -224,13 +217,14 @@ export default function App() {
             <nav className="space-y-1.5 pt-1 border-t border-white/5" aria-label="Primary">
               <p className="text-[9px] font-extrabold text-white/40 uppercase tracking-[0.18em] mb-2.5 pl-1.5 leading-none font-mono">Navigation</p>
               <div className="grid grid-cols-1 gap-1.5">
-                {NAV_ITEMS.map((tab) => {
-                  const badge = tab.key === 'business' ? state.ideas.length : tab.key === 'buy_list' ? openTasks : 0;
-                  const active = view === tab.key;
+                {features.navModules.map((mod) => {
+                  const badge = badgeFor(mod.id, state.ideas.length, openTasks);
+                  const active = view === mod.id;
+                  const Icon = mod.icon;
                   return (
                     <button
-                      key={tab.key}
-                      onClick={() => setView(tab.key)}
+                      key={mod.id}
+                      onClick={() => setView(mod.id as View)}
                       aria-current={active ? 'page' : undefined}
                       className={`w-full relative flex items-center justify-between px-4.5 py-3 rounded-2xl text-[11px] font-bold uppercase tracking-wider transition-all border cursor-pointer ${
                         active
@@ -239,8 +233,8 @@ export default function App() {
                       }`}
                     >
                       <div className="flex items-center gap-3.5">
-                        <span className={active ? 'text-white' : 'text-white/40'}>{tab.icon}</span>
-                        {tab.label}
+                        <span className={active ? 'text-white' : 'text-white/40'}><Icon size={14} /></span>
+                        {mod.label}
                       </div>
                       {badge > 0 && (
                         <span className="bg-brand-500/20 text-brand-400 min-w-5 h-5 flex items-center justify-center rounded-full text-[9px] px-1.5 ml-2 font-mono ring-1 ring-brand-500/50">
@@ -302,8 +296,8 @@ export default function App() {
         className="sm:hidden fixed bottom-3 left-4 right-4 bg-[#02040a]/85 backdrop-blur-md border border-white/12 py-3 px-5 flex justify-between items-center z-50 rounded-[2.5rem] shadow-lg overflow-x-auto"
         aria-label="Primary"
       >
-        {(['dashboard', 'business', 'physio'] as View[]).map((key) => (
-          <MobileNavButton key={key} view={key} current={view} onSelect={setView} badge={key === 'business' ? state.ideas.length : 0} />
+        {mobileModules.slice(0, mobileMid).map((mod) => (
+          <MobileNavButton key={mod.id} module={mod} current={view} onSelect={setView} badge={badgeFor(mod.id, state.ideas.length, openTasks)} />
         ))}
         <button
           onClick={() => setSettingsOpen(true)}
@@ -312,8 +306,8 @@ export default function App() {
         >
           <Sliders size={22} className="text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
         </button>
-        {(['vision', 'buy_list'] as View[]).map((key) => (
-          <MobileNavButton key={key} view={key} current={view} onSelect={setView} badge={key === 'buy_list' ? openTasks : 0} />
+        {mobileModules.slice(mobileMid).map((mod) => (
+          <MobileNavButton key={mod.id} module={mod} current={view} onSelect={setView} badge={badgeFor(mod.id, state.ideas.length, openTasks)} />
         ))}
       </nav>
 
@@ -321,6 +315,7 @@ export default function App() {
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         updateState={updateState}
+        features={features}
         selectedAtmosphereMode={selectedAtmosphereMode}
         setSelectedAtmosphereMode={setSelectedAtmosphereMode}
       />
@@ -333,36 +328,36 @@ export default function App() {
   );
 }
 
-const MOBILE_ICONS: Record<View, ReactNode> = {
-  dashboard: <LayoutDashboard size={20} />,
-  business: <Lightbulb size={20} />,
-  physio: <Activity size={20} />,
-  vision: <Eye size={20} />,
-  buy_list: <ShoppingCart size={20} />,
-};
+/** Badge counts shown on nav modules that surface a pending count. */
+function badgeFor(id: FeatureId, ideaCount: number, openTasks: number): number {
+  if (id === 'business') return ideaCount;
+  if (id === 'buy_list') return openTasks;
+  return 0;
+}
 
 function MobileNavButton({
-  view,
+  module,
   current,
   onSelect,
   badge,
 }: {
-  view: View;
+  module: FeatureModule;
   current: View;
   onSelect: (v: View) => void;
   badge: number;
 }) {
-  const label = NAV_ITEMS.find((n) => n.key === view)?.label ?? view;
+  const Icon = module.icon;
+  const active = current === module.id;
   return (
     <button
-      onClick={() => onSelect(view)}
-      aria-label={label}
-      aria-current={current === view ? 'page' : undefined}
+      onClick={() => onSelect(module.id as View)}
+      aria-label={module.label}
+      aria-current={active ? 'page' : undefined}
       className={`relative flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all ${
-        current === view ? 'text-white bg-white/10' : 'text-white/40'
+        active ? 'text-white bg-white/10' : 'text-white/40'
       }`}
     >
-      {MOBILE_ICONS[view]}
+      <Icon size={20} />
       {badge > 0 && (
         <span className="absolute -top-1 -right-1 bg-brand-500 text-white min-w-4 h-4 rounded-full text-[9px] flex items-center justify-center font-bold px-1 ring-2 ring-[#02040a]">
           {badge}

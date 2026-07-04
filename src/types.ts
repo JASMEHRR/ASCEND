@@ -43,6 +43,11 @@ export interface OSState {
   streakDate?: string;
   primaryObjective?: PrimaryObjective;
   points?: number;
+  /**
+   * Per-user module enable/disable state, keyed by FeatureId (see
+   * features/registry.ts). Absent keys fall back to each module's default.
+   */
+  features?: Record<string, boolean>;
   physioState?: {
     back: number;
     tailbone: number;
