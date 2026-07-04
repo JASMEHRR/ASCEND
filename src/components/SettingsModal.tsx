@@ -5,6 +5,7 @@ import { useDialog } from '../context/DialogContext';
 import { useTheme } from '../context/ThemeContext';
 import { useJarvis } from '../features/jarvis/engine/JarvisProvider';
 import ObsidianSettings from '../features/obsidian/ObsidianSettings';
+import GoogleSettings from '../features/google/GoogleSettings';
 import type { FeaturesApi } from '../features/useFeatures';
 import { FEATURES, type FeatureModule } from '../features/registry';
 
@@ -192,6 +193,10 @@ export default function SettingsModal({ isOpen, onClose, state, updateState, fea
             <span className="text-[10px] font-mono font-extrabold text-white/40 uppercase tracking-[0.18em]">Sanctuary Atmosphere</span>
             <AtmosphereSelector value={selectedAtmosphereMode} onChange={setSelectedAtmosphereMode} />
           </section>
+
+          <div className="border-t border-white/8 pt-4">
+            <GoogleSettings />
+          </div>
 
           <div className="border-t border-white/8 pt-4">
             <ObsidianSettings />

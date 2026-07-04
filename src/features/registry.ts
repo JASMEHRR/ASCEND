@@ -110,11 +110,11 @@ export const FEATURES: FeatureModule[] = [
   {
     id: 'planning',
     label: 'AI Daily Planning',
-    description: 'Jarvis proposes a schedule you approve before anything syncs.',
+    description: 'Jarvis proposes a schedule you approve before anything syncs to Google Calendar.',
     icon: CalendarClock,
     nav: false,
-    defaultEnabled: false,
-    status: 'coming-soon',
+    defaultEnabled: true,
+    status: 'active',
   },
   {
     id: 'insights',

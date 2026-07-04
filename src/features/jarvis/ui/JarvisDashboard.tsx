@@ -28,6 +28,7 @@ import { useJarvis } from '../engine/JarvisProvider';
 import type { View } from '../context/appContext';
 import JarvisConsole from './JarvisConsole';
 import JarvisOrb, { useOrbState, type OrbState } from './JarvisOrb';
+import PlanApprovalCard from '../../planning/PlanApprovalCard';
 
 interface Props {
   state: OSState;
@@ -125,6 +126,11 @@ export default function JarvisDashboard({ state, updateState, setView, openSetti
             </>
           )}
         </div>
+      </div>
+
+      {/* A staged day plan interrupts the calm — it needs a decision. */}
+      <div className="mt-3 empty:hidden">
+        <PlanApprovalCard updateState={updateState} />
       </div>
 
       {/* Console — the one always-present surface besides the orb. */}
