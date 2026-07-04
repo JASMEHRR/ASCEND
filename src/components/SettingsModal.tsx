@@ -38,6 +38,14 @@ export default function SettingsModal({ isOpen, onClose, state, updateState, fea
       jarvisPrefs: { ...(s.jarvisPrefs ?? {}), greetOnLogin: !(s.jarvisPrefs?.greetOnLogin ?? true) },
     }));
 
+  const activeHours = state.jarvisPrefs?.activeHours ?? { start: 8, end: 22 };
+  const setActiveHours = (patch: Partial<{ start: number; end: number }>) =>
+    updateState((s) => ({
+      ...s,
+      jarvisPrefs: { ...(s.jarvisPrefs ?? {}), activeHours: { ...(s.jarvisPrefs?.activeHours ?? { start: 8, end: 22 }), ...patch } },
+    }));
+  const hourLabel = (h: number) => `${((h + 11) % 12) + 1}${h < 12 ? 'am' : 'pm'}`;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md" onClick={onClose}>
       <div
@@ -170,6 +178,28 @@ export default function SettingsModal({ isOpen, onClose, state, updateState, fea
                 </button>
               </div>
             )}
+
+            <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-white/[0.03] border border-white/8">
+              <span className="flex-1 min-w-0">
+                <span className="block text-[12px] font-bold text-white/85 leading-tight">Insight hours</span>
+                <span className="block text-[10.5px] text-white/35">Proactive nudges stay silent outside this window.</span>
+              </span>
+              {(['start', 'end'] as const).map((edge) => (
+                <select
+                  key={edge}
+                  value={activeHours[edge]}
+                  onChange={(e) => setActiveHours({ [edge]: Number(e.target.value) })}
+                  aria-label={`Active hours ${edge}`}
+                  className="rounded-xl border border-white/12 bg-surface px-2 py-1.5 text-[11px] text-white/85 outline-none focus:border-brand-400/40 cursor-pointer"
+                >
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <option key={h} value={h}>
+                      {hourLabel(h)}
+                    </option>
+                  ))}
+                </select>
+              ))}
+            </div>
           </section>
 
           <section className="space-y-2 border-t border-white/8 pt-4">

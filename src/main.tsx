@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { ToastProvider } from './context/ToastContext';
 import { DialogProvider } from './context/DialogContext';
 import { LaunchStateProvider } from './features/launch/LaunchStateContext';
 import { JarvisProvider } from './features/jarvis/engine/JarvisProvider';
@@ -14,8 +15,9 @@ import './index.css';
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ThemeProvider>
-      <AuthProvider>
-        <LaunchStateProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <LaunchStateProvider>
         <DialogProvider>
           <ObsidianProvider>
             <GoogleProvider>
@@ -27,8 +29,9 @@ createRoot(document.getElementById('root')!).render(
             </GoogleProvider>
           </ObsidianProvider>
         </DialogProvider>
-        </LaunchStateProvider>
-      </AuthProvider>
+          </LaunchStateProvider>
+        </AuthProvider>
+      </ToastProvider>
     </ThemeProvider>
   </StrictMode>,
 );

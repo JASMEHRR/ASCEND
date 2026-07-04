@@ -119,11 +119,11 @@ export const FEATURES: FeatureModule[] = [
   {
     id: 'insights',
     label: 'Proactive Insights',
-    description: 'Timely nudges Jarvis surfaces during your active hours.',
+    description: 'Timely toast + voice nudges during your active hours.',
     icon: Sparkles,
     nav: false,
-    defaultEnabled: false,
-    status: 'coming-soon',
+    defaultEnabled: true,
+    status: 'active',
   },
   {
     id: 'journal',

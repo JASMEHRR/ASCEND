@@ -26,6 +26,7 @@ import PlanningRegistrar from './features/planning/PlanningRegistrar';
 import GmailRegistrar from './features/gmail/GmailRegistrar';
 import StocksRegistrar from './features/stocks/StocksRegistrar';
 import JournalRegistrar from './features/journal/JournalRegistrar';
+import InsightsEngine from './features/insights/InsightsEngine';
 
 // Route views that aren't the default are code-split to keep the initial bundle small.
 const LaunchHub = lazy(() => import('./features/launch/LaunchHub'));
@@ -302,6 +303,7 @@ export default function App() {
       {isFeatureEnabled(state, 'gmail') && <GmailRegistrar />}
       {isFeatureEnabled(state, 'stocks') && <StocksRegistrar state={state} updateState={updateState} />}
       {isFeatureEnabled(state, 'journal') && <JournalRegistrar state={state} updateState={updateState} />}
+      {isFeatureEnabled(state, 'insights') && <InsightsEngine state={state} />}
     </div>
   );
 }

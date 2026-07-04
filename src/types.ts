@@ -52,6 +52,8 @@ export interface OSState {
   jarvisPrefs?: {
     /** Jarvis greets proactively on login (default true). */
     greetOnLogin?: boolean;
+    /** Local hours [start, end) when proactive insights may speak (default 8–22). */
+    activeHours?: { start: number; end: number };
   };
   physioState?: {
     back: number;
