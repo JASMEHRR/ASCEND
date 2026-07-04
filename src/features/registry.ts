@@ -146,11 +146,12 @@ export const FEATURES: FeatureModule[] = [
   {
     id: 'stocks',
     label: 'Stocks & Finance',
-    description: 'Portfolio, watchlist alerts, budgeting, and net-worth trend.',
+    description: 'Live portfolio & watchlist (Indian + international), budgeting, net worth.',
     icon: LineChart,
-    nav: false,
-    defaultEnabled: false,
-    status: 'coming-soon',
+    nav: true,
+    mobile: true,
+    defaultEnabled: true,
+    status: 'active',
   },
 ];
 

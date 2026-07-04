@@ -15,6 +15,7 @@ import dotenv from "dotenv";
 import { getGemini, GEMINI_MODEL } from "./gemini";
 import { launchRouter } from "./launch-routes";
 import { jarvisRouter } from "./jarvis-routes";
+import { stocksRouter } from "./stocks-routes";
 
 dotenv.config({ override: true });
 
@@ -26,6 +27,8 @@ app.use(express.json({ limit: "256kb" }));
 app.use("/api/launch", launchRouter);
 // Jarvis AI command core (tool-registry relay).
 app.use("/api/jarvis", jarvisRouter);
+// Market data proxy (Yahoo Finance — Indian + international tickers).
+app.use("/api/stocks", stocksRouter);
 
 // The AI physiotherapist's persona and safety rules. Personalise the
 // conditions / trek details below as the user's situation changes.

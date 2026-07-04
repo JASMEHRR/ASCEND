@@ -1,0 +1,42 @@
+/** Client for the backend Yahoo proxy (/api/stocks). */
+
+export interface Quote {
+  symbol: string;
+  name: string | null;
+  price: number;
+  prevClose: number | null;
+  changePct: number | null;
+  currency: string | null;
+  exchange: string | null;
+}
+
+export interface QuotesResult {
+  quotes: Quote[];
+  /** Symbols the upstream couldn't resolve this round. */
+  failed: string[];
+}
+
+export async function fetchQuotes(symbols: string[], signal?: AbortSignal): Promise<QuotesResult> {
+  const unique = [...new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean))];
+  if (unique.length === 0) return { quotes: [], failed: [] };
+  const res = await fetch(`/api/stocks/quotes?symbols=${encodeURIComponent(unique.join(','))}`, { signal });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(data?.error ?? `Market data error (${res.status})`);
+  return { quotes: data.quotes ?? [], failed: data.failed ?? [] };
+}
+
+export async function searchSymbols(q: string): Promise<{ symbol: string; name: string | null; exchange: string | null }[]> {
+  const res = await fetch(`/api/stocks/search?q=${encodeURIComponent(q)}`);
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(data?.error ?? `Symbol search error (${res.status})`);
+  return data.matches ?? [];
+}
+
+/** Format an amount in a quote's currency (₹ for INR, $ for USD, …). */
+export function money(amount: number, currency: string | null): string {
+  try {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency: currency ?? 'USD', maximumFractionDigits: 2 }).format(amount);
+  } catch {
+    return `${amount.toFixed(2)} ${currency ?? ''}`.trim();
+  }
+}

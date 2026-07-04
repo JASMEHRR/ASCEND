@@ -60,4 +60,50 @@ export interface OSState {
     foot: number;
     neck: number;
   };
+  /** Stocks & Finance module (manual entries; live quotes come from /api/stocks). */
+  finance?: FinanceState;
 }
+
+export interface Holding {
+  id: string;
+  /** Yahoo Finance symbol, e.g. RELIANCE.NS, TCS.BO, AAPL. */
+  symbol: string;
+  qty: number;
+  /** Average cost per unit, in the instrument's own currency. */
+  avgCost: number;
+}
+
+export interface WatchItem {
+  id: string;
+  symbol: string;
+  /** Optional alert thresholds (same currency as the quote). */
+  alertAbove?: number;
+  alertBelow?: number;
+}
+
+export interface Expense {
+  id: string;
+  label: string;
+  amount: number;
+  category?: string;
+  /** ISO timestamp — budget math groups by calendar month. */
+  at: string;
+}
+
+export interface NetWorthItem {
+  id: string;
+  label: string;
+  amount: number;
+  type: 'asset' | 'liability';
+}
+
+export interface FinanceState {
+  holdings: Holding[];
+  watchlist: WatchItem[];
+  /** Monthly spending cap for the budget tracker (optional). */
+  monthlyBudget?: number;
+  expenses: Expense[];
+  netWorthItems: NetWorthItem[];
+}
+
+export const EMPTY_FINANCE: FinanceState = { holdings: [], watchlist: [], expenses: [], netWorthItems: [] };
