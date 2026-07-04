@@ -10,14 +10,34 @@
   --color-trek: #10b981;
   --color-ritual: #8b5cf6;
   --color-amber-directive: #f59e0b;
-  
+
+  /* Semantic surfaces — themed via [data-theme] below. Use bg-app / bg-surface. */
+  --color-app: #02040a;
+  --color-surface: #0b0d13;
+
   --font-plus: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
+/*
+ * LIGHT THEME.
+ * Tailwind v4 resolves every white-based utility (text-white, bg-white/[0.04],
+ * border-white/10, …) through --color-white, so re-mapping it to ink here flips
+ * the entire glass language at once: dark tint on light surfaces. Brand colors
+ * stay put. Hardcoded hexes were migrated to bg-app / bg-surface.
+ */
+[data-theme='light'] {
+  --color-white: #0e1424;
+  --color-app: #e9edf4;
+  --color-surface: #f7f9fc;
+}
+
 @layer base {
+  html {
+    background: var(--color-app);
+  }
   body {
-    @apply bg-[#030610] text-[#f4f4f5] font-plus antialiased overflow-hidden select-none;
+    @apply bg-app text-white/95 font-plus antialiased overflow-hidden select-none;
   }
 }
 
@@ -87,6 +107,51 @@
   .glass-shimmer:hover::before {
     transform: translate(50%, 50%) rotate(45deg);
   }
+}
+
+/* Liquid glass adapted for light surfaces: ink-tinted glass, soft shadows. */
+[data-theme='light'] .liquid-glass-panel {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0.5) 100%);
+  border: 1px solid rgba(14, 20, 36, 0.1);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.85),
+    inset 0 -1px 0 0 rgba(14, 20, 36, 0.04),
+    0 12px 36px -12px rgba(30, 41, 66, 0.25);
+}
+
+[data-theme='light'] .liquid-glass-highlight {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.85) 0%, rgba(255, 255, 255, 0.62) 100%);
+  border: 1px solid rgba(14, 20, 36, 0.12);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.95),
+    0 16px 40px -14px rgba(30, 41, 66, 0.3);
+}
+
+[data-theme='light'] .liquid-glass-input {
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(14, 20, 36, 0.1);
+  box-shadow: inset 0 1.5px 3px rgba(30, 41, 66, 0.08);
+}
+
+[data-theme='light'] .glass-shimmer::before {
+  background: linear-gradient(45deg, transparent 45%, rgba(255, 255, 255, 0.55) 50%, transparent 55%);
+}
+
+[data-theme='light'] .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(14, 20, 36, 0.15);
+  border: 1px solid rgba(14, 20, 36, 0.05);
+}
+
+[data-theme='light'] .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(14, 20, 36, 0.28);
+}
+
+/* Soft veil that keeps the photographic atmosphere readable in light mode. */
+[data-theme='light'] .theme-veil {
+  position: absolute;
+  inset: 0;
+  background: rgba(238, 242, 248, 0.82);
+  pointer-events: none;
 }
 
 .custom-scrollbar::-webkit-scrollbar {

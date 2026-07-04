@@ -62,7 +62,7 @@ export default function Modal({
             role="dialog"
             aria-modal="true"
             aria-label={typeof title === 'string' ? title : 'Dialog'}
-            className={`relative w-full ${maxWidthClass} bg-[#0b0d13]/95 text-[#f4f4f5] border border-white/12 rounded-[1.75rem] shadow-[0_30px_60px_rgba(0,0,0,0.8)] overflow-hidden`}
+            className={`relative w-full ${maxWidthClass} bg-surface/95 text-white border border-white/12 rounded-[1.75rem] shadow-[0_30px_60px_rgba(0,0,0,0.8)] overflow-hidden`}
             initial={{ opacity: 0, scale: 0.96, y: 12 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 12 }}

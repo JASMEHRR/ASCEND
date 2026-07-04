@@ -1,7 +1,8 @@
-import { X, Settings2, Lock, Volume2 } from 'lucide-react';
+import { X, Settings2, Lock, Volume2, Moon, Sun } from 'lucide-react';
 import { OSState } from '../types';
 import AtmosphereSelector from './AtmosphereSelector';
 import { useDialog } from '../context/DialogContext';
+import { useTheme } from '../context/ThemeContext';
 import { useJarvis } from '../features/jarvis/engine/JarvisProvider';
 import ObsidianSettings from '../features/obsidian/ObsidianSettings';
 import type { FeaturesApi } from '../features/useFeatures';
@@ -23,6 +24,7 @@ const COMING_SOON: FeatureModule[] = FEATURES.filter((f) => f.status === 'coming
 export default function SettingsModal({ isOpen, onClose, state, updateState, features, selectedAtmosphereMode, setSelectedAtmosphereMode }: Props) {
   const { confirm } = useDialog();
   const { voice } = useJarvis();
+  const { theme, toggleTheme } = useTheme();
   if (!isOpen) return null;
 
   const englishVoices = voice.voices.filter((v) => /^en[-_]/i.test(v.lang));
@@ -38,7 +40,7 @@ export default function SettingsModal({ isOpen, onClose, state, updateState, fea
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md" onClick={onClose}>
       <div
-        className="relative w-full max-w-md bg-[#0b0d13]/95 text-[#f4f4f5] border border-white/12 rounded-[1.75rem] shadow-[0_30px_60px_rgba(0,0,0,0.8)] overflow-hidden"
+        className="relative w-full max-w-md bg-surface/95 text-white border border-white/12 rounded-[1.75rem] shadow-[0_30px_60px_rgba(0,0,0,0.8)] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-white/8">
@@ -125,7 +127,7 @@ export default function SettingsModal({ isOpen, onClose, state, updateState, fea
                   value={voice.voiceURI ?? ''}
                   onChange={(e) => voice.setVoiceURI(e.target.value)}
                   aria-label="Jarvis voice"
-                  className="max-w-[40%] rounded-xl border border-white/12 bg-[#0b0d13] px-2 py-1.5 text-[11px] text-white/85 outline-none focus:border-brand-400/40 cursor-pointer"
+                  className="max-w-[40%] rounded-xl border border-white/12 bg-surface px-2 py-1.5 text-[11px] text-white/85 outline-none focus:border-brand-400/40 cursor-pointer"
                 >
                   {pickerVoices.map((v) => (
                     <option key={v.voiceURI} value={v.voiceURI}>
@@ -142,6 +144,23 @@ export default function SettingsModal({ isOpen, onClose, state, updateState, fea
                 </button>
               </div>
             )}
+          </section>
+
+          <section className="space-y-2 border-t border-white/8 pt-4">
+            <span className="text-[10px] font-mono font-extrabold text-white/40 uppercase tracking-[0.18em]">Appearance</span>
+            <button
+              onClick={toggleTheme}
+              role="switch"
+              aria-checked={theme === 'light'}
+              className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl bg-white/[0.03] border border-white/8 hover:bg-white/[0.06] hover:border-white/15 transition-all cursor-pointer text-left"
+            >
+              <span className="text-white/50">{theme === 'dark' ? <Moon size={16} /> : <Sun size={16} />}</span>
+              <span className="flex-1 min-w-0">
+                <span className="block text-[12px] font-bold text-white/85 leading-tight">Theme: {theme === 'dark' ? 'Dark' : 'Light'}</span>
+                <span className="block text-[10.5px] text-white/35">Liquid glass in both. Dark is the command-center default.</span>
+              </span>
+              <ToggleTrack on={theme === 'light'} />
+            </button>
           </section>
 
           <section className="space-y-2 border-t border-white/8 pt-4">

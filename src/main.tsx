@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import { AuthProvider } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { DialogProvider } from './context/DialogContext';
 import { LaunchStateProvider } from './features/launch/LaunchStateContext';
 import { JarvisProvider } from './features/jarvis/engine/JarvisProvider';
@@ -10,8 +11,9 @@ import './index.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <AuthProvider>
-      <LaunchStateProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <LaunchStateProvider>
         <DialogProvider>
           <ObsidianProvider>
             <JarvisProvider>
@@ -19,7 +21,8 @@ createRoot(document.getElementById('root')!).render(
             </JarvisProvider>
           </ObsidianProvider>
         </DialogProvider>
-      </LaunchStateProvider>
-    </AuthProvider>
+        </LaunchStateProvider>
+      </AuthProvider>
+    </ThemeProvider>
   </StrictMode>,
 );
