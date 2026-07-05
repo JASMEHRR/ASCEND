@@ -3,14 +3,17 @@
  * LaunchKit generators) calls generateChat/generateStructured here instead of
  * talking to a provider directly, so the whole app shares one resilient chain:
  *
- *   NVIDIA NIM (Llama 4 Maverick, free ~40 req/min)
- *     → Gemini 2.5 Flash (free ~20 req/day)
- *       → Gemini 2.5 Flash-Lite
- *         → clear 429 error (never a silent failure)
+ *   Groq (Llama 4 Maverick, free ~30 req/min — reachable from Vercel)
+ *     → NVIDIA NIM (same model; NVIDIA's edge silently drops chat POSTs from
+ *       Vercel egress, but NIM works from local dev and may recover)
+ *       → Gemini 2.5 Flash (free ~20 req/day)
+ *         → Gemini 2.5 Flash-Lite
+ *           → clear 429 error (never a silent failure)
  *
- * NIM is primary because its free rate limit is per-minute, not per-day —
- * the v3 root cause of "Jarvis randomly broken" was Gemini's daily cap.
- * All keys (NVIDIA_API_KEY, GEMINI_API_KEY) are server-side only.
+ * Per-minute free tiers lead the chain because the v3 root cause of "Jarvis
+ * randomly broken" was Gemini's tiny daily cap. All keys (GROQ_API_KEY,
+ * NVIDIA_API_KEY, GEMINI_API_KEY) are server-side only; a missing key just
+ * skips that hop.
  */
 import { getGemini, GEMINI_MODEL, GEMINI_FALLBACK_MODEL, isQuotaError, GeminiError, extractJson } from './gemini';
 
@@ -19,10 +22,29 @@ export { GeminiError, extractJson };
 /** Llama 4 Maverick: MoE (~17B active) so flash-class latency, reliable at
  * strict-JSON instruction following, 1M context. See BUILD_NOTES.md (v4). */
 export const NIM_MODEL = 'meta/llama-4-maverick-17b-128e-instruct';
-const NIM_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
-// A healthy NIM answers typical Jarvis turns in 1-5s; when it's unreachable
-// (observed: silent drops from datacenter egress) fail over to Gemini fast.
-const NIM_TIMEOUT_MS = 20_000;
+
+/** OpenAI-compatible hops, tried in order (missing key = skipped). */
+const OPENAI_PROVIDERS = [
+  {
+    name: 'groq',
+    url: 'https://api.groq.com/openai/v1/chat/completions',
+    keyEnv: 'GROQ_API_KEY',
+    model: 'meta-llama/llama-4-maverick-17b-128e-instruct',
+    timeoutMs: 30_000,
+  },
+  {
+    name: 'nim',
+    url: 'https://integrate.api.nvidia.com/v1/chat/completions',
+    keyEnv: 'NVIDIA_API_KEY',
+    model: NIM_MODEL,
+    // A healthy NIM answers in 1-5s; when its edge drops the request
+    // (observed from Vercel: /v1/models 200 in 13ms, chat POST never
+    // returns, streamed or not) fail over fast instead of stalling.
+    timeoutMs: 15_000,
+  },
+] as const;
+
+type OpenAIProvider = (typeof OPENAI_PROVIDERS)[number];
 
 export interface LlmMessage {
   role: 'user' | 'assistant';
@@ -38,9 +60,9 @@ export interface ChatOptions {
   temperature?: number;
 }
 
-async function callNim(opts: ChatOptions, apiKey: string): Promise<string> {
+async function callOpenAICompat(opts: ChatOptions, provider: OpenAIProvider, apiKey: string): Promise<string> {
   const body: Record<string, unknown> = {
-    model: NIM_MODEL,
+    model: provider.model,
     messages: [
       { role: 'system', content: opts.system },
       ...opts.messages.map((m) => ({ role: m.role, content: m.content })),
@@ -52,35 +74,32 @@ async function callNim(opts: ChatOptions, apiKey: string): Promise<string> {
   if (opts.json) body.response_format = { type: 'json_object' };
 
   const post = (payload: Record<string, unknown>) =>
-    fetch(NIM_URL, {
+    fetch(provider.url, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
         Accept: 'application/json',
-        // Node fetch sends no User-Agent by default; NVIDIA's edge silently
-        // drops UA-less requests from datacenter IPs (Vercel) — observed as
-        // 45s hangs while the same call succeeded instantly from curl.
         'User-Agent': 'ascend-jarvis/4.0 (+https://ascend-delta-sage.vercel.app)',
       },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(NIM_TIMEOUT_MS),
+      signal: AbortSignal.timeout(provider.timeoutMs),
     });
 
   let res = await post(body);
-  // Some NIM models reject response_format; the prompt + extractJson are the
-  // real JSON guarantee, so retry once without it rather than failing the turn.
+  // Some models reject response_format; the prompt + extractJson are the real
+  // JSON guarantee, so retry once without it rather than failing the turn.
   if (res.status === 400 && opts.json) {
     const { response_format: _drop, ...withoutFormat } = body;
     res = await post(withoutFormat);
   }
   if (!res.ok) {
     const detail = (await res.text().catch(() => '')).slice(0, 300);
-    throw new Error(`NIM ${res.status}: ${detail}`);
+    throw new Error(`${provider.name} ${res.status}: ${detail}`);
   }
   const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
   const text = data.choices?.[0]?.message?.content ?? '';
-  if (!text.trim()) throw new Error('NIM returned empty content');
+  if (!text.trim()) throw new Error(`${provider.name} returned empty content`);
   return text;
 }
 
@@ -106,13 +125,14 @@ async function callGemini(opts: ChatOptions, model: string): Promise<string> {
  * text; callers extractJson/parse as needed. Throws GeminiError(429) with a
  * human-readable message only when every provider is exhausted. */
 export async function generateChat(opts: ChatOptions): Promise<string> {
-  const nimKey = process.env.NVIDIA_API_KEY;
-  if (nimKey) {
+  for (const provider of OPENAI_PROVIDERS) {
+    const apiKey = process.env[provider.keyEnv];
+    if (!apiKey) continue;
     try {
-      return await callNim(opts, nimKey);
+      return await callOpenAICompat(opts, provider, apiKey);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn('[llm] NIM failed, falling back to Gemini:', msg);
+      console.warn(`[llm] ${provider.name} failed, trying next provider:`, msg);
     }
   }
 

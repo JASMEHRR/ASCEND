@@ -10,17 +10,26 @@ Four additions on the stable v3 base. All phases committed separately; see git l
   `https://ascend-delta-sage.vercel.app/api/kite/callback` — production only
   (Kite allows one redirect URL per app), so OAuth testing happens against the
   live deploy; a DEV-only paste-token field in Settings covers local work.
-- **Primary model: NVIDIA NIM** `meta/llama-4-maverick-17b-128e-instruct`.
+- **Model: Llama 4 Maverick** (`llama-4-maverick-17b-128e-instruct`).
   Rationale: MoE (~17B active params) = flash-class latency; reliable strict-JSON
   instruction following (the Jarvis protocol needs raw JSON); 1M context.
   Rejected: Nemotron variants (reasoning `<think>` overhead — wrong for a voice
-  assistant), Mistral Large (slower dense model). Chain in `llm.ts`:
-  NIM → gemini-2.5-flash → gemini-2.5-flash-lite → clear 429 message, never a
-  silent failure. Physio + LaunchKit share the same chain now.
-  - **NIM ToS note**: build.nvidia.com's free hosted endpoint is intended for
-    development/testing/evaluation, not production serving. Fine while this app
-    serves only its owner; revisit (self-host NIM or paid endpoint) if the app
-    ever gets real users.
+  assistant), Mistral Large (slower dense model).
+  - **PROVIDER FINDING (2026-07-05): NVIDIA NIM is unusable from Vercel.**
+    From the deployed function, `GET /v1/models` returns 200 in ~13ms but
+    `POST /v1/chat/completions` never returns a byte (buffered OR streamed;
+    User-Agent set; key valid — same request from a residential IP answers in
+    ~1s). Matches public reports of NIM hanging via gateways/containers.
+    Diagnosed with the temporary `/api/llm-health` route (remove when stable).
+  - **Chain in `llm.ts`** (missing key = hop skipped, all OpenAI-compatible
+    hops share one code path): **Groq** (same Maverick model, free ~30 req/min,
+    console.groq.com, works from Vercel) → **NIM** (works from local dev;
+    15s timeout in case its edge recovers) → gemini-2.5-flash →
+    gemini-2.5-flash-lite → clear 429 message, never a silent failure.
+    Physio + LaunchKit share the same chain.
+  - **Free-tier ToS note**: NVIDIA's and Groq's free endpoints are meant for
+    development/evaluation-scale use, not serving real traffic. Fine while
+    this app serves only its owner; revisit if it ever gets real users.
 - **TTS: ElevenLabs** (`eleven_flash_v2_5`, 0.5 credits/char, 500-char input
   clamp in `/api/tts`). Voice pinned via the existing storage key using an
   `eleven:<voiceId>` prefix; browser pins unaffected. On quota/auth failure the

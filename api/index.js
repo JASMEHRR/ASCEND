@@ -39,11 +39,28 @@ function extractJson(raw) {
 
 // llm.ts
 var NIM_MODEL = "meta/llama-4-maverick-17b-128e-instruct";
-var NIM_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
-var NIM_TIMEOUT_MS = 2e4;
-async function callNim(opts, apiKey) {
-  const body = {
+var OPENAI_PROVIDERS = [
+  {
+    name: "groq",
+    url: "https://api.groq.com/openai/v1/chat/completions",
+    keyEnv: "GROQ_API_KEY",
+    model: "meta-llama/llama-4-maverick-17b-128e-instruct",
+    timeoutMs: 3e4
+  },
+  {
+    name: "nim",
+    url: "https://integrate.api.nvidia.com/v1/chat/completions",
+    keyEnv: "NVIDIA_API_KEY",
     model: NIM_MODEL,
+    // A healthy NIM answers in 1-5s; when its edge drops the request
+    // (observed from Vercel: /v1/models 200 in 13ms, chat POST never
+    // returns, streamed or not) fail over fast instead of stalling.
+    timeoutMs: 15e3
+  }
+];
+async function callOpenAICompat(opts, provider, apiKey) {
+  const body = {
+    model: provider.model,
     messages: [
       { role: "system", content: opts.system },
       ...opts.messages.map((m) => ({ role: m.role, content: m.content }))
@@ -53,19 +70,16 @@ async function callNim(opts, apiKey) {
     stream: false
   };
   if (opts.json) body.response_format = { type: "json_object" };
-  const post = (payload) => fetch(NIM_URL, {
+  const post = (payload) => fetch(provider.url, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
       Accept: "application/json",
-      // Node fetch sends no User-Agent by default; NVIDIA's edge silently
-      // drops UA-less requests from datacenter IPs (Vercel) — observed as
-      // 45s hangs while the same call succeeded instantly from curl.
       "User-Agent": "ascend-jarvis/4.0 (+https://ascend-delta-sage.vercel.app)"
     },
     body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(NIM_TIMEOUT_MS)
+    signal: AbortSignal.timeout(provider.timeoutMs)
   });
   let res = await post(body);
   if (res.status === 400 && opts.json) {
@@ -74,11 +88,11 @@ async function callNim(opts, apiKey) {
   }
   if (!res.ok) {
     const detail = (await res.text().catch(() => "")).slice(0, 300);
-    throw new Error(`NIM ${res.status}: ${detail}`);
+    throw new Error(`${provider.name} ${res.status}: ${detail}`);
   }
   const data = await res.json();
   const text = data.choices?.[0]?.message?.content ?? "";
-  if (!text.trim()) throw new Error("NIM returned empty content");
+  if (!text.trim()) throw new Error(`${provider.name} returned empty content`);
   return text;
 }
 async function callGemini(opts, model) {
@@ -99,13 +113,14 @@ async function callGemini(opts, model) {
   return response.text ?? "";
 }
 async function generateChat(opts) {
-  const nimKey = process.env.NVIDIA_API_KEY;
-  if (nimKey) {
+  for (const provider of OPENAI_PROVIDERS) {
+    const apiKey = process.env[provider.keyEnv];
+    if (!apiKey) continue;
     try {
-      return await callNim(opts, nimKey);
+      return await callOpenAICompat(opts, provider, apiKey);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn("[llm] NIM failed, falling back to Gemini:", msg);
+      console.warn(`[llm] ${provider.name} failed, trying next provider:`, msg);
     }
   }
   try {
