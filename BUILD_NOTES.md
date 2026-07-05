@@ -57,10 +57,16 @@ voice → browser TTS, search/Kite → clear "not configured" replies.
 - [x] Phase 2 — /api/tts + eleven: voice pinning + Settings picker groups
 - [x] Phase 3 — /api/search + WebSearchRegistrar tool
 - [x] Phase 4 — /api/kite + KiteProvider/Settings/Registrar/Panel
-- [ ] Phase 5 — push to main, set env vars in Vercel, live verification:
-      multi-turn memory test on the NIM path (state two facts, reference them
-      two messages later), voice via ElevenLabs, weather query triggers
-      webSearch (and a general question doesn't), full Kite OAuth round trip.
+- [x] Phase 5 — pushed to main, deployed, verified live (2026-07-05):
+      multi-turn recall through the new llm.ts chain (two facts stated,
+      recalled after unrelated turns — Gemini path, NIM key not yet set);
+      /api/tts, /api/search, /api/kite all return clean "not configured"
+      responses instead of crashing; /api/kite/login correctly round-trips
+      to /#kite_error=not_configured.
+- [ ] PENDING USER: set the five v4 env vars in Vercel, then re-verify the
+      key-dependent paths — NIM as primary (memory test again), ElevenLabs
+      voice audible, weather query triggers webSearch (a general question
+      doesn't), full Kite OAuth round trip + "how's my portfolio doing".
 
 ---
 
