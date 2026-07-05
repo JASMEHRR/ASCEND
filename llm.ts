@@ -20,7 +20,9 @@ export { GeminiError, extractJson };
  * strict-JSON instruction following, 1M context. See BUILD_NOTES.md (v4). */
 export const NIM_MODEL = 'meta/llama-4-maverick-17b-128e-instruct';
 const NIM_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
-const NIM_TIMEOUT_MS = 45_000;
+// A healthy NIM answers typical Jarvis turns in 1-5s; when it's unreachable
+// (observed: silent drops from datacenter egress) fail over to Gemini fast.
+const NIM_TIMEOUT_MS = 20_000;
 
 export interface LlmMessage {
   role: 'user' | 'assistant';
@@ -52,7 +54,15 @@ async function callNim(opts: ChatOptions, apiKey: string): Promise<string> {
   const post = (payload: Record<string, unknown>) =>
     fetch(NIM_URL, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        // Node fetch sends no User-Agent by default; NVIDIA's edge silently
+        // drops UA-less requests from datacenter IPs (Vercel) — observed as
+        // 45s hangs while the same call succeeded instantly from curl.
+        'User-Agent': 'ascend-jarvis/4.0 (+https://ascend-delta-sage.vercel.app)',
+      },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(NIM_TIMEOUT_MS),
     });

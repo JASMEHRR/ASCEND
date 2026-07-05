@@ -40,7 +40,7 @@ function extractJson(raw) {
 // llm.ts
 var NIM_MODEL = "meta/llama-4-maverick-17b-128e-instruct";
 var NIM_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
-var NIM_TIMEOUT_MS = 45e3;
+var NIM_TIMEOUT_MS = 2e4;
 async function callNim(opts, apiKey) {
   const body = {
     model: NIM_MODEL,
@@ -55,7 +55,15 @@ async function callNim(opts, apiKey) {
   if (opts.json) body.response_format = { type: "json_object" };
   const post = (payload) => fetch(NIM_URL, {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      // Node fetch sends no User-Agent by default; NVIDIA's edge silently
+      // drops UA-less requests from datacenter IPs (Vercel) — observed as
+      // 45s hangs while the same call succeeded instantly from curl.
+      "User-Agent": "ascend-jarvis/4.0 (+https://ascend-delta-sage.vercel.app)"
+    },
     body: JSON.stringify(payload),
     signal: AbortSignal.timeout(NIM_TIMEOUT_MS)
   });
