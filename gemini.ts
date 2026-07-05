@@ -1,7 +1,7 @@
 /**
- * Shared server-side Gemini helpers. Every AI feature (Physio chat, LaunchKit
- * generators, Jarvis) goes through here so there's one client, one model
- * constant, and one JSON extractor — no duplicated AI infrastructure.
+ * Low-level Gemini layer: client, model constants, quota detection, and the
+ * shared JSON extractor. Since v4, features don't call this directly — they go
+ * through the provider chain in `llm.ts` (NIM primary, Gemini fallback).
  *
  * The GEMINI_API_KEY is read server-side only and never reaches the client.
  */
@@ -51,37 +51,4 @@ export function extractJson(raw: string): string {
   const last = text.lastIndexOf('}');
   if (first !== -1 && last > first) return text.slice(first, last + 1);
   return text;
-}
-
-/** One structured-output call to Gemini: returns JSON parsed to T. */
-export async function generateStructured<T>(opts: {
-  system: string;
-  prompt: string;
-  schema: object;
-  maxTokens?: number;
-}): Promise<T> {
-  const ai = await getGemini();
-  const system = `${opts.system}
-
-Respond with a single JSON object and nothing else — no prose, no markdown fences. It must conform exactly to this JSON Schema (every required field, correct types):
-
-${JSON.stringify(opts.schema, null, 2)}`;
-
-  const response = await ai.models.generateContent({
-    model: GEMINI_MODEL,
-    contents: opts.prompt,
-    config: {
-      systemInstruction: system,
-      responseMimeType: 'application/json',
-      maxOutputTokens: opts.maxTokens ?? 8192,
-    },
-  });
-
-  const text = response.text ?? '';
-  if (!text) throw new GeminiError(502, 'The model returned no output. Please try again.');
-  try {
-    return JSON.parse(extractJson(text)) as T;
-  } catch {
-    throw new GeminiError(502, 'The model did not return valid JSON. Please try again.');
-  }
 }

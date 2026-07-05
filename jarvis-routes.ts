@@ -3,15 +3,15 @@
  *
  * Stateless and tool-agnostic: the client sends the conversation, a context
  * snapshot, and the *declarations* of the tools currently registered in the app.
- * Gemini decides which (if any) tools to call and returns a spoken reply plus a
- * list of tool calls. The client executes tools locally through its registry, so
- * new modules can expose tools without ever touching this backend.
+ * The model decides which (if any) tools to call and returns a spoken reply plus
+ * a list of tool calls. The client executes tools locally through its registry,
+ * so new modules can expose tools without ever touching this backend.
  *
- * Reuses the shared Gemini client (no duplicated AI infrastructure) and the same
- * key/deploy shape as the other routes.
+ * Model calls go through the shared provider chain in llm.ts (NIM primary,
+ * Gemini fallback) — same key/deploy shape as the other routes.
  */
 import { Router, type Request, type Response } from 'express';
-import { getGemini, GEMINI_MODEL, GEMINI_FALLBACK_MODEL, extractJson, GeminiError, isQuotaError } from './gemini';
+import { generateChat, extractJson, GeminiError, type LlmMessage } from './llm';
 
 export const jarvisRouter = Router();
 
@@ -78,41 +78,22 @@ jarvisRouter.post('/', async (req: Request, res: Response) => {
     }
 
     const toolDecls: ToolDecl[] = Array.isArray(tools) ? tools.slice(0, 100) : [];
-    const contents = (history as ChatMessage[]).slice(-24).map((m) => ({
-      role: m.role === 'user' ? 'user' : 'model',
-      parts: [{ text: String(m.content ?? '') }],
+    const messages: LlmMessage[] = (history as ChatMessage[]).slice(-24).map((m) => ({
+      role: m.role === 'user' ? 'user' : 'assistant',
+      content: String(m.content ?? ''),
     }));
 
-    const ai = await getGemini();
-    const config = {
-      systemInstruction: buildSystem(toolDecls, context),
-      responseMimeType: 'application/json',
-      maxOutputTokens: 4096,
-    };
-
-    // Free-tier daily quotas are per-model, so a quota failure on the primary
-    // model gets one shot on the lite model before giving up — Jarvis staying
-    // responsive matters more than which flash variant answered.
-    let response;
-    try {
-      response = await ai.models.generateContent({ model: GEMINI_MODEL, contents, config });
-    } catch (err) {
-      if (!isQuotaError(err)) throw err;
-      try {
-        response = await ai.models.generateContent({ model: GEMINI_FALLBACK_MODEL, contents, config });
-      } catch (err2) {
-        if (isQuotaError(err2)) {
-          throw new GeminiError(
-            429,
-            "I've hit the AI quota for today, sir. The Gemini free tier resets daily — or upgrade the API key's plan for uninterrupted service.",
-          );
-        }
-        throw err2;
-      }
-    }
+    // generateChat runs the NIM → flash → flash-lite chain and only throws a
+    // clear 429 once every provider is exhausted — Jarvis staying responsive
+    // matters more than which model answered.
+    const raw = await generateChat({
+      system: buildSystem(toolDecls, context),
+      messages,
+      json: true,
+      maxTokens: 4096,
+    });
 
     // Pass the model's JSON through; the client fully validates/normalizes it.
-    const raw = response.text ?? '';
     try {
       const obj = JSON.parse(extractJson(raw));
       res.json({

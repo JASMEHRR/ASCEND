@@ -36,23 +36,99 @@ function extractJson(raw) {
   if (first !== -1 && last > first) return text.slice(first, last + 1);
   return text;
 }
-async function generateStructured(opts) {
+
+// llm.ts
+var NIM_MODEL = "meta/llama-4-maverick-17b-128e-instruct";
+var NIM_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
+var NIM_TIMEOUT_MS = 45e3;
+async function callNim(opts, apiKey) {
+  const body = {
+    model: NIM_MODEL,
+    messages: [
+      { role: "system", content: opts.system },
+      ...opts.messages.map((m) => ({ role: m.role, content: m.content }))
+    ],
+    max_tokens: opts.maxTokens ?? 4096,
+    temperature: opts.temperature ?? 0.6,
+    stream: false
+  };
+  if (opts.json) body.response_format = { type: "json_object" };
+  const post = (payload) => fetch(NIM_URL, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(NIM_TIMEOUT_MS)
+  });
+  let res = await post(body);
+  if (res.status === 400 && opts.json) {
+    const { response_format: _drop, ...withoutFormat } = body;
+    res = await post(withoutFormat);
+  }
+  if (!res.ok) {
+    const detail = (await res.text().catch(() => "")).slice(0, 300);
+    throw new Error(`NIM ${res.status}: ${detail}`);
+  }
+  const data = await res.json();
+  const text = data.choices?.[0]?.message?.content ?? "";
+  if (!text.trim()) throw new Error("NIM returned empty content");
+  return text;
+}
+async function callGemini(opts, model) {
   const ai = await getGemini();
+  const response = await ai.models.generateContent({
+    model,
+    contents: opts.messages.map((m) => ({
+      role: m.role === "user" ? "user" : "model",
+      parts: [{ text: m.content }]
+    })),
+    config: {
+      systemInstruction: opts.system,
+      maxOutputTokens: opts.maxTokens ?? 4096,
+      ...opts.json ? { responseMimeType: "application/json" } : {},
+      ...opts.temperature !== void 0 ? { temperature: opts.temperature } : {}
+    }
+  });
+  return response.text ?? "";
+}
+async function generateChat(opts) {
+  const nimKey = process.env.NVIDIA_API_KEY;
+  if (nimKey) {
+    try {
+      return await callNim(opts, nimKey);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn("[llm] NIM failed, falling back to Gemini:", msg);
+    }
+  }
+  try {
+    return await callGemini(opts, GEMINI_MODEL);
+  } catch (err) {
+    if (!isQuotaError(err)) throw err;
+    try {
+      return await callGemini(opts, GEMINI_FALLBACK_MODEL);
+    } catch (err2) {
+      if (isQuotaError(err2)) {
+        throw new GeminiError(
+          429,
+          "I've hit the limits on every AI provider for now, sir \u2014 quotas reset within minutes to hours. Give it a short while and try again."
+        );
+      }
+      throw err2;
+    }
+  }
+}
+async function generateStructured(opts) {
   const system = `${opts.system}
 
 Respond with a single JSON object and nothing else \u2014 no prose, no markdown fences. It must conform exactly to this JSON Schema (every required field, correct types):
 
 ${JSON.stringify(opts.schema, null, 2)}`;
-  const response = await ai.models.generateContent({
-    model: GEMINI_MODEL,
-    contents: opts.prompt,
-    config: {
-      systemInstruction: system,
-      responseMimeType: "application/json",
-      maxOutputTokens: opts.maxTokens ?? 8192
-    }
+  const text = await generateChat({
+    system,
+    messages: [{ role: "user", content: opts.prompt }],
+    json: true,
+    maxTokens: opts.maxTokens ?? 8192
   });
-  const text = response.text ?? "";
   if (!text) throw new GeminiError(502, "The model returned no output. Please try again.");
   try {
     return JSON.parse(extractJson(text));
@@ -346,34 +422,16 @@ jarvisRouter.post("/", async (req, res) => {
       return;
     }
     const toolDecls = Array.isArray(tools) ? tools.slice(0, 100) : [];
-    const contents = history.slice(-24).map((m) => ({
-      role: m.role === "user" ? "user" : "model",
-      parts: [{ text: String(m.content ?? "") }]
+    const messages = history.slice(-24).map((m) => ({
+      role: m.role === "user" ? "user" : "assistant",
+      content: String(m.content ?? "")
     }));
-    const ai = await getGemini();
-    const config = {
-      systemInstruction: buildSystem(toolDecls, context),
-      responseMimeType: "application/json",
-      maxOutputTokens: 4096
-    };
-    let response;
-    try {
-      response = await ai.models.generateContent({ model: GEMINI_MODEL, contents, config });
-    } catch (err) {
-      if (!isQuotaError(err)) throw err;
-      try {
-        response = await ai.models.generateContent({ model: GEMINI_FALLBACK_MODEL, contents, config });
-      } catch (err2) {
-        if (isQuotaError(err2)) {
-          throw new GeminiError(
-            429,
-            "I've hit the AI quota for today, sir. The Gemini free tier resets daily \u2014 or upgrade the API key's plan for uninterrupted service."
-          );
-        }
-        throw err2;
-      }
-    }
-    const raw = response.text ?? "";
+    const raw = await generateChat({
+      system: buildSystem(toolDecls, context),
+      messages,
+      json: true,
+      maxTokens: 4096
+    });
     try {
       const obj = JSON.parse(extractJson(raw));
       res.json({
@@ -529,20 +587,19 @@ app.post("/api/physio-chat", async (req, res) => {
     if (!Array.isArray(history)) {
       return res.status(400).json({ error: "`history` must be an array of messages." });
     }
-    const ai = await getGemini();
-    const response = await ai.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: history.map((m) => ({
-        role: m.role === "user" ? "user" : "model",
-        parts: [{ text: m.content }]
-      })),
-      config: { systemInstruction: PHYSIO_SYSTEM_PROMPT }
+    const reply = await generateChat({
+      system: PHYSIO_SYSTEM_PROMPT,
+      messages: history.map((m) => ({
+        role: m.role === "user" ? "user" : "assistant",
+        content: String(m.content ?? "")
+      }))
     });
-    res.json({ reply: response.text });
+    res.json({ reply });
   } catch (err) {
+    const status = err instanceof GeminiError ? err.status : 500;
     const message = err instanceof Error ? err.message : "Failed to fetch response";
-    console.error("[physio-chat] Error:", err);
-    res.status(500).json({ error: message });
+    if (status >= 500) console.error("[physio-chat] Error:", err);
+    res.status(status).json({ error: message });
   }
 });
 var server_default = app;
