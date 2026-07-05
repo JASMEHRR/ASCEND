@@ -8,6 +8,7 @@ import ObsidianSettings from '../features/obsidian/ObsidianSettings';
 import GoogleSettings from '../features/google/GoogleSettings';
 import type { FeaturesApi } from '../features/useFeatures';
 import { FEATURES, type FeatureModule } from '../features/registry';
+import { ELEVEN_PREFIX, ELEVEN_VOICES } from '../features/jarvis/voice/useVoice';
 
 interface Props {
   isOpen: boolean;
@@ -151,8 +152,8 @@ export default function SettingsModal({ isOpen, onClose, state, updateState, fea
               <ToggleTrack on={greetOnLogin} />
             </button>
 
-            {pickerVoices.length > 0 && (
-              <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-white/[0.03] border border-white/8">
+            <div className="px-3.5 py-2.5 rounded-2xl bg-white/[0.03] border border-white/8 space-y-1.5">
+              <div className="flex items-center gap-2">
                 <span className="flex-1 min-w-0">
                   <span className="block text-[12px] font-bold text-white/85 leading-tight">Voice</span>
                   <span className="block text-[10.5px] text-white/35">Pinned — Jarvis sounds the same every session.</span>
@@ -163,11 +164,22 @@ export default function SettingsModal({ isOpen, onClose, state, updateState, fea
                   aria-label="Jarvis voice"
                   className="max-w-[40%] rounded-xl border border-white/12 bg-surface px-2 py-1.5 text-[11px] text-white/85 outline-none focus:border-brand-400/40 cursor-pointer"
                 >
-                  {pickerVoices.map((v) => (
-                    <option key={v.voiceURI} value={v.voiceURI}>
-                      {v.name} ({v.lang})
-                    </option>
-                  ))}
+                  <optgroup label="ElevenLabs — premium">
+                    {ELEVEN_VOICES.map((v) => (
+                      <option key={v.id} value={`${ELEVEN_PREFIX}${v.id}`}>
+                        {v.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                  {pickerVoices.length > 0 && (
+                    <optgroup label="Browser voices">
+                      {pickerVoices.map((v) => (
+                        <option key={v.voiceURI} value={v.voiceURI}>
+                          {v.name} ({v.lang})
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
                 <button
                   onClick={() => voice.speak('Voice check complete. All systems nominal, sir.')}
@@ -177,7 +189,12 @@ export default function SettingsModal({ isOpen, onClose, state, updateState, fea
                   <Volume2 size={14} />
                 </button>
               </div>
-            )}
+              {voice.elevenStatus === 'down' && voice.voiceURI?.startsWith(ELEVEN_PREFIX) && (
+                <p className="text-[10.5px] text-amber-300/80 leading-snug">
+                  ElevenLabs quota reached — using the browser voice until it resets.
+                </p>
+              )}
+            </div>
 
             <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-white/[0.03] border border-white/8">
               <span className="flex-1 min-w-0">

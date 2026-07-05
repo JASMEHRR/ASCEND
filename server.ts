@@ -16,6 +16,7 @@ import { generateChat, GeminiError } from "./llm";
 import { launchRouter } from "./launch-routes";
 import { jarvisRouter } from "./jarvis-routes";
 import { stocksRouter } from "./stocks-routes";
+import { ttsRouter } from "./tts-routes";
 
 dotenv.config({ override: true });
 
@@ -29,6 +30,8 @@ app.use("/api/launch", launchRouter);
 app.use("/api/jarvis", jarvisRouter);
 // Market data proxy (Yahoo Finance — Indian + international tickers).
 app.use("/api/stocks", stocksRouter);
+// ElevenLabs TTS proxy (key stays server-side; client falls back to browser TTS).
+app.use("/api/tts", ttsRouter);
 
 // The AI physiotherapist's persona and safety rules. Personalise the
 // conditions / trek details below as the user's situation changes.
