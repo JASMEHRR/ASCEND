@@ -823,6 +823,21 @@ app.get("/api/llm-health", async (_req, res) => {
       })
     )
   );
+  {
+    const t0 = Date.now();
+    try {
+      const r = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", Accept: "text/event-stream", "User-Agent": "ascend-jarvis/4.0" },
+        body: JSON.stringify({ model: "meta/llama-4-maverick-17b-128e-instruct", messages: [{ role: "user", content: "Say: ok" }], max_tokens: 5, stream: true }),
+        signal: AbortSignal.timeout(1e4)
+      });
+      const text = r.body ? await new globalThis.Response(r.body).text() : "";
+      results.push({ label: "chat POST stream", ok: r.ok, status: r.status, ms: Date.now() - t0, body: text.slice(0, 200) });
+    } catch (e) {
+      results.push({ label: "chat POST stream", ok: false, error: e instanceof Error ? `${e.name}: ${e.message}` : String(e), ms: Date.now() - t0 });
+    }
+  }
   res.json({ keyPresent: !!key, keyLen: key.length, results });
 });
 var server_default = app;
