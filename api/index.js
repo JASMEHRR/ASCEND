@@ -790,6 +790,41 @@ app.post("/api/physio-chat", async (req, res) => {
     res.status(status).json({ error: message });
   }
 });
+app.get("/api/llm-health", async (_req, res) => {
+  const key = process.env.NVIDIA_API_KEY ?? "";
+  const probe = async (label, fn) => {
+    const t0 = Date.now();
+    try {
+      const r = await fn();
+      const body = (await r.text().catch(() => "")).slice(0, 120);
+      return { label, ok: r.ok, status: r.status, ms: Date.now() - t0, body };
+    } catch (e) {
+      return { label, ok: false, error: e instanceof Error ? `${e.name}: ${e.message}` : String(e), ms: Date.now() - t0 };
+    }
+  };
+  const results = [];
+  results.push(
+    await probe(
+      "models GET",
+      () => fetch("https://integrate.api.nvidia.com/v1/models", {
+        headers: { Authorization: `Bearer ${key}`, "User-Agent": "ascend-jarvis/4.0" },
+        signal: AbortSignal.timeout(8e3)
+      })
+    )
+  );
+  results.push(
+    await probe(
+      "chat POST",
+      () => fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "User-Agent": "ascend-jarvis/4.0" },
+        body: JSON.stringify({ model: "meta/llama-4-maverick-17b-128e-instruct", messages: [{ role: "user", content: "Say: ok" }], max_tokens: 5 }),
+        signal: AbortSignal.timeout(1e4)
+      })
+    )
+  );
+  res.json({ keyPresent: !!key, keyLen: key.length, results });
+});
 var server_default = app;
 export {
   server_default as default
