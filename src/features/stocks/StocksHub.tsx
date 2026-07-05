@@ -17,6 +17,7 @@ import { EMPTY_FINANCE } from '../../types';
 import Panel from '../../components/ui/Panel';
 import { useDialog } from '../../context/DialogContext';
 import { fetchQuotes, money, type Quote } from './quotesClient';
+import KitePanel from '../kite/KitePanel';
 
 interface Props {
   state: OSState;
@@ -187,6 +188,9 @@ export default function StocksHub({ state, updateState }: Props) {
           Alert: {triggeredAlerts.map((w) => w.symbol).join(', ')} crossed your threshold{triggeredAlerts.length > 1 ? 's' : ''}.
         </div>
       )}
+
+      {/* Real brokerage holdings (Zerodha Kite, read-only) */}
+      <KitePanel />
 
       {/* Overview strip */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">

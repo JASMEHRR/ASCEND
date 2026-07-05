@@ -26,6 +26,7 @@ import PlanningRegistrar from './features/planning/PlanningRegistrar';
 import GmailRegistrar from './features/gmail/GmailRegistrar';
 import StocksRegistrar from './features/stocks/StocksRegistrar';
 import WebSearchRegistrar from './features/websearch/WebSearchRegistrar';
+import KiteRegistrar from './features/kite/KiteRegistrar';
 import JournalRegistrar from './features/journal/JournalRegistrar';
 import InsightsEngine from './features/insights/InsightsEngine';
 
@@ -303,6 +304,7 @@ export default function App() {
       {isFeatureEnabled(state, 'planning') && <PlanningRegistrar />}
       {isFeatureEnabled(state, 'gmail') && <GmailRegistrar />}
       {isFeatureEnabled(state, 'stocks') && <StocksRegistrar state={state} updateState={updateState} />}
+      {isFeatureEnabled(state, 'stocks') && <KiteRegistrar />}
       {isFeatureEnabled(state, 'journal') && <JournalRegistrar state={state} updateState={updateState} />}
       {isFeatureEnabled(state, 'insights') && <InsightsEngine state={state} />}
     </div>

@@ -8,6 +8,7 @@ import { DialogProvider } from './context/DialogContext';
 import { LaunchStateProvider } from './features/launch/LaunchStateContext';
 import { JarvisProvider } from './features/jarvis/engine/JarvisProvider';
 import { ObsidianProvider } from './features/obsidian/ObsidianContext';
+import { KiteProvider } from './features/kite/KiteContext';
 import { GoogleProvider } from './features/google/GoogleContext';
 import { PlanningProvider } from './features/planning/PlanningContext';
 import './index.css';
@@ -20,13 +21,15 @@ createRoot(document.getElementById('root')!).render(
           <LaunchStateProvider>
         <DialogProvider>
           <ObsidianProvider>
-            <GoogleProvider>
-              <JarvisProvider>
-                <PlanningProvider>
-                  <App />
-                </PlanningProvider>
-              </JarvisProvider>
-            </GoogleProvider>
+            <KiteProvider>
+              <GoogleProvider>
+                <JarvisProvider>
+                  <PlanningProvider>
+                    <App />
+                  </PlanningProvider>
+                </JarvisProvider>
+              </GoogleProvider>
+            </KiteProvider>
           </ObsidianProvider>
         </DialogProvider>
           </LaunchStateProvider>

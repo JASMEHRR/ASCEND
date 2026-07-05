@@ -612,6 +612,95 @@ searchRouter.get("/", async (req, res) => {
   }
 });
 
+// kite-routes.ts
+import { Router as Router6 } from "express";
+import { createHash } from "node:crypto";
+var kiteRouter = Router6();
+var KITE_BASE = "https://api.kite.trade";
+kiteRouter.get("/login", (_req, res) => {
+  const apiKey = process.env.KITE_API_KEY;
+  if (!apiKey) {
+    res.redirect("/#kite_error=not_configured");
+    return;
+  }
+  res.redirect(`https://kite.zerodha.com/connect/login?v=3&api_key=${encodeURIComponent(apiKey)}`);
+});
+kiteRouter.get("/callback", async (req, res) => {
+  const apiKey = process.env.KITE_API_KEY;
+  const apiSecret = process.env.KITE_API_SECRET;
+  const requestToken = String(req.query.request_token ?? "").trim();
+  if (!apiKey || !apiSecret) {
+    res.redirect("/#kite_error=not_configured");
+    return;
+  }
+  if (req.query.status !== "success" || !requestToken) {
+    res.redirect("/#kite_error=denied");
+    return;
+  }
+  try {
+    const checksum = createHash("sha256").update(apiKey + requestToken + apiSecret).digest("hex");
+    const upstream = await fetch(`${KITE_BASE}/session/token`, {
+      method: "POST",
+      headers: { "X-Kite-Version": "3", "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ api_key: apiKey, request_token: requestToken, checksum }),
+      signal: AbortSignal.timeout(2e4)
+    });
+    const data = await upstream.json().catch(() => null);
+    const accessToken = data?.data?.access_token;
+    if (!upstream.ok || !accessToken) {
+      console.error("[kite] token exchange failed", upstream.status, data?.message ?? "");
+      res.redirect("/#kite_error=exchange_failed");
+      return;
+    }
+    res.redirect(`/#kite_token=${encodeURIComponent(accessToken)}`);
+  } catch (err) {
+    console.error("[kite] callback", err);
+    res.redirect("/#kite_error=exchange_failed");
+  }
+});
+var DATA_PATHS = {
+  holdings: "/portfolio/holdings",
+  positions: "/portfolio/positions",
+  margins: "/user/margins"
+};
+for (const [name, path] of Object.entries(DATA_PATHS)) {
+  kiteRouter.get(`/${name}`, async (req, res) => {
+    const apiKey = process.env.KITE_API_KEY;
+    if (!apiKey) {
+      res.status(503).json({ error: "Kite Connect is not configured.", code: "not_configured" });
+      return;
+    }
+    const token = String(req.header("x-kite-token") ?? "").trim();
+    if (!token) {
+      res.status(400).json({ error: "Missing x-kite-token header." });
+      return;
+    }
+    try {
+      const upstream = await fetch(`${KITE_BASE}${path}`, {
+        headers: { "X-Kite-Version": "3", Authorization: `token ${apiKey}:${token}` },
+        signal: AbortSignal.timeout(2e4)
+      });
+      const data = await upstream.json().catch(() => null);
+      if (upstream.status === 403 || data?.error_type === "TokenException") {
+        res.status(401).json({
+          error: "Kite session expired \u2014 access tokens reset daily around 7:30am IST. Reconnect from Settings.",
+          code: "kite_token_expired"
+        });
+        return;
+      }
+      if (!upstream.ok || data?.status !== "success") {
+        console.error("[kite]", name, upstream.status, data?.message ?? "");
+        res.status(502).json({ error: data?.message ?? "Kite request failed.", code: "upstream" });
+        return;
+      }
+      res.json(data.data);
+    } catch (err) {
+      console.error("[kite]", name, err);
+      res.status(502).json({ error: "Kite request failed.", code: "upstream" });
+    }
+  });
+}
+
 // server.ts
 dotenv.config({ override: true });
 var app = express();
@@ -622,6 +711,7 @@ app.use("/api/jarvis", jarvisRouter);
 app.use("/api/stocks", stocksRouter);
 app.use("/api/tts", ttsRouter);
 app.use("/api/search", searchRouter);
+app.use("/api/kite", kiteRouter);
 var PHYSIO_SYSTEM_PROMPT = `You are Alex, a highly knowledgeable personal AI physiotherapist assistant specialising in spinal rehab, posture correction, gait mechanics, sports recovery, and mobility training.
 
 Your role is to help the user safely manage and improve these conditions:

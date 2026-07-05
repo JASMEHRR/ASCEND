@@ -5,6 +5,7 @@ import { useDialog } from '../context/DialogContext';
 import { useTheme } from '../context/ThemeContext';
 import { useJarvis } from '../features/jarvis/engine/JarvisProvider';
 import ObsidianSettings from '../features/obsidian/ObsidianSettings';
+import KiteSettings from '../features/kite/KiteSettings';
 import GoogleSettings from '../features/google/GoogleSettings';
 import type { FeaturesApi } from '../features/useFeatures';
 import { FEATURES, type FeatureModule } from '../features/registry';
@@ -247,6 +248,10 @@ export default function SettingsModal({ isOpen, onClose, state, updateState, fea
 
           <div className="border-t border-white/8 pt-4">
             <ObsidianSettings />
+          </div>
+
+          <div className="border-t border-white/8 pt-4">
+            <KiteSettings />
           </div>
 
           <section className="pt-1 border-t border-white/8">

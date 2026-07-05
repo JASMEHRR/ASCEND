@@ -18,6 +18,7 @@ import { jarvisRouter } from "./jarvis-routes";
 import { stocksRouter } from "./stocks-routes";
 import { ttsRouter } from "./tts-routes";
 import { searchRouter } from "./search-routes";
+import { kiteRouter } from "./kite-routes";
 
 dotenv.config({ override: true });
 
@@ -35,6 +36,8 @@ app.use("/api/stocks", stocksRouter);
 app.use("/api/tts", ttsRouter);
 // Live web search (Tavily) — powers Jarvis's webSearch tool.
 app.use("/api/search", searchRouter);
+// Zerodha Kite Connect — read-only portfolio (login, token exchange, proxies).
+app.use("/api/kite", kiteRouter);
 
 // The AI physiotherapist's persona and safety rules. Personalise the
 // conditions / trek details below as the user's situation changes.
