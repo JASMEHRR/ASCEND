@@ -116,59 +116,6 @@ app.post("/api/physio-chat", async (req, res) => {
   }
 });
 
-// TEMPORARY diagnostic: measures NIM reachability from this deployment.
-// Exposes only latency/status codes, no secrets. Remove once the NIM
-// egress issue is resolved.
-app.get("/api/llm-health", async (_req, res) => {
-  const key = process.env.NVIDIA_API_KEY ?? "";
-  const probe = async (label: string, fn: () => Promise<globalThis.Response>) => {
-    const t0 = Date.now();
-    try {
-      const r = await fn();
-      const body = (await r.text().catch(() => "")).slice(0, 120);
-      return { label, ok: r.ok, status: r.status, ms: Date.now() - t0, body };
-    } catch (e) {
-      return { label, ok: false, error: e instanceof Error ? `${e.name}: ${e.message}` : String(e), ms: Date.now() - t0 };
-    }
-  };
-  const results = [];
-  results.push(
-    await probe("models GET", () =>
-      fetch("https://integrate.api.nvidia.com/v1/models", {
-        headers: { Authorization: `Bearer ${key}`, "User-Agent": "ascend-jarvis/4.0" },
-        signal: AbortSignal.timeout(8000),
-      }),
-    ),
-  );
-  results.push(
-    await probe("chat POST", () =>
-      fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "User-Agent": "ascend-jarvis/4.0" },
-        body: JSON.stringify({ model: "meta/llama-4-maverick-17b-128e-instruct", messages: [{ role: "user", content: "Say: ok" }], max_tokens: 5 }),
-        signal: AbortSignal.timeout(10_000),
-      }),
-    ),
-  );
-  // Streamed variant: some edges deliver SSE where buffered responses hang.
-  {
-    const t0 = Date.now();
-    try {
-      const r = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", Accept: "text/event-stream", "User-Agent": "ascend-jarvis/4.0" },
-        body: JSON.stringify({ model: "meta/llama-4-maverick-17b-128e-instruct", messages: [{ role: "user", content: "Say: ok" }], max_tokens: 5, stream: true }),
-        signal: AbortSignal.timeout(10_000),
-      });
-      const text = r.body ? await new globalThis.Response(r.body).text() : "";
-      results.push({ label: "chat POST stream", ok: r.ok, status: r.status, ms: Date.now() - t0, body: text.slice(0, 200) });
-    } catch (e) {
-      results.push({ label: "chat POST stream", ok: false, error: e instanceof Error ? `${e.name}: ${e.message}` : String(e), ms: Date.now() - t0 });
-    }
-  }
-  res.json({ keyPresent: !!key, keyLen: key.length, results });
-});
-
 // Exported for the Vercel serverless handler (see api/index.ts).
 // NOTE: this file must stay free of any dev-only imports (e.g. Vite) so the
 // serverless function bundle stays small. The local dev/prod server that wires

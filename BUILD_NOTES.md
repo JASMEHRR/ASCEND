@@ -22,11 +22,13 @@ Four additions on the stable v3 base. All phases committed separately; see git l
     ~1s). Matches public reports of NIM hanging via gateways/containers.
     Diagnosed with the temporary `/api/llm-health` route (remove when stable).
   - **Chain in `llm.ts`** (missing key = hop skipped, all OpenAI-compatible
-    hops share one code path): **Groq** (same Maverick model, free ~30 req/min,
-    console.groq.com, works from Vercel) → **NIM** (works from local dev;
-    15s timeout in case its edge recovers) → gemini-2.5-flash →
-    gemini-2.5-flash-lite → clear 429 message, never a silent failure.
-    Physio + LaunchKit share the same chain.
+    hops share one code path): **Groq `llama-3.3-70b-versatile`** (free
+    ~30 req/min, console.groq.com, works from Vercel; Groq no longer hosts
+    Maverick — 3.3-70b is the best conversational fit there) → **NIM
+    Maverick** (works from local dev; 15s timeout in case its edge recovers)
+    → gemini-2.5-flash → gemini-2.5-flash-lite → clear 429 message, never a
+    silent failure. Physio + LaunchKit share the same chain. The temporary
+    /api/llm-health diagnostic route was removed after diagnosis.
   - **Free-tier ToS note**: NVIDIA's and Groq's free endpoints are meant for
     development/evaluation-scale use, not serving real traffic. Fine while
     this app serves only its owner; revisit if it ever gets real users.

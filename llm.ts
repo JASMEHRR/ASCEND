@@ -29,7 +29,9 @@ const OPENAI_PROVIDERS = [
     name: 'groq',
     url: 'https://api.groq.com/openai/v1/chat/completions',
     keyEnv: 'GROQ_API_KEY',
-    model: 'meta-llama/llama-4-maverick-17b-128e-instruct',
+    // Groq no longer hosts Llama 4 Maverick; 3.3-70b is the best
+    // conversational fit there (non-reasoning, strong JSON, ~300 tok/s).
+    model: 'llama-3.3-70b-versatile',
     timeoutMs: 30_000,
   },
   {
