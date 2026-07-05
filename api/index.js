@@ -569,6 +569,49 @@ ttsRouter.post("/", async (req, res) => {
   }
 });
 
+// search-routes.ts
+import { Router as Router5 } from "express";
+var searchRouter = Router5();
+searchRouter.get("/", async (req, res) => {
+  try {
+    const key = process.env.TAVILY_API_KEY;
+    if (!key) {
+      res.status(503).json({ error: "Web search is not configured.", code: "not_configured" });
+      return;
+    }
+    const q = String(req.query.q ?? "").trim().slice(0, 400);
+    if (!q) {
+      res.status(400).json({ error: "Provide a search query via ?q=." });
+      return;
+    }
+    const upstream = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ query: q, search_depth: "basic", max_results: 5, include_answer: true }),
+      signal: AbortSignal.timeout(2e4)
+    });
+    if (!upstream.ok) {
+      const detail = (await upstream.text().catch(() => "")).slice(0, 300);
+      const quota = upstream.status === 429 || upstream.status === 432 || /limit|quota/i.test(detail);
+      if (!quota) console.error("[search] upstream", upstream.status, detail);
+      res.status(quota ? 429 : 502).json({ error: quota ? "Search quota exhausted for the month." : "Search failed upstream.", code: quota ? "quota" : "upstream" });
+      return;
+    }
+    const data = await upstream.json();
+    res.json({
+      answer: data.answer ?? null,
+      results: (data.results ?? []).map((r) => ({
+        title: r.title ?? "",
+        url: r.url ?? "",
+        snippet: (r.content ?? "").slice(0, 300)
+      }))
+    });
+  } catch (err) {
+    console.error("[search]", err);
+    res.status(502).json({ error: "Search request failed.", code: "upstream" });
+  }
+});
+
 // server.ts
 dotenv.config({ override: true });
 var app = express();
@@ -578,6 +621,7 @@ app.use("/api/launch", launchRouter);
 app.use("/api/jarvis", jarvisRouter);
 app.use("/api/stocks", stocksRouter);
 app.use("/api/tts", ttsRouter);
+app.use("/api/search", searchRouter);
 var PHYSIO_SYSTEM_PROMPT = `You are Alex, a highly knowledgeable personal AI physiotherapist assistant specialising in spinal rehab, posture correction, gait mechanics, sports recovery, and mobility training.
 
 Your role is to help the user safely manage and improve these conditions:

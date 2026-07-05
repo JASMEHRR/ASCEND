@@ -17,6 +17,7 @@ import { launchRouter } from "./launch-routes";
 import { jarvisRouter } from "./jarvis-routes";
 import { stocksRouter } from "./stocks-routes";
 import { ttsRouter } from "./tts-routes";
+import { searchRouter } from "./search-routes";
 
 dotenv.config({ override: true });
 
@@ -32,6 +33,8 @@ app.use("/api/jarvis", jarvisRouter);
 app.use("/api/stocks", stocksRouter);
 // ElevenLabs TTS proxy (key stays server-side; client falls back to browser TTS).
 app.use("/api/tts", ttsRouter);
+// Live web search (Tavily) — powers Jarvis's webSearch tool.
+app.use("/api/search", searchRouter);
 
 // The AI physiotherapist's persona and safety rules. Personalise the
 // conditions / trek details below as the user's situation changes.

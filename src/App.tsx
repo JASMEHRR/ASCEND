@@ -25,6 +25,7 @@ import ObsidianRegistrar from './features/obsidian/ObsidianRegistrar';
 import PlanningRegistrar from './features/planning/PlanningRegistrar';
 import GmailRegistrar from './features/gmail/GmailRegistrar';
 import StocksRegistrar from './features/stocks/StocksRegistrar';
+import WebSearchRegistrar from './features/websearch/WebSearchRegistrar';
 import JournalRegistrar from './features/journal/JournalRegistrar';
 import InsightsEngine from './features/insights/InsightsEngine';
 
@@ -298,6 +299,7 @@ export default function App() {
 
       <Jarvis state={state} updateState={updateState} view={view} setView={setView} />
       <ObsidianRegistrar />
+      <WebSearchRegistrar />
       {isFeatureEnabled(state, 'planning') && <PlanningRegistrar />}
       {isFeatureEnabled(state, 'gmail') && <GmailRegistrar />}
       {isFeatureEnabled(state, 'stocks') && <StocksRegistrar state={state} updateState={updateState} />}
