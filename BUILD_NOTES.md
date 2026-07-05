@@ -1,4 +1,70 @@
-# Ascend Protocol — v3 Build Notes
+# Ascend Protocol — Build Notes
+
+# v4 pass (2026-07-05)
+
+Four additions on the stable v3 base. All phases committed separately; see git log.
+
+## Locked decisions (from the up-front batch)
+
+- **Kite redirect URL** (registered in the kite.trade app console):
+  `https://ascend-delta-sage.vercel.app/api/kite/callback` — production only
+  (Kite allows one redirect URL per app), so OAuth testing happens against the
+  live deploy; a DEV-only paste-token field in Settings covers local work.
+- **Primary model: NVIDIA NIM** `meta/llama-4-maverick-17b-128e-instruct`.
+  Rationale: MoE (~17B active params) = flash-class latency; reliable strict-JSON
+  instruction following (the Jarvis protocol needs raw JSON); 1M context.
+  Rejected: Nemotron variants (reasoning `<think>` overhead — wrong for a voice
+  assistant), Mistral Large (slower dense model). Chain in `llm.ts`:
+  NIM → gemini-2.5-flash → gemini-2.5-flash-lite → clear 429 message, never a
+  silent failure. Physio + LaunchKit share the same chain now.
+  - **NIM ToS note**: build.nvidia.com's free hosted endpoint is intended for
+    development/testing/evaluation, not production serving. Fine while this app
+    serves only its owner; revisit (self-host NIM or paid endpoint) if the app
+    ever gets real users.
+- **TTS: ElevenLabs** (`eleven_flash_v2_5`, 0.5 credits/char, 500-char input
+  clamp in `/api/tts`). Voice pinned via the existing storage key using an
+  `eleven:<voiceId>` prefix; browser pins unaffected. On quota/auth failure the
+  session latches to the pinned browser SpeechSynthesis voice — silent
+  fallback + an amber hint in Settings. Curated voices: Daniel / George / Brian.
+- **Web search: Tavily** (free 1000/mo) as a `webSearch` followUp tool — the
+  model itself classifies whether a query needs live data, so no per-message
+  search cost. **Gemini Search grounding deliberately skipped**: it would burn
+  the tiny Gemini daily quota that now backs the chat fallback chain.
+- **Kite Connect: read-only by construction** — the router has login/callback/
+  holdings/positions/margins only, no order endpoints. API secret server-side
+  only; token exchange = SHA-256(api_key + request_token + api_secret) on the
+  server; access_token handed to the SPA via URL fragment (never hits logs),
+  stored per-user in localStorage (`ascend_kite_token_${uid}`, Obsidian
+  pattern) — backend stays stateless. Daily ~7:30am IST expiry surfaces as
+  401 `kite_token_expired` → 'expired' state → "Reconnect Kite" in Settings
+  and in the StocksHub panel.
+
+## New env vars (all server-side, none VITE_-prefixed; add to Vercel + local .env)
+
+| Var | Purpose | Where to get it |
+| --- | --- | --- |
+| `NVIDIA_API_KEY` | Primary LLM (NIM) | build.nvidia.com (free, no card) |
+| `ELEVENLABS_API_KEY` | Premium TTS | elevenlabs.io (free tier) |
+| `TAVILY_API_KEY` | Web search | tavily.com (free, 1000/mo) |
+| `KITE_API_KEY` / `KITE_API_SECRET` | Zerodha portfolio | developers.kite.trade (Personal, free) |
+
+Everything degrades gracefully while a key is missing: chat → Gemini chain,
+voice → browser TTS, search/Kite → clear "not configured" replies.
+
+## v4 phase checklist
+
+- [x] Phase 1 — llm.ts provider chain; Jarvis/physio/LaunchKit swapped (42512d7)
+- [x] Phase 2 — /api/tts + eleven: voice pinning + Settings picker groups
+- [x] Phase 3 — /api/search + WebSearchRegistrar tool
+- [x] Phase 4 — /api/kite + KiteProvider/Settings/Registrar/Panel
+- [ ] Phase 5 — push to main, set env vars in Vercel, live verification:
+      multi-turn memory test on the NIM path (state two facts, reference them
+      two messages later), voice via ElevenLabs, weather query triggers
+      webSearch (and a general question doesn't), full Kite OAuth round trip.
+
+---
+
+# v3 Build Notes
 
 Running log for the v3 rebuild pass (started 2026-07-04). If a session is cut off,
 resume from the last commit and this checklist — the full spec lives in the v3 build
@@ -67,9 +133,9 @@ prompt; decisions already made are recorded here so nothing needs re-asking.
 1. Create the Google OAuth client + set `VITE_GOOGLE_CLIENT_ID` in Vercel
    (full steps: GOOGLE_SETUP.md). Until then the Google section in Settings
    shows a "not configured" notice and planning falls back to tasks.
-2. STRONGLY RECOMMENDED: upgrade the Gemini API key to a paid tier (or raise
-   quota) — 20 req/day is a handful of Jarvis exchanges. The flash-lite
-   fallback softens this but has its own daily cap.
+2. ~~Upgrade the Gemini API key~~ — superseded by v4: NVIDIA NIM (free,
+   ~40 req/min) is now the primary model; Gemini free tier is the fallback.
+   Set `NVIDIA_API_KEY` in Vercel (see v4 section above).
 
 ## Watch items
 
@@ -82,6 +148,9 @@ prompt; decisions already made are recorded here so nothing needs re-asking.
 - All state writes go through `updateState` (`src/hooks/useCloudSync.ts`) —
   Firestore two-doc sync + points accrual depend on it. New OSState fields are
   additive only.
-- Gemini calls stay server-side (`gemini.ts`, key in `GEMINI_API_KEY`).
+- Model calls stay server-side (`llm.ts` chain over `gemini.ts`; keys in
+  `NVIDIA_API_KEY` / `GEMINI_API_KEY`). Same for `ELEVENLABS_API_KEY`,
+  `TAVILY_API_KEY`, `KITE_API_KEY`/`KITE_API_SECRET` — nothing secret is ever
+  `VITE_`-prefixed.
 - Obsidian stays client→localhost, per-uid config, credentials never touch our server.
 - Jarvis tools register through the client registry; backend stays stateless.
