@@ -33,11 +33,13 @@ export async function searchSymbols(q: string): Promise<{ symbol: string; name: 
   return data.matches ?? [];
 }
 
-/** Format an amount in a quote's currency (₹ for INR, $ for USD, …). */
+/** Format an amount in a quote's currency (₹ for INR — Indian grouping, $ for USD, …). */
 export function money(amount: number, currency: string | null): string {
+  const cur = currency ?? 'INR';
+  const locale = cur === 'INR' ? 'en-IN' : 'en-US';
   try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency: currency ?? 'USD', maximumFractionDigits: 2 }).format(amount);
+    return new Intl.NumberFormat(locale, { style: 'currency', currency: cur, maximumFractionDigits: 2 }).format(amount);
   } catch {
-    return `${amount.toFixed(2)} ${currency ?? ''}`.trim();
+    return `${amount.toFixed(2)} ${cur}`.trim();
   }
 }

@@ -15,6 +15,8 @@ import {
 import type { OSState, FinanceState } from '../../types';
 import { EMPTY_FINANCE } from '../../types';
 import Panel from '../../components/ui/Panel';
+import PasscodeGate from '../../components/ui/PasscodeGate';
+import { useAuth } from '../../context/AuthContext';
 import { useDialog } from '../../context/DialogContext';
 import { fetchQuotes, money, type Quote } from './quotesClient';
 import KitePanel from '../kite/KitePanel';
@@ -22,6 +24,20 @@ import KitePanel from '../kite/KitePanel';
 interface Props {
   state: OSState;
   updateState: (updater: (prev: OSState) => OSState) => void;
+}
+
+/** PIN-gated wrapper: financial data stays hidden until the passcode is entered. */
+export default function StocksHub({ state, updateState }: Props) {
+  const { user } = useAuth();
+  return (
+    <PasscodeGate
+      hashKey={`ascend_stocks_passhash_${user?.uid ?? 'guest'}`}
+      uid={user?.uid ?? null}
+      title="Finance Vault"
+    >
+      <StocksHubInner state={state} updateState={updateState} />
+    </PasscodeGate>
+  );
 }
 
 const fin = (s: OSState): FinanceState => s.finance ?? EMPTY_FINANCE;
@@ -39,7 +55,7 @@ const monthKey = (iso: string) => iso.slice(0, 7);
  * refresh every 60s; when the unofficial upstream breaks, the page degrades to
  * manual values with a visible notice instead of erroring out.
  */
-export default function StocksHub({ state, updateState }: Props) {
+function StocksHubInner({ state, updateState }: Props) {
   const { prompt } = useDialog();
   const f = fin(state);
   const [quotes, setQuotes] = useState<Map<string, Quote>>(new Map());
@@ -89,7 +105,14 @@ export default function StocksHub({ state, updateState }: Props) {
   });
   const portfolioValue = holdingsValued.reduce((sum, h) => sum + (h.value ?? h.cost), 0);
   const portfolioCost = holdingsValued.reduce((sum, h) => sum + h.cost, 0);
+  // Day P&L: sum of (price − previous close) × qty over holdings with a live quote.
+  const portfolioDayChange = holdingsValued.reduce(
+    (sum, h) => (h.quote && h.quote.prevClose != null ? sum + (h.quote.price - h.quote.prevClose) * h.qty : sum),
+    0,
+  );
   const portfolioCurrency = holdingsValued.find((h) => h.quote?.currency)?.quote?.currency ?? 'INR';
+  // First-load skeleton: symbols exist but no quote has landed yet.
+  const quotesLoading = refreshing && quotes.size === 0 && holdingsValued.some((h) => h.quote == null);
 
   const thisMonth = monthKey(new Date().toISOString());
   const monthExpenses = f.expenses.filter((e) => monthKey(e.at) === thisMonth);
@@ -196,9 +219,19 @@ export default function StocksHub({ state, updateState }: Props) {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Panel>
           <p className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-widest text-white/40"><Wallet size={12} /> Portfolio</p>
-          <p className="mt-1 text-2xl font-extrabold text-white">{inr(portfolioValue)}</p>
-          {portfolioCost > 0 && (
-            <p className={`mt-0.5 flex items-center gap-1 text-[12px] font-semibold ${portfolioValue >= portfolioCost ? 'text-brand-400' : 'text-red-400'}`}>
+          {quotesLoading ? (
+            <div className="mt-2 h-7 w-32 animate-pulse rounded-md bg-white/10" />
+          ) : (
+            <p className="mt-1 font-mono text-2xl font-extrabold tabular-nums text-white">{inr(portfolioValue)}</p>
+          )}
+          {!quotesLoading && portfolioDayChange !== 0 && (
+            <p className={`mt-0.5 flex items-center gap-1 font-mono text-[12px] font-semibold tabular-nums ${portfolioDayChange >= 0 ? 'text-brand-400' : 'text-red-400'}`}>
+              {portfolioDayChange >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+              {portfolioDayChange >= 0 ? '+' : '−'}{inr(Math.abs(portfolioDayChange))} today
+            </p>
+          )}
+          {!quotesLoading && portfolioCost > 0 && (
+            <p className={`mt-0.5 flex items-center gap-1 font-mono text-[12px] font-semibold tabular-nums ${portfolioValue >= portfolioCost ? 'text-brand-400' : 'text-red-400'}`}>
               {portfolioValue >= portfolioCost ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
               {(((portfolioValue - portfolioCost) / portfolioCost) * 100).toFixed(1)}% vs cost
             </p>
@@ -206,14 +239,14 @@ export default function StocksHub({ state, updateState }: Props) {
         </Panel>
         <Panel>
           <p className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-widest text-white/40"><PiggyBank size={12} /> This month</p>
-          <p className="mt-1 text-2xl font-extrabold text-white">{inr(spent)}</p>
+          <p className="mt-1 font-mono text-2xl font-extrabold tabular-nums text-white">{inr(spent)}</p>
           <p className="mt-0.5 text-[12px] text-white/40">
             {f.monthlyBudget ? `${Math.round((spent / f.monthlyBudget) * 100)}% of ${inr(f.monthlyBudget)}` : 'no budget set'}
           </p>
         </Panel>
         <Panel>
           <p className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-widest text-white/40"><Landmark size={12} /> Net worth</p>
-          <p className="mt-1 text-2xl font-extrabold text-white">{inr(netWorth)}</p>
+          <p className="mt-1 font-mono text-2xl font-extrabold tabular-nums text-white">{inr(netWorth)}</p>
           <p className="mt-0.5 text-[12px] text-white/40">incl. portfolio · {f.netWorthItems.length} item{f.netWorthItems.length === 1 ? '' : 's'}</p>
         </Panel>
       </div>
