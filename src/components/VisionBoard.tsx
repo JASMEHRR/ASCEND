@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { OSState, VisionItem } from '../types';
-import { Plus, Trash2, Image as ImageIcon, Sparkles, Compass } from 'lucide-react';
+import { Plus, Trash2, Image as ImageIcon, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useDialog } from '../context/DialogContext';
+import EmptyState from './ui/EmptyState';
 
 interface Props {
   state: OSState;
@@ -12,12 +14,13 @@ export default function VisionBoard({ state, updateState }: Props) {
   const [showInput, setShowInput] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newUrl, setNewUrl] = useState('');
+  const { confirm } = useDialog();
 
   const addVisionItem = () => {
     if (!newUrl.trim()) return;
-    
+
     const newItem: VisionItem = {
-      id: Math.random().toString(36).substr(2, 9),
+      id: crypto.randomUUID(),
       title: newTitle || 'Target Manifestation',
       url: newUrl,
       createdAt: new Date().toISOString()
@@ -33,7 +36,8 @@ export default function VisionBoard({ state, updateState }: Props) {
     setShowInput(false);
   };
 
-  const deleteVisionItem = (id: string) => {
+  const deleteVisionItem = async (id: string) => {
+    if (!(await confirm({ title: 'Delete?', message: 'This vision will be removed from your board.', confirmLabel: 'Delete', danger: true }))) return;
     updateState(prev => ({
       ...prev,
       visionBoard: (prev.visionBoard || []).filter(item => item.id !== id)
@@ -139,9 +143,8 @@ export default function VisionBoard({ state, updateState }: Props) {
           </AnimatePresence>
           
           {(state.visionBoard || []).length === 0 && (
-            <div className="col-span-full py-24 flex flex-col items-center justify-center bg-white/[0.01] backdrop-blur-3xl border border-white/5 rounded-[2.5rem] border-dashed">
-              <ImageIcon size={32} strokeWidth={1} className="mb-3 text-white/20 animate-pulse" />
-              <p className="text-[10px] font-extrabold tracking-[0.15em] text-white/30 uppercase">No active strategic visions catalogued</p>
+            <div className="col-span-full">
+              <EmptyState icon={<ImageIcon size={24} />} title="Board is empty" hint="Anchor your first vision with the button above." />
             </div>
           )}
         </div>

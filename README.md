@@ -20,7 +20,7 @@ Gemini-backed AI Physio chat, and Firebase (Auth + Firestore).
 
 ## Run locally
 
-**Prerequisites:** Node.js 18+
+**Prerequisites:** Node.js 20+
 
 1. Install dependencies:
    ```

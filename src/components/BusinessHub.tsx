@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { OSState, Idea } from '../types';
-import { Lightbulb, Send, Trash2, Calendar, Award, Compass, Zap } from 'lucide-react';
+import { Lightbulb, Trash2, Calendar, Award, Compass, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useDialog } from '../context/DialogContext';
+import EmptyState from './ui/EmptyState';
 
 interface Props {
   state: OSState;
@@ -10,12 +12,13 @@ interface Props {
 
 export default function BusinessHub({ state, updateState }: Props) {
   const [input, setInput] = useState('');
+  const { confirm } = useDialog();
 
   const processIdea = () => {
     if (!input.trim()) return;
-    
+
     const newIdea: Idea = {
-      id: Math.random().toString(36).substr(2, 9),
+      id: crypto.randomUUID(),
       title: input.trim().split(' ').slice(0, 4).join(' ') + "...",
       desc: input.trim(),
       timestamp: new Date().toISOString()
@@ -28,7 +31,8 @@ export default function BusinessHub({ state, updateState }: Props) {
     setInput('');
   };
 
-  const deleteIdea = (id: string) => {
+  const deleteIdea = async (id: string) => {
+    if (!(await confirm({ title: 'Delete?', message: 'This idea will be removed.', confirmLabel: 'Delete', danger: true }))) return;
     updateState(prev => ({
       ...prev,
       ideas: prev.ideas.filter(idea => idea.id !== id)
@@ -130,9 +134,8 @@ export default function BusinessHub({ state, updateState }: Props) {
           </AnimatePresence>
           
           {state.ideas.length === 0 && (
-            <div className="col-span-full py-16 flex flex-col items-center justify-center border-2 border-dashed border-white/5 rounded-[2.5rem] bg-white/[0.01]">
-              <Compass size={24} className="text-white/10 mb-3 animate-pulse" />
-              <p className="text-[10px] font-extrabold text-white/20 uppercase tracking-[0.2em] italic">No active strategic directions stored.</p>
+            <div className="col-span-full">
+              <EmptyState icon={<Lightbulb size={24} />} title="No ideas logged" hint="Capture your first business move above." />
             </div>
           )}
         </div>

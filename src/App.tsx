@@ -116,6 +116,13 @@ export default function App() {
   const [currentReward, setCurrentReward] = useState('');
   const [lastPointMilestone, setLastPointMilestone] = useState(0);
 
+  // Persist the last-rewarded milestone per user so it doesn't re-fire on reload.
+  const milestoneKey = `ascend_last_milestone_${user?.uid ?? '_guest'}`;
+  useEffect(() => {
+    const stored = Number(localStorage.getItem(milestoneKey) || '0');
+    setLastPointMilestone(Number.isFinite(stored) ? stored : 0);
+  }, [milestoneKey]);
+
   // Re-render every minute so the auto atmosphere tracks the time of day.
   useEffect(() => {
     const timer = setInterval(() => setTimeTick((n) => n + 1), 60000);
@@ -131,6 +138,7 @@ export default function App() {
     const pts = state.points || 0;
     if (pts > 0 && pts % 10 === 0 && pts > lastPointMilestone) {
       setLastPointMilestone(pts);
+      localStorage.setItem(milestoneKey, String(pts));
       setCurrentReward(REWARDS_LIST[Math.floor(Math.random() * REWARDS_LIST.length)]);
       setRewardModalOpen(true);
     }
@@ -164,7 +172,7 @@ export default function App() {
 
       {/* HEADER */}
       <header className="relative flex flex-col md:flex-row justify-between items-center pb-2 px-2 z-10 gap-5 shrink-0 w-full mb-2">
-        <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)] whitespace-nowrap">
+        <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)] whitespace-nowrap select-none">
           Ascend Protocol
         </h1>
 
@@ -177,7 +185,7 @@ export default function App() {
       {/* CORE */}
       <div className="relative flex flex-1 flex-col sm:flex-row gap-5 min-h-0 z-10">
         {/* SIDEBAR */}
-        <aside className="hidden md:flex w-64 shrink-0 flex-col gap-4">
+        <aside className="hidden md:flex w-64 shrink-0 flex-col gap-4 select-none">
           <div className="liquid-glass-panel rounded-[2rem] p-4 flex flex-col gap-5 h-full overflow-y-auto custom-scrollbar">
             <div className="flex flex-col items-center justify-center -mx-2">
               <FlipClock compact />
@@ -268,7 +276,7 @@ export default function App() {
 
       {/* MOBILE BOTTOM NAV */}
       <nav
-        className="sm:hidden fixed bottom-3 left-4 right-4 bg-app/85 backdrop-blur-md border border-white/12 py-3 px-5 flex justify-between items-center z-50 rounded-[2.5rem] shadow-lg overflow-x-auto"
+        className="sm:hidden fixed bottom-3 left-4 right-4 bg-app/85 backdrop-blur-md border border-white/12 py-3 px-5 flex justify-between items-center z-50 rounded-[2.5rem] shadow-lg overflow-x-auto select-none"
         aria-label="Primary"
       >
         {mobileModules.slice(0, mobileMid).map((mod) => (

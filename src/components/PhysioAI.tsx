@@ -1,7 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Send, Activity, MountainSnow, ChevronUp, User, Bot, Sparkles, Footprints, ArrowRight } from 'lucide-react';
+import { Activity, MountainSnow, ChevronUp, User, Bot, ArrowRight, AlertTriangle, RotateCcw, RefreshCw } from 'lucide-react';
 import type { OSState } from '../types';
+import { auth } from '../lib/firebase';
+import { useAuth } from '../context/AuthContext';
+import { useDialog } from '../context/DialogContext';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -13,16 +16,80 @@ interface Props {
   updateState: (updater: (prev: OSState) => OSState) => void;
 }
 
+const GREETING: Message = {
+  role: 'assistant',
+  content: "Hey! I'm Alex, your personal physiotherapist. I know about your lumbar disc, posture, tailbone, knock knees, and right foot. I also know about your June 10 trek.\n\nUse the sliders below to log your pain levels, then tell me how you're feeling or tap a condition to get started.",
+};
+
+function todayISODate() {
+  return new Date().toISOString().split('T')[0];
+}
+
+/** Render assistant text with **bold** support, safely (no raw HTML injection). */
+function FormattedText({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+        part.startsWith('**') && part.endsWith('**')
+          ? <strong key={i} className="font-bold text-white">{part.slice(2, -2)}</strong>
+          : <span key={i}>{part}</span>
+      )}
+    </>
+  );
+}
+
 export default function PhysioAI({ state, updateState }: Props) {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: 'assistant',
-      content: "Hey! I'm Alex, your personal physiotherapist. I know about your lumbar disc, posture, tailbone, knock knees, and right foot. I also know about your June 10 trek.\n\nUse the sliders below to log your pain levels, then tell me how you're feeling or tap a condition to get started.",
-    }
-  ]);
+  const { user } = useAuth();
+  const { confirm } = useDialog();
+  const chatKey = `ascend_physio_chat_${user?.uid ?? '_guest'}_${todayISODate()}`;
+
+  const [messages, setMessages] = useState<Message[]>([GREETING]);
   const [inputStr, setInputStr] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const lastUserTextRef = useRef<string>('');
   const chatRef = useRef<HTMLDivElement>(null);
+
+  // Load today's saved conversation (per user) on mount / user change.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(chatKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length) {
+          setMessages(parsed);
+          return;
+        }
+      }
+    } catch {
+      /* ignore corrupt cache */
+    }
+    setMessages([GREETING]);
+  }, [chatKey]);
+
+  // Persist the conversation (debounced) so a reload keeps today's session.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(chatKey, JSON.stringify(messages));
+      } catch {
+        /* ignore quota errors */
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [messages, chatKey]);
+
+  const startNewSession = async () => {
+    if (await confirm({ title: 'Start a new session?', message: "Today's chat with Alex will be cleared.", confirmLabel: 'New session', danger: true })) {
+      try {
+        localStorage.removeItem(chatKey);
+      } catch {
+        /* ignore */
+      }
+      setMessages([GREETING]);
+      setSendError(null);
+    }
+  };
 
   const painState = state.physioState || {
     back: 3,
@@ -44,7 +111,7 @@ export default function PhysioAI({ state, updateState }: Props) {
 
   const scrollToBottom = () => {
     if (chatRef.current) {
-      chatRef.current.scrollTop = chatRef.current.scrollHeight;
+      chatRef.current.scrollTo({ top: chatRef.current.scrollHeight, behavior: 'smooth' });
     }
   };
 
@@ -62,40 +129,51 @@ export default function PhysioAI({ state, updateState }: Props) {
     return `[Current pain levels logged by user - Lower back: ${painState.back}/10, Tailbone: ${painState.tailbone}/10, Knees: ${painState.knees}/10, Right foot: ${painState.foot}/10, Neck/posture: ${painState.neck}/10]`;
   };
 
-  const sendMessage = async (text: string) => {
-    if (!text.trim()) return;
+  // `appendUser` is false on retry, where the failed user turn is already in `messages`.
+  const sendMessage = async (text: string, appendUser = true) => {
+    if (!text.trim() || isTyping) return;
+    setSendError(null);
+    lastUserTextRef.current = text;
 
-    // Build standard history context without repeating pain summary in UI
-    const newUserMsg: Message = { role: 'user', content: text };
-    
-    // We append the prompt to the backend request history, but to show in UI we don't want the raw tag
+    // Genuine conversation turns only — the pain summary is injected into the
+    // backend copy of the last turn but never stored in `messages`.
+    const priorTurns = appendUser ? messages : messages.slice(0, -1);
     const historyForBackend = [
-      ...messages,
+      ...priorTurns,
       { role: 'user', content: `${getPainSummary()}\n\nUser message: ${text}` }
     ];
 
-    setMessages(prev => [...prev, newUserMsg]);
+    if (appendUser) setMessages(prev => [...prev, { role: 'user', content: text }]);
     setInputStr('');
     setIsTyping(true);
 
     try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error('You must be signed in to chat with Alex.');
       const res = await fetch('/api/physio-chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ history: historyForBackend })
       });
       const data = await res.json();
-      
+
       if (res.ok) {
         setMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
       } else {
-        setMessages(prev => [...prev, { role: 'assistant', content: `Connection issue: ${data.error || 'Server error'}. Please try again.` }]);
+        setSendError(data.error || 'Server error. Please try again.');
       }
     } catch (e: any) {
-      setMessages(prev => [...prev, { role: 'assistant', content: `Request failed: ${e.message || 'Network error'}. Please try again.` }]);
+      setSendError(e.message || 'Network error. Please try again.');
     } finally {
       setIsTyping(false);
     }
+  };
+
+  const retryLast = () => {
+    if (lastUserTextRef.current) sendMessage(lastUserTextRef.current, false);
   };
 
   const quickSend = (txt: string) => {
@@ -108,7 +186,7 @@ export default function PhysioAI({ state, updateState }: Props) {
       {/* Header Area */}
       <div className="liquid-glass-panel rounded-3xl p-6 flex flex-col sm:flex-row gap-6 relative overflow-hidden shrink-0">
         <div className="absolute top-0 right-0 p-8 rounded-bl-full bg-brand-500/5 backdrop-blur-3xl" />
-        <div className="w-16 h-16 rounded-full bg-brand-500 flex flex-col items-center justify-center shrink-0 shadow-[0_0_20px_rgba(16,185,129,0.3)]">
+        <div className="w-16 h-16 rounded-full bg-brand-500 flex flex-col items-center justify-center shrink-0 shadow-[0_0_20px_rgba(6,182,212,0.3)]">
           <Activity size={26} className="text-[#0c0e14] mb-0.5" />
         </div>
         <div className="flex-1 flex flex-col justify-center">
@@ -187,8 +265,19 @@ export default function PhysioAI({ state, updateState }: Props) {
 
         {/* Chat Interface */}
         <div className="lg:col-span-8 flex flex-col h-[600px] lg:h-[720px] bg-white/[0.02] border border-white/10 rounded-3xl overflow-hidden shadow-2xl relative">
-          
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 flex flex-col gap-5 custom-scrollbar" ref={chatRef}>
+
+          {/* Chat header — new session control */}
+          <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-white/5 shrink-0">
+            <span className="text-[11px] font-mono font-bold uppercase tracking-[0.2em] text-white/40">Session with Alex</span>
+            <button
+              onClick={startNewSession}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] font-semibold text-white/70 hover:text-white transition-colors"
+            >
+              <RefreshCw size={13} /> New session
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 flex flex-col gap-5 custom-scrollbar" ref={chatRef} aria-live="polite">
             {messages.map((m, idx) => (
               <motion.div 
                 key={idx}
@@ -205,15 +294,7 @@ export default function PhysioAI({ state, updateState }: Props) {
                     : 'bg-[#18181b]/90 border border-white/5 text-white/90 rounded-tl-sm backdrop-blur-md'
                   }`}
                 >
-                  {m.role === 'assistant' ? (
-                    // Very simple formatting of AI responses
-                    <div dangerouslySetInnerHTML={{ 
-                      __html: m.content
-                        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                        .replace(/\n\n/g, '<br/><br/>')
-                        .replace(/\n- /g, '<br/>• ') 
-                    }} />
-                  ) : m.content}
+                  {m.role === 'assistant' ? <FormattedText text={m.content} /> : m.content}
                 </div>
               </motion.div>
             ))}
@@ -227,6 +308,24 @@ export default function PhysioAI({ state, updateState }: Props) {
                   <span className="w-1.5 h-1.5 bg-white/40 rounded-full animate-bounce [animation-delay:-0.15s]" />
                   <span className="w-1.5 h-1.5 bg-white/40 rounded-full animate-bounce" />
                 </div>
+              </motion.div>
+            )}
+            {sendError && (
+              <motion.div
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                role="alert"
+                className="mr-auto max-w-[85%] flex items-center gap-3 px-4 py-3 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs"
+              >
+                <AlertTriangle size={15} className="shrink-0" />
+                <span className="flex-1 leading-relaxed">{sendError}</span>
+                <button
+                  onClick={retryLast}
+                  disabled={isTyping}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-500/20 hover:bg-red-500/30 disabled:opacity-50 text-red-200 font-semibold transition-colors shrink-0"
+                >
+                  <RotateCcw size={11} /> Retry
+                </button>
               </motion.div>
             )}
           </div>
@@ -256,13 +355,14 @@ export default function PhysioAI({ state, updateState }: Props) {
                 value={inputStr}
                 onChange={e => setInputStr(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && sendMessage(inputStr)}
+                disabled={isTyping}
                 placeholder="Describe your symptoms or ask Alex anything..."
-                className="w-full bg-[#18181b] border border-white/10 rounded-2xl pl-5 pr-14 py-4 text-sm text-white placeholder-white/30 outline-none focus:border-brand-500/50 focus:ring-1 focus:ring-brand-500/50 shadow-inner"
+                className="w-full bg-[#18181b] border border-white/10 rounded-2xl pl-5 pr-14 py-4 text-sm text-white placeholder-white/30 outline-none focus:border-brand-500/50 focus:ring-1 focus:ring-brand-500/50 shadow-inner disabled:opacity-60"
               />
               <button 
                 onClick={() => sendMessage(inputStr)}
                 disabled={!inputStr.trim() || isTyping}
-                className="absolute right-2 p-2.5 bg-brand-500 hover:bg-brand-600 active:scale-95 disabled:opacity-50 disabled:active:scale-100 rounded-xl text-[#0c0e14] font-bold transition-all shadow-[0_4px_14px_rgba(16,185,129,0.2)]"
+                className="absolute right-2 p-2.5 bg-brand-500 hover:bg-brand-600 active:scale-95 disabled:opacity-50 disabled:active:scale-100 rounded-xl text-[#0c0e14] font-bold transition-all shadow-[0_4px_14px_rgba(6,182,212,0.2)]"
               >
                 <ArrowRight size={18} />
               </button>

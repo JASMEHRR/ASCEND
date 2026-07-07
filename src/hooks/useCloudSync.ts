@@ -74,11 +74,26 @@ export interface CloudSync {
  */
 export function useCloudSync(uid: string | null): CloudSync {
   const [state, setState] = useState<OSState | null>(null);
+  const [dateKey, setDateKey] = useState<string>(todayStr());
   const lastSyncedRef = useRef<string>('');
+  const prevDateRef = useRef<string>(dateKey);
 
-  // Seed from cache + subscribe to remote docs whenever the user changes.
+  // Detect midnight crossings so daily state re-subscribes and resets.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const today = todayStr();
+      setDateKey((prev) => (prev !== today ? today : prev));
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Seed from cache + subscribe to remote docs whenever the user or day changes.
   useEffect(() => {
     const cacheKey = uid ? `ascend_state_${uid}` : 'ascend_state_guest';
+    // A day change (not a uid change / first mount) resets the daily-doc fields
+    // while preserving persistent user-doc fields loaded from cache.
+    const isRollover = prevDateRef.current !== dateKey;
+    prevDateRef.current = dateKey;
 
     let seed: OSState = INITIAL_STATE;
     try {
@@ -86,6 +101,10 @@ export function useCloudSync(uid: string | null): CloudSync {
       if (cached) seed = { ...INITIAL_STATE, ...JSON.parse(cached) };
     } catch {
       /* ignore corrupt cache */
+    }
+    if (isRollover) {
+      // New day: clear the daily-doc slice; tasks/ideas/visionBoard/points/etc. persist.
+      seed = { ...seed, water: 0, rituals: {}, weight: undefined, physioState: undefined, primaryObjective: undefined };
     }
     setState({ ...seed, lastVisit: todayStr() });
     lastSyncedRef.current = '';
@@ -150,7 +169,7 @@ export function useCloudSync(uid: string | null): CloudSync {
       unsubUser();
       unsubDaily();
     };
-  }, [uid]);
+  }, [uid, dateKey]);
 
   // Persist local changes: always to the cache, debounced to Firestore.
   useEffect(() => {

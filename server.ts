@@ -26,6 +26,70 @@ const app = express();
 app.set("trust proxy", true);
 app.use(express.json({ limit: "256kb" }));
 
+// --- Firebase Admin (lazy) --------------------------------------------------
+// Verifies client Firebase ID tokens on protected routes. Initialized lazily
+// via dynamic import() so the serverless bundle stays lean (see file header).
+// Uses a service account from GOOGLE_APPLICATION_CREDENTIALS / FIREBASE_*
+// env when present; otherwise falls back to project-id-only init, which still
+// verifies tokens against Google's public certs.
+const FIREBASE_PROJECT_ID =
+  process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || "ascend-57d4e";
+
+let adminAuthPromise: Promise<import("firebase-admin/auth").Auth> | null = null;
+async function getAdminAuth() {
+  if (!adminAuthPromise) {
+    adminAuthPromise = (async () => {
+      const { getApps, initializeApp, applicationDefault, cert } = await import("firebase-admin/app");
+      const { getAuth } = await import("firebase-admin/auth");
+      if (!getApps().length) {
+        const svc = process.env.FIREBASE_SERVICE_ACCOUNT;
+        if (svc) {
+          initializeApp({ credential: cert(JSON.parse(svc)), projectId: FIREBASE_PROJECT_ID });
+        } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+          initializeApp({ credential: applicationDefault(), projectId: FIREBASE_PROJECT_ID });
+        } else {
+          // No service account: token signature is still verified against
+          // Google's public certs using the project id.
+          initializeApp({ projectId: FIREBASE_PROJECT_ID });
+        }
+      }
+      return getAuth();
+    })();
+  }
+  return adminAuthPromise;
+}
+
+/** Verify the Bearer token on a request; returns the uid or throws. */
+async function requireUid(req: express.Request): Promise<string> {
+  const header = req.header("authorization") || "";
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (!match) throw new GeminiError(401, "Missing or malformed Authorization header.");
+  try {
+    const decoded = await (await getAdminAuth()).verifyIdToken(match[1]);
+    return decoded.uid;
+  } catch {
+    throw new GeminiError(401, "Invalid or expired auth token.");
+  }
+}
+
+// --- Simple in-memory per-uid rate limit (20 req / 60s) ---------------------
+// ponytail: in-memory Map, fine for a single serverless instance; swap for a
+// shared store (Redis/Upstash) if this ever runs multi-instance at scale.
+const RATE_LIMIT = 20;
+const RATE_WINDOW_MS = 60_000;
+const rateHits = new Map<string, number[]>();
+function checkRateLimit(uid: string): boolean {
+  const now = Date.now();
+  const hits = (rateHits.get(uid) || []).filter((t) => now - t < RATE_WINDOW_MS);
+  if (hits.length >= RATE_LIMIT) {
+    rateHits.set(uid, hits);
+    return false;
+  }
+  hits.push(now);
+  rateHits.set(uid, hits);
+  return true;
+}
+
 // LaunchKit AI endpoints (stateless; persistence lives client-side in Firestore).
 app.use("/api/launch", launchRouter);
 // Jarvis AI command core (tool-registry relay).
@@ -94,14 +158,29 @@ END EVERY RESPONSE WITH:
 // AI physiotherapist chat, through the shared provider chain (llm.ts).
 app.post("/api/physio-chat", async (req, res) => {
   try {
+    const uid = await requireUid(req);
+    if (!checkRateLimit(uid)) {
+      return res.status(429).json({ error: "Too many requests. Please wait a minute and try again." });
+    }
+
     const { history } = req.body ?? {};
     if (!Array.isArray(history)) {
       return res.status(400).json({ error: "`history` must be an array of messages." });
     }
+    // Bound user input length. (Assistant turns in history can legitimately be
+    // longer, so only user messages are capped — capping replies would brick
+    // the next turn once a long answer lands in history.)
+    for (const m of history) {
+      if (m?.role === "user" && typeof m.content === "string" && m.content.length > 4000) {
+        return res.status(400).json({ error: "A message exceeds the 4,000 character limit." });
+      }
+    }
+    // Cap context to the last 30 turns to bound cost/latency.
+    const trimmed = history.slice(-30);
 
     const reply = await generateChat({
       system: PHYSIO_SYSTEM_PROMPT,
-      messages: history.map((m: { role: string; content: string }) => ({
+      messages: trimmed.map((m: { role: string; content: string }) => ({
         role: m.role === "user" ? ("user" as const) : ("assistant" as const),
         content: String(m.content ?? ""),
       })),

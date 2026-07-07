@@ -69,7 +69,7 @@ export default function LoginScreen() {
 
   return (
     <div className="relative flex min-h-screen w-full items-center justify-center bg-app text-white p-4 overflow-hidden">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(16,185,129,0.10),_transparent_55%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(6,182,212,0.10),_transparent_55%)]" />
 
       <motion.div
         initial={{ opacity: 0, y: 16 }}
