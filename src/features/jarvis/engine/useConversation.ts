@@ -64,10 +64,10 @@ export function useConversation(deps: ConversationDeps): Conversation {
   const greet = useCallback(
     (text: string) => {
       if (!text.trim()) return;
+      // Proactive greeting is text-only — it must never auto-speak (see voiceMode).
       push({ role: 'assistant', content: text });
-      deps.speak(text);
     },
-    [deps],
+    [],
   );
 
   const sendMessage = useCallback(

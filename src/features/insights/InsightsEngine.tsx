@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react';
 import type { OSState } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
-import { useJarvis } from '../jarvis/engine/JarvisProvider';
 import { disciplineScore } from '../../lib/discipline';
 
 interface Deps {
@@ -49,19 +48,17 @@ function deriveInsights(s: OSState): Insight[] {
 const GLOBAL_COOLDOWN_MS = 45 * 60 * 1000;
 
 /**
- * Proactive Insights: active-hours-gated nudges delivered via toast + voice.
+ * Proactive Insights: active-hours-gated nudges delivered as silent toasts.
  * Each rule fires at most once per day; at most one insight per 45 minutes;
- * silent outside the user's active hours. Renders nothing.
+ * silent outside the user's active hours. Never speaks (proactive nudges are
+ * text-only; see voiceMode). Renders nothing.
  */
 export default function InsightsEngine({ state }: Deps) {
   const { user } = useAuth();
   const { show } = useToast();
-  const { voice } = useJarvis();
 
   const stateRef = useRef(state);
   stateRef.current = state;
-  const voiceRef = useRef(voice);
-  voiceRef.current = voice;
   const showRef = useRef(show);
   showRef.current = show;
 
@@ -99,7 +96,6 @@ export default function InsightsEngine({ state }: Deps) {
         /* private mode */
       }
       showRef.current({ kind: 'insight', title: 'Jarvis', message: next.message });
-      voiceRef.current.speak(next.message);
     };
 
     // First check shortly after login (after the greeting settles), then every 10 min.

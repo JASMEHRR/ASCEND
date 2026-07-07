@@ -11,7 +11,8 @@ const synthAvailable = typeof window !== 'undefined' && 'speechSynthesis' in win
 
 /** Persisted so Jarvis sounds the same on every reload and every session. */
 const VOICE_STORAGE_KEY = 'ascend_jarvis_voice_uri';
-const MUTE_STORAGE_KEY = 'ascend_jarvis_muted';
+
+export type VoiceMode = 'off' | 'push-to-talk' | 'replies-only';
 
 /**
  * ElevenLabs voices are pinned with this prefix in the same storage key as
@@ -70,13 +71,9 @@ export function useVoice({ onResult }: UseVoiceOptions) {
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [interim, setInterim] = useState('');
-  const [muted, setMuted] = useState(() => {
-    try {
-      return localStorage.getItem(MUTE_STORAGE_KEY) === '1';
-    } catch {
-      return false;
-    }
-  });
+  // Voice output mode. Source of truth is jarvisPrefs.voiceMode (synced in via
+  // syncVoiceMode); default 'off' so Jarvis never auto-talks until opted in.
+  const [voiceMode, setVoiceModeState] = useState<VoiceMode>('off');
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [voiceURI, setVoiceURIState] = useState<string | null>(() => {
     try {
@@ -89,8 +86,14 @@ export function useVoice({ onResult }: UseVoiceOptions) {
   const [elevenStatus, setElevenStatus] = useState<'ok' | 'down'>('ok');
 
   const recogRef = useRef<any>(null);
-  const mutedRef = useRef(muted);
-  mutedRef.current = muted;
+  const voiceModeRef = useRef(voiceMode);
+  voiceModeRef.current = voiceMode;
+  // True when the current turn was started via voice input (push-to-talk gate).
+  // Set in start(), consumed after a reply is spoken.
+  const spokeInputRef = useRef(false);
+  // Persist handler wired by the app layer (CoreRegistrar) to write voiceMode
+  // back into jarvisPrefs; a no-op until wired.
+  const persistModeRef = useRef<(m: VoiceMode) => void>(() => {});
   const onResultRef = useRef(onResult);
   onResultRef.current = onResult;
   const voiceRef = useRef<SpeechSynthesisVoice | null>(null);
@@ -240,8 +243,16 @@ export function useVoice({ onResult }: UseVoiceOptions) {
   );
 
   const speak = useCallback(
-    (text: string) => {
-      if (mutedRef.current || !text) return;
+    (text: string, opts?: { force?: boolean }) => {
+      if (!text) return;
+      // `force` bypasses the mode gate for direct actions (e.g. Settings "Test voice").
+      if (!opts?.force) {
+        const mode = voiceModeRef.current;
+        if (mode === 'off') return;
+        // Push-to-talk: only speak a reply when the turn began with voice input.
+        if (mode === 'push-to-talk' && !spokeInputRef.current) return;
+        spokeInputRef.current = false; // consume: one spoken reply per voice turn
+      }
       stopSpeaking();
       const cleaned = text.replace(/[*_`#>|]/g, '');
       const gen = speakGenRef.current;
@@ -259,6 +270,8 @@ export function useVoice({ onResult }: UseVoiceOptions) {
 
   const start = useCallback(() => {
     if (!SpeechRecognitionImpl || listening) return;
+    // Mark this turn as voice-initiated so a push-to-talk reply may speak.
+    spokeInputRef.current = true;
     stopSpeaking();
     const recog = new SpeechRecognitionImpl();
     recogRef.current = recog;
@@ -289,17 +302,28 @@ export function useVoice({ onResult }: UseVoiceOptions) {
     recog.start();
   }, [listening, stopSpeaking]);
 
+  // Sync voiceMode FROM the cloud pref (jarvisPrefs) without re-persisting.
+  const syncVoiceMode = useCallback((m: VoiceMode) => setVoiceModeState(m), []);
+
+  // User-initiated mode change: update locally AND persist to jarvisPrefs.
+  const setVoiceMode = useCallback(
+    (m: VoiceMode) => {
+      if (m === 'off') stopSpeaking();
+      setVoiceModeState(m);
+      persistModeRef.current(m);
+    },
+    [stopSpeaking],
+  );
+
+  // Wire the persistence handler (called once by the app layer).
+  const setPersistModeHandler = useCallback((fn: (m: VoiceMode) => void) => {
+    persistModeRef.current = fn;
+  }, []);
+
+  // Quick session toggle for the panel button: off <-> replies-only.
   const toggleMuted = useCallback(() => {
-    setMuted((m) => {
-      if (!m) stopSpeaking();
-      try {
-        localStorage.setItem(MUTE_STORAGE_KEY, m ? '0' : '1');
-      } catch {
-        /* private mode */
-      }
-      return !m;
-    });
-  }, [stopSpeaking]);
+    setVoiceMode(voiceModeRef.current === 'off' ? 'replies-only' : 'off');
+  }, [setVoiceMode]);
 
   useEffect(() => stopSpeaking, [stopSpeaking]);
 
@@ -307,12 +331,16 @@ export function useVoice({ onResult }: UseVoiceOptions) {
     listening,
     speaking,
     interim,
-    muted,
+    voiceMode,
+    muted: voiceMode === 'off',
     inputSupported,
     voices,
     voiceURI,
     elevenStatus,
     setVoiceURI,
+    setVoiceMode,
+    syncVoiceMode,
+    setPersistModeHandler,
     start,
     stop,
     speak,

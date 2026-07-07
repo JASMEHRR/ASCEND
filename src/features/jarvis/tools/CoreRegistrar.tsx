@@ -34,9 +34,22 @@ function salutation(): string {
 }
 
 export default function CoreRegistrar({ state, updateState, view, setView }: Props) {
-  const { registerTools, registerContext, memory, greet } = useJarvis();
+  const { registerTools, registerContext, memory, greet, voice } = useJarvis();
   const { user } = useAuth();
   const { state: launch, update: updateLaunch } = useLaunchStateContext();
+
+  // Bridge the voice engine (state-agnostic) to jarvisPrefs.voiceMode: sync the
+  // stored mode into the engine, and let engine-driven changes persist back.
+  const { setPersistModeHandler, syncVoiceMode } = voice;
+  useEffect(() => {
+    setPersistModeHandler((m) =>
+      updateState((p) => ({ ...p, jarvisPrefs: { ...p.jarvisPrefs, voiceMode: m } })),
+    );
+  }, [setPersistModeHandler, updateState]);
+  const storedVoiceMode = state.jarvisPrefs?.voiceMode ?? 'off';
+  useEffect(() => {
+    syncVoiceMode(storedVoiceMode);
+  }, [storedVoiceMode, syncVoiceMode]);
 
   // Refs so registered closures read fresh data without re-registering.
   const stateRef = useRef<OSState>(state);

@@ -153,6 +153,23 @@ export default function SettingsModal({ isOpen, onClose, state, updateState, fea
               <ToggleTrack on={greetOnLogin} />
             </button>
 
+            <div className="px-3.5 py-2.5 rounded-2xl bg-white/[0.03] border border-white/8 flex items-center gap-2">
+              <span className="flex-1 min-w-0">
+                <span className="block text-[12px] font-bold text-white/85 leading-tight">Speak replies aloud</span>
+                <span className="block text-[10.5px] text-white/35">Off by default. Push-to-talk speaks only after you use the mic.</span>
+              </span>
+              <select
+                value={voice.voiceMode}
+                onChange={(e) => voice.setVoiceMode(e.target.value as typeof voice.voiceMode)}
+                aria-label="Jarvis voice mode"
+                className="rounded-xl border border-white/12 bg-surface px-2 py-1.5 text-[11px] text-white/85 outline-none focus:border-brand-400/40 cursor-pointer"
+              >
+                <option value="off">Off</option>
+                <option value="push-to-talk">Push-to-talk</option>
+                <option value="replies-only">Every reply</option>
+              </select>
+            </div>
+
             <div className="px-3.5 py-2.5 rounded-2xl bg-white/[0.03] border border-white/8 space-y-1.5">
               <div className="flex items-center gap-2">
                 <span className="flex-1 min-w-0">
@@ -183,7 +200,7 @@ export default function SettingsModal({ isOpen, onClose, state, updateState, fea
                   )}
                 </select>
                 <button
-                  onClick={() => voice.speak('Voice check complete. All systems nominal, sir.')}
+                  onClick={() => voice.speak('Voice check complete. All systems nominal, sir.', { force: true })}
                   aria-label="Test voice"
                   className="p-2 rounded-full bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/15 transition-colors cursor-pointer shrink-0"
                 >

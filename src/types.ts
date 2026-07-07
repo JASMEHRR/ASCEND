@@ -54,6 +54,14 @@ export interface OSState {
     greetOnLogin?: boolean;
     /** Local hours [start, end) when proactive insights may speak (default 8–22). */
     activeHours?: { start: number; end: number };
+    /**
+     * When Jarvis speaks aloud (default 'off' — no auto-talk):
+     *  - 'off'          never speaks
+     *  - 'push-to-talk' speaks a reply only when the turn was started by voice
+     *  - 'replies-only' speaks every reply to a message the user sent
+     * Proactive greetings/insights never speak in any mode.
+     */
+    voiceMode?: 'off' | 'push-to-talk' | 'replies-only';
   };
   physioState?: {
     back: number;
