@@ -96,7 +96,7 @@ function HeaderAccount() {
         type="button"
         onClick={handleSignOut}
         aria-label="Sign out"
-        className="rounded-full p-2 text-white/45 transition-colors hover:bg-white/10 hover:text-white cursor-pointer"
+        className="flex h-11 w-11 items-center justify-center rounded-full p-2 text-white/45 transition-colors hover:bg-white/10 hover:text-white cursor-pointer"
       >
         <LogOut size={15} />
       </button>
@@ -289,7 +289,7 @@ export default function App() {
 
       {/* MOBILE BOTTOM NAV */}
       <nav
-        className="sm:hidden fixed bottom-3 left-4 right-4 bg-app/85 backdrop-blur-md border border-white/12 py-3 px-5 flex justify-between items-center z-50 rounded-[2.5rem] shadow-lg overflow-x-auto select-none"
+        className="sm:hidden fixed bottom-safe left-4 right-4 bg-app/85 backdrop-blur-md border border-white/12 py-3 px-5 flex justify-between items-center z-50 rounded-[2.5rem] shadow-lg overflow-x-auto select-none"
         aria-label="Primary"
       >
         {mobileModules.slice(0, mobileMid).map((mod) => (
@@ -359,7 +359,7 @@ function MobileNavButton({
       onClick={() => onSelect(module.id as View)}
       aria-label={module.label}
       aria-current={active ? 'page' : undefined}
-      className={`relative flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all ${
+      className={`relative flex min-h-11 min-w-11 flex-col items-center justify-center gap-1.5 p-2 rounded-xl transition-all ${
         active ? 'text-white bg-white/10' : 'text-white/40'
       }`}
     >

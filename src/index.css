@@ -204,3 +204,23 @@ input[type=range].glass-slider::-webkit-slider-thumb:hover {
   .animate-cinematic-bg { animation: none !important; }
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }
+
+/* --- Mobile / PWA --------------------------------------------------------- */
+/* Momentum scrolling on every internal scroll pane. */
+.custom-scrollbar { -webkit-overflow-scrolling: touch; }
+
+/* iOS zooms the page when a focused input has font-size < 16px. Enforce a 16px
+ * floor on form controls at phone widths so focusing never triggers auto-zoom. */
+@media (max-width: 640px) {
+  input, textarea, select { font-size: 16px; }
+}
+
+/* Below the tablet breakpoint, drop the always-running background sway so
+ * low-end phones don't jank; the static photograph still renders. */
+@media (max-width: 767px) {
+  .animate-cinematic-bg { animation: none; }
+}
+
+/* Safe-area helper for the fixed bottom nav (iOS/Android gesture bars). */
+.pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+.bottom-safe { bottom: calc(0.75rem + env(safe-area-inset-bottom)); }

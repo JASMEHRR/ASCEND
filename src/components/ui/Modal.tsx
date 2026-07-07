@@ -50,7 +50,7 @@ export default function Modal({
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+          className="fixed inset-0 z-[60] flex items-end justify-center bg-black/80 backdrop-blur-md sm:items-center sm:p-4"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -62,7 +62,7 @@ export default function Modal({
             role="dialog"
             aria-modal="true"
             aria-label={typeof title === 'string' ? title : 'Dialog'}
-            className={`relative w-full ${maxWidthClass} bg-surface/95 text-white border border-white/12 rounded-[1.75rem] shadow-[0_30px_60px_rgba(0,0,0,0.8)] overflow-hidden`}
+            className={`relative w-full ${maxWidthClass} max-h-[90dvh] overflow-y-auto bg-surface/95 text-white border border-white/12 rounded-t-[1.75rem] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_60px_rgba(0,0,0,0.8)] sm:rounded-[1.75rem] sm:pb-0`}
             initial={{ opacity: 0, scale: 0.96, y: 12 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 12 }}

@@ -141,7 +141,7 @@ export default function JarvisDashboard({ state, updateState, setView, openSetti
               <button
                 key={s}
                 onClick={() => sendMessage(s)}
-                className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] text-white/60 transition-colors hover:border-brand-400/40 hover:text-white cursor-pointer"
+                className="flex min-h-11 items-center rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 text-[11px] text-white/60 transition-colors hover:border-brand-400/40 hover:text-white cursor-pointer"
               >
                 {s}
               </button>
