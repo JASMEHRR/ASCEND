@@ -18,6 +18,7 @@ import AtmosphereSelector from './components/AtmosphereSelector';
 import CondensationEffect from './components/CondensationEffect';
 import FlipClock from './components/FlipClock';
 import SettingsModal from './components/SettingsModal';
+import CommandPalette, { type Command } from './components/CommandPalette';
 import RewardModal from './components/RewardModal';
 import LoginScreen from './components/auth/LoginScreen';
 import Jarvis from './features/jarvis/Jarvis';
@@ -163,6 +164,18 @@ export default function App() {
   const mobileModules = features.navModules.filter((m) => m.mobile);
   const mobileMid = Math.ceil(mobileModules.length / 2);
 
+  // Command palette (Cmd/Ctrl+K): jump to any enabled view + quick actions.
+  const paletteCommands: Command[] = [
+    ...features.navModules.map((mod) => ({
+      id: `view:${mod.id}`,
+      label: `Go to ${mod.label}`,
+      hint: 'navigate view',
+      icon: mod.icon,
+      run: () => setView(mod.id as View),
+    })),
+    { id: 'action:settings', label: 'Open Settings', hint: 'preferences modules', icon: Sliders, run: () => setSettingsOpen(true) },
+  ];
+
   return (
     <div className="relative flex flex-col h-screen w-full bg-app text-white/95 font-plus p-4 md:p-6 pb-20 sm:pb-6 gap-5 overflow-hidden selection:bg-brand-500/30 selection:text-white">
       <AtmosphereBackdrop currentAtmosphere={activeAtmosphere} />
@@ -305,6 +318,8 @@ export default function App() {
       />
 
       <RewardModal isOpen={rewardModalOpen} onClose={() => setRewardModalOpen(false)} rewardContent={currentReward} />
+
+      <CommandPalette commands={paletteCommands} />
 
       <Jarvis state={state} updateState={updateState} view={view} setView={setView} />
       <ObsidianRegistrar />
