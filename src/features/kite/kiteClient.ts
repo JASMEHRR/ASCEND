@@ -4,6 +4,8 @@
  * flip the connector to "expired" instead of failing opaquely.
  */
 
+import { authedFetch } from '../../lib/authedFetch';
+
 export class KiteExpiredError extends Error {}
 
 export type KiteResource = 'holdings' | 'positions' | 'margins';
@@ -42,7 +44,7 @@ export interface KiteMargins {
 }
 
 export async function kiteFetch<T>(resource: KiteResource, token: string): Promise<T> {
-  const res = await fetch(`/api/kite/${resource}`, { headers: { 'x-kite-token': token } });
+  const res = await authedFetch(`/api/kite/${resource}`, { headers: { 'x-kite-token': token } });
   const data = (await res.json().catch(() => null)) as any;
   if (res.status === 401 && data?.code === 'kite_token_expired') {
     throw new KiteExpiredError(data.error ?? 'Kite session expired.');

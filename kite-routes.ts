@@ -19,6 +19,7 @@
  */
 import { Router, type Request, type Response } from 'express';
 import { createHash } from 'node:crypto';
+import { requireAuth } from './auth-mw';
 
 export const kiteRouter = Router();
 
@@ -83,7 +84,8 @@ const DATA_PATHS = {
 } as const;
 
 for (const [name, path] of Object.entries(DATA_PATHS)) {
-  kiteRouter.get(`/${name}`, async (req: Request, res: Response) => {
+  // Firebase-gated on top of the per-request Kite token (read-only portfolio).
+  kiteRouter.get(`/${name}`, requireAuth({ limit: 60 }), async (req: Request, res: Response) => {
     const apiKey = process.env.KITE_API_KEY;
     if (!apiKey) {
       res.status(503).json({ error: 'Kite Connect is not configured.', code: 'not_configured' });

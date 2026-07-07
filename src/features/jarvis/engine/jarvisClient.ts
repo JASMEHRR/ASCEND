@@ -1,4 +1,5 @@
 import { parseJarvisResponse } from './validate';
+import { authedFetch } from '../../../lib/authedFetch';
 import type { JarvisMessage, JarvisResponse, ToolDeclaration } from '../types';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -10,7 +11,7 @@ async function once(
   tools: ToolDeclaration[],
   signal?: AbortSignal,
 ): Promise<JarvisResponse> {
-  const res = await fetch('/api/jarvis', {
+  const res = await authedFetch('/api/jarvis', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ history, context, tools }),

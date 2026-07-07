@@ -162,6 +162,111 @@ ${JSON.stringify(opts.schema, null, 2)}`;
   }
 }
 
+// auth-mw.ts
+var FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || "ascend-57d4e";
+var adminPromise = null;
+async function getAdmin() {
+  if (!adminPromise) {
+    adminPromise = (async () => {
+      const { getApps, initializeApp, applicationDefault, cert } = await import("firebase-admin/app");
+      const { getAuth } = await import("firebase-admin/auth");
+      let hasCredentials = false;
+      if (!getApps().length) {
+        const svc = process.env.FIREBASE_SERVICE_ACCOUNT;
+        if (svc) {
+          initializeApp({ credential: cert(JSON.parse(svc)), projectId: FIREBASE_PROJECT_ID });
+          hasCredentials = true;
+        } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+          initializeApp({ credential: applicationDefault(), projectId: FIREBASE_PROJECT_ID });
+          hasCredentials = true;
+        } else {
+          initializeApp({ projectId: FIREBASE_PROJECT_ID });
+        }
+      } else {
+        hasCredentials = Boolean(
+          process.env.FIREBASE_SERVICE_ACCOUNT || process.env.GOOGLE_APPLICATION_CREDENTIALS
+        );
+      }
+      let db = null;
+      if (hasCredentials) {
+        try {
+          const { getFirestore } = await import("firebase-admin/firestore");
+          db = getFirestore();
+        } catch {
+          db = null;
+        }
+      }
+      return { auth: getAuth(), db };
+    })();
+  }
+  return adminPromise;
+}
+async function verifyBearer(req) {
+  const header = req.header("authorization") || "";
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (!match) throw new GeminiError(401, "Missing or malformed Authorization header.");
+  try {
+    const { auth } = await getAdmin();
+    const decoded = await auth.verifyIdToken(match[1]);
+    return decoded.uid;
+  } catch (err) {
+    if (err instanceof GeminiError) throw err;
+    throw new GeminiError(401, "Invalid or expired auth token.");
+  }
+}
+var WINDOW_MS = 6e4;
+var memoryHits = /* @__PURE__ */ new Map();
+function memoryAllow(uid, limit) {
+  const now = Date.now();
+  const hits = (memoryHits.get(uid) || []).filter((t) => now - t < WINDOW_MS);
+  if (hits.length >= limit) {
+    memoryHits.set(uid, hits);
+    return false;
+  }
+  hits.push(now);
+  memoryHits.set(uid, hits);
+  return true;
+}
+async function checkRateLimit(uid, limit) {
+  const { db } = await getAdmin();
+  if (!db) return memoryAllow(uid, limit);
+  const ref = db.collection("rateLimits").doc(uid);
+  try {
+    return await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const now = Date.now();
+      const data = snap.exists ? snap.data() : null;
+      if (!data || typeof data.windowStart !== "number" || now - data.windowStart > WINDOW_MS) {
+        tx.set(ref, { windowStart: now, count: 1 });
+        return true;
+      }
+      if ((data.count ?? 0) >= limit) return false;
+      tx.update(ref, { count: (data.count ?? 0) + 1 });
+      return true;
+    });
+  } catch (err) {
+    console.error("[rate-limit] Firestore error \u2014 falling back to in-memory for this uid", err);
+    return memoryAllow(uid, limit);
+  }
+}
+function requireAuth(opts = {}) {
+  const limit = opts.limit ?? 20;
+  return async (req, res, next) => {
+    try {
+      const uid = await verifyBearer(req);
+      req.uid = uid;
+      if (!await checkRateLimit(uid, limit)) {
+        res.status(429).json({ error: "Too many requests. Please wait a minute and try again." });
+        return;
+      }
+      next();
+    } catch (err) {
+      const status = err instanceof GeminiError ? err.status : 401;
+      res.status(status).json({ error: err instanceof Error ? err.message : "Unauthorized." });
+    }
+  };
+}
+
 // launch-routes.ts
 import { Router } from "express";
 var launchRouter = Router();
@@ -689,7 +794,7 @@ var DATA_PATHS = {
   margins: "/user/margins"
 };
 for (const [name, path] of Object.entries(DATA_PATHS)) {
-  kiteRouter.get(`/${name}`, async (req, res) => {
+  kiteRouter.get(`/${name}`, requireAuth({ limit: 60 }), async (req, res) => {
     const apiKey = process.env.KITE_API_KEY;
     if (!apiKey) {
       res.status(503).json({ error: "Kite Connect is not configured.", code: "not_configured" });
@@ -731,11 +836,11 @@ dotenv.config({ override: true });
 var app = express();
 app.set("trust proxy", true);
 app.use(express.json({ limit: "256kb" }));
-app.use("/api/launch", launchRouter);
-app.use("/api/jarvis", jarvisRouter);
-app.use("/api/stocks", stocksRouter);
-app.use("/api/tts", ttsRouter);
-app.use("/api/search", searchRouter);
+app.use("/api/launch", requireAuth(), launchRouter);
+app.use("/api/jarvis", requireAuth(), jarvisRouter);
+app.use("/api/stocks", requireAuth({ limit: 60 }), stocksRouter);
+app.use("/api/tts", requireAuth(), ttsRouter);
+app.use("/api/search", requireAuth(), searchRouter);
 app.use("/api/kite", kiteRouter);
 var PHYSIO_SYSTEM_PROMPT = `You are Alex, a highly knowledgeable personal AI physiotherapist assistant specialising in spinal rehab, posture correction, gait mechanics, sports recovery, and mobility training.
 
@@ -786,15 +891,21 @@ END EVERY RESPONSE WITH:
 - Hydration/recovery reminder
 - "If pain increases, stop immediately."
 - "Disclaimer: I am an AI assistant, not a licensed physiotherapist. Consult a qualified physio for diagnosis and hands-on treatment."`;
-app.post("/api/physio-chat", async (req, res) => {
+app.post("/api/physio-chat", requireAuth(), async (req, res) => {
   try {
     const { history } = req.body ?? {};
     if (!Array.isArray(history)) {
       return res.status(400).json({ error: "`history` must be an array of messages." });
     }
+    for (const m of history) {
+      if (m?.role === "user" && typeof m.content === "string" && m.content.length > 4e3) {
+        return res.status(400).json({ error: "A message exceeds the 4,000 character limit." });
+      }
+    }
+    const trimmed = history.slice(-30);
     const reply = await generateChat({
       system: PHYSIO_SYSTEM_PROMPT,
-      messages: history.map((m) => ({
+      messages: trimmed.map((m) => ({
         role: m.role === "user" ? "user" : "assistant",
         content: String(m.content ?? "")
       }))

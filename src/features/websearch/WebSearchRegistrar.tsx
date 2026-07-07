@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useJarvis } from '../jarvis/engine/JarvisProvider';
+import { authedFetch } from '../../lib/authedFetch';
 import type { JarvisTool } from '../jarvis/types';
 
 /**
@@ -25,7 +26,7 @@ export default function WebSearchRegistrar() {
         execute: async (a) => {
           const query = String(a.query).trim();
           try {
-            const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+            const res = await authedFetch(`/api/search?q=${encodeURIComponent(query)}`);
             const data = await res.json().catch(() => null);
             if (!res.ok) {
               return { ok: false, message: `web search unavailable: ${data?.error ?? `status ${res.status}`}` };

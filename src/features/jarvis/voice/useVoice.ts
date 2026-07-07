@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { authedFetch } from '../../../lib/authedFetch';
 
 // Vendor-prefixed Web Speech API — typed loosely; it isn't in lib.dom yet.
 const SpeechRecognitionImpl: any =
@@ -194,7 +195,7 @@ export function useVoice({ onResult }: UseVoiceOptions) {
   const speakEleven = useCallback(
     async (cleaned: string, voiceId: string, gen: number) => {
       try {
-        const res = await fetch('/api/tts', {
+        const res = await authedFetch('/api/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: cleaned, voiceId }),
