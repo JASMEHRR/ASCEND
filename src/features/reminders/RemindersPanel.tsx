@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Bell, Plus, Check, Trash2 } from 'lucide-react';
-import Panel from '../../components/ui/Panel';
 import Modal from '../../components/ui/Modal';
 import { useRemindersContext } from './RemindersContext';
 
@@ -28,7 +27,7 @@ export default function RemindersPanel() {
   };
 
   return (
-    <Panel>
+    <div>
       <div className="mb-3 flex items-center justify-between">
         <p className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-widest text-white/40">
           <Bell size={12} /> Reminders
@@ -104,6 +103,6 @@ export default function RemindersPanel() {
           </div>
         </form>
       </Modal>
-    </Panel>
+    </div>
   );
 }

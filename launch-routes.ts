@@ -3,11 +3,11 @@
  *
  * These are stateless: all context comes in the request body and the generated
  * JSON is returned to the client, which persists it in Firestore (per user).
- * The AI provider is ASCEND's existing Gemini (@google/genai) — no extra deps
- * or API keys. Mounted under /api/launch by server.ts.
+ * The AI provider is ASCEND's shared chain in llm.ts (NIM primary, Gemini
+ * fallback) — no extra deps or API keys. Mounted under /api/launch by server.ts.
  */
 import { Router, type Request, type Response, type NextFunction } from 'express';
-import { generateStructured, GeminiError } from './gemini';
+import { generateStructured, GeminiError } from './llm';
 
 export const launchRouter = Router();
 

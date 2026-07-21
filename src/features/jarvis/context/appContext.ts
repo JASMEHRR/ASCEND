@@ -1,8 +1,9 @@
 import type { OSState } from '../../../types';
 import { RITUALS } from '../../../constants';
 import type { LaunchState, ProspectStatus } from '../../launch/types';
+import { FEATURES, isFeatureEnabled } from '../../registry';
 
-export type View = 'dashboard' | 'physio' | 'business' | 'vision' | 'buy_list';
+export type View = 'dashboard' | 'physio' | 'business' | 'vision' | 'buy_list' | 'stocks' | 'journal';
 
 export const VIEW_LABELS: Record<View, string> = {
   dashboard: 'Dashboard',
@@ -10,6 +11,8 @@ export const VIEW_LABELS: Record<View, string> = {
   business: 'Strategic Command',
   vision: 'Vision Board',
   buy_list: 'Purchases',
+  stocks: 'Stocks & Finance',
+  journal: 'Journal',
 };
 
 interface ContextInputs {
@@ -37,10 +40,21 @@ export function buildAppContext({ state, launch, view, userEmail, disciplineScor
       }, {} as Record<ProspectStatus, number>)
     : null;
 
+  // Module awareness: Jarvis should help with enabled modules and must not
+  // proactively bring up ones this user has turned off (their code still runs
+  // for other users, so the disabled set is a per-user visibility fact).
+  const enabledFeatures = FEATURES.filter((f) => isFeatureEnabled(state, f.id)).map((f) => f.label);
+  const disabledFeatures = FEATURES.filter((f) => f.status === 'active' && !isFeatureEnabled(state, f.id)).map((f) => f.label);
+
   return {
     page: VIEW_LABELS[view],
     user: userEmail,
     today: new Date().toDateString(),
+    features: {
+      enabled: enabledFeatures,
+      disabled: disabledFeatures,
+      note: 'Do not proactively surface or suggest disabled modules to this user.',
+    },
     metrics: {
       disciplineScore,
       streakDays: streak,

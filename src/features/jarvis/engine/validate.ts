@@ -12,11 +12,12 @@ export function parseJarvisResponse(raw: unknown): JarvisResponse {
       ? obj.reply.trim()
       : "I didn't quite catch that, sir. Could you rephrase?";
   const plan = typeof obj.plan === 'string' && obj.plan.trim() ? obj.plan.trim() : undefined;
+  const speak = typeof obj.speak === 'string' && obj.speak.trim() ? obj.speak.trim() : undefined;
   const needsClarification = obj.needsClarification === true;
   const toolCalls = Array.isArray(obj.toolCalls)
     ? obj.toolCalls.map(normalizeToolCall).filter((c): c is ToolCall => c !== null)
     : [];
-  return { reply, plan, needsClarification, toolCalls };
+  return { reply, speak, plan, needsClarification, toolCalls };
 }
 
 function normalizeToolCall(raw: unknown): ToolCall | null {

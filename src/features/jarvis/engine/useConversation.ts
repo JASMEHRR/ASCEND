@@ -1,9 +1,25 @@
 import { useCallback, useRef, useState } from 'react';
 import { callJarvis } from './jarvisClient';
-import type { ActionRecord, JarvisMessage, JarvisTool, ToolDeclaration, ToolResult } from '../types';
+import type { ActionRecord, JarvisMessage, JarvisResponse, JarvisTool, StatusLine, ToolDeclaration, ToolResult } from '../types';
 
 /** Below this self-reported confidence, a tool call is not executed. */
 const CONFIDENCE_THRESHOLD = 0.45;
+
+/**
+ * The transcript sent to the model: role + clean content only. UI-only status
+ * chips (✓/⚠) must never leak into multi-turn context.
+ */
+const toModelHistory = (msgs: JarvisMessage[]): JarvisMessage[] =>
+  msgs.map(({ role, content }) => ({ role, content }));
+
+/** What TTS reads: the model's short spoken line, or the reply if it's short. */
+function spokenOf(plan: Pick<JarvisResponse, 'reply' | 'speak'>): string {
+  if (plan.speak) return plan.speak;
+  if (plan.reply.length <= 320) return plan.reply;
+  // Long reply without a spoken version: read the first couple of sentences.
+  const sentences = plan.reply.replace(/[#*`|]/g, '').split(/(?<=[.!?])\s+/);
+  return sentences.slice(0, 2).join(' ');
+}
 
 const GREETING: JarvisMessage = {
   role: 'assistant',
@@ -22,6 +38,8 @@ export interface Conversation {
   messages: JarvisMessage[];
   thinking: boolean;
   sendMessage: (text: string) => void;
+  /** Proactively push (and speak) an assistant line without an LLM round-trip. */
+  greet: (text: string) => void;
   abort: () => void;
 }
 
@@ -43,6 +61,15 @@ export function useConversation(deps: ConversationDeps): Conversation {
 
   const abort = useCallback(() => abortRef.current?.abort(), []);
 
+  const greet = useCallback(
+    (text: string) => {
+      if (!text.trim()) return;
+      push({ role: 'assistant', content: text });
+      deps.speak(text);
+    },
+    [deps],
+  );
+
   const sendMessage = useCallback(
     async (raw: string) => {
       const text = raw.trim();
@@ -52,8 +79,9 @@ export function useConversation(deps: ConversationDeps): Conversation {
       const ctrl = new AbortController();
       abortRef.current = ctrl;
 
-      const history = [...messagesRef.current, { role: 'user', content: text } as JarvisMessage];
-      setMessages(history);
+      const uiHistory = [...messagesRef.current, { role: 'user', content: text } as JarvisMessage];
+      setMessages(uiHistory);
+      const history = toModelHistory(uiHistory);
       thinkingRef.current = true;
       setThinking(true);
 
@@ -71,7 +99,7 @@ export function useConversation(deps: ConversationDeps): Conversation {
 
         if (plan.needsClarification || plan.toolCalls.length === 0) {
           push({ role: 'assistant', content: plan.reply });
-          deps.speak(plan.reply);
+          deps.speak(spokenOf(plan));
           return;
         }
 
@@ -109,6 +137,7 @@ export function useConversation(deps: ConversationDeps): Conversation {
         }
 
         let reply = plan.reply;
+        let spoken = spokenOf(plan);
         const wantsSummary =
           executed.some((e) => e.tool.followUp && e.result.ok) || executed.filter((e) => e.result.ok).length > 1;
 
@@ -119,26 +148,27 @@ export function useConversation(deps: ConversationDeps): Conversation {
           const followHistory: JarvisMessage[] = [
             ...history,
             { role: 'assistant', content: reply },
-            { role: 'user', content: `[TOOL RESULTS]\n${note}\n\nReport what you did (and why, briefly) in one or two spoken sentences.` },
+            { role: 'user', content: `[TOOL RESULTS]\n${note}\n\nReport the outcome to the user (answer their question with the data if they asked one).` },
           ];
           try {
             const summary = await callJarvis(followHistory, context, decls, ctrl.signal);
-            if (summary.reply) reply = summary.reply;
+            if (summary.reply) {
+              reply = summary.reply;
+              spoken = spokenOf(summary);
+            }
           } catch {
             /* keep the initial reply if the summary call fails */
           }
         }
 
-        const ok = executed.filter((e) => e.result.ok).map((e) => e.result.message);
-        const bad = executed.filter((e) => !e.result.ok).map((e) => e.result.message);
-        const suffix = [
-          ok.length ? `\n\n✓ ${ok.join(' · ')}` : '',
-          bad.length ? `\n\n⚠ ${bad.join(' · ')}` : '',
-          skipped.length ? `\n\n· ${skipped.join(' · ')}` : '',
-        ].join('');
+        const status: StatusLine[] = [
+          ...executed.filter((e) => e.result.ok).map((e): StatusLine => ({ kind: 'ok', text: e.result.message })),
+          ...executed.filter((e) => !e.result.ok).map((e): StatusLine => ({ kind: 'warn', text: e.result.message })),
+          ...skipped.map((s): StatusLine => ({ kind: 'info', text: s })),
+        ];
 
-        push({ role: 'assistant', content: `${reply}${suffix}` });
-        deps.speak(reply);
+        push({ role: 'assistant', content: reply, status });
+        deps.speak(spoken);
       } catch (e) {
         if ((e as Error).name === 'AbortError') return;
         push({ role: 'assistant', content: `Connection issue: ${(e as Error).message}. Try again, sir.` });
@@ -151,5 +181,5 @@ export function useConversation(deps: ConversationDeps): Conversation {
     [deps],
   );
 
-  return { messages, thinking, sendMessage, abort };
+  return { messages, thinking, sendMessage, greet, abort };
 }

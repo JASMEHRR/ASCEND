@@ -12,10 +12,14 @@
  */
 import express from "express";
 import dotenv from "dotenv";
-import { getGemini, GEMINI_MODEL } from "./gemini";
+import { generateChat, GeminiError } from "./llm";
 import { launchRouter } from "./launch-routes";
 import { jarvisRouter } from "./jarvis-routes";
 import { transcribeRouter } from "./transcribe-routes";
+import { stocksRouter } from "./stocks-routes";
+import { ttsRouter } from "./tts-routes";
+import { searchRouter } from "./search-routes";
+import { kiteRouter } from "./kite-routes";
 
 dotenv.config({ override: true });
 
@@ -30,6 +34,14 @@ app.use(express.json({ limit: "256kb" }));
 app.use("/api/launch", launchRouter);
 // Jarvis AI command core (tool-registry relay).
 app.use("/api/jarvis", jarvisRouter);
+// Market data proxy (Yahoo Finance — Indian + international tickers).
+app.use("/api/stocks", stocksRouter);
+// ElevenLabs TTS proxy (key stays server-side; client falls back to browser TTS).
+app.use("/api/tts", ttsRouter);
+// Live web search (Tavily) — powers Jarvis's webSearch tool.
+app.use("/api/search", searchRouter);
+// Zerodha Kite Connect — read-only portfolio (login, token exchange, proxies).
+app.use("/api/kite", kiteRouter);
 
 // The AI physiotherapist's persona and safety rules. Personalise the
 // conditions / trek details below as the user's situation changes.
@@ -83,7 +95,7 @@ END EVERY RESPONSE WITH:
 - "If pain increases, stop immediately."
 - "Disclaimer: I am an AI assistant, not a licensed physiotherapist. Consult a qualified physio for diagnosis and hands-on treatment."`;
 
-// AI physiotherapist chat, backed by Gemini.
+// AI physiotherapist chat, through the shared provider chain (llm.ts).
 app.post("/api/physio-chat", async (req, res) => {
   try {
     const { history } = req.body ?? {};
@@ -91,21 +103,20 @@ app.post("/api/physio-chat", async (req, res) => {
       return res.status(400).json({ error: "`history` must be an array of messages." });
     }
 
-    const ai = await getGemini();
-    const response = await ai.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: history.map((m: { role: string; content: string }) => ({
-        role: m.role === "user" ? "user" : "model",
-        parts: [{ text: m.content }],
+    const reply = await generateChat({
+      system: PHYSIO_SYSTEM_PROMPT,
+      messages: history.map((m: { role: string; content: string }) => ({
+        role: m.role === "user" ? ("user" as const) : ("assistant" as const),
+        content: String(m.content ?? ""),
       })),
-      config: { systemInstruction: PHYSIO_SYSTEM_PROMPT },
     });
 
-    res.json({ reply: response.text });
+    res.json({ reply });
   } catch (err: unknown) {
+    const status = err instanceof GeminiError ? err.status : 500;
     const message = err instanceof Error ? err.message : "Failed to fetch response";
-    console.error("[physio-chat] Error:", err);
-    res.status(500).json({ error: message });
+    if (status >= 500) console.error("[physio-chat] Error:", err);
+    res.status(status).json({ error: message });
   }
 });
 

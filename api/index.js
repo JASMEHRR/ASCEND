@@ -1,9 +1,14 @@
 // server.ts
-import express from "express";
+import express2 from "express";
 import dotenv from "dotenv";
 
 // gemini.ts
 var GEMINI_MODEL = "gemini-2.5-flash";
+var GEMINI_FALLBACK_MODEL = "gemini-2.5-flash-lite";
+function isQuotaError(err) {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /RESOURCE_EXHAUSTED|"code"\s*:\s*429|exceeded your current quota|rate.?limit/i.test(msg);
+}
 var GeminiError = class extends Error {
   constructor(status, message) {
     super(message);
@@ -31,23 +36,124 @@ function extractJson(raw) {
   if (first !== -1 && last > first) return text.slice(first, last + 1);
   return text;
 }
-async function generateStructured(opts) {
+
+// llm.ts
+var NIM_MODEL = "meta/llama-4-maverick-17b-128e-instruct";
+var OPENAI_PROVIDERS = [
+  {
+    name: "groq",
+    url: "https://api.groq.com/openai/v1/chat/completions",
+    keyEnv: "GROQ_API_KEY",
+    // Groq no longer hosts Llama 4 Maverick; 3.3-70b is the best
+    // conversational fit there (non-reasoning, strong JSON, ~300 tok/s).
+    model: "llama-3.3-70b-versatile",
+    timeoutMs: 3e4
+  },
+  {
+    name: "nim",
+    url: "https://integrate.api.nvidia.com/v1/chat/completions",
+    keyEnv: "NVIDIA_API_KEY",
+    model: NIM_MODEL,
+    // A healthy NIM answers in 1-5s; when its edge drops the request
+    // (observed from Vercel: /v1/models 200 in 13ms, chat POST never
+    // returns, streamed or not) fail over fast instead of stalling.
+    timeoutMs: 15e3
+  }
+];
+async function callOpenAICompat(opts, provider, apiKey) {
+  const body = {
+    model: provider.model,
+    messages: [
+      { role: "system", content: opts.system },
+      ...opts.messages.map((m) => ({ role: m.role, content: m.content }))
+    ],
+    max_tokens: opts.maxTokens ?? 4096,
+    temperature: opts.temperature ?? 0.6,
+    stream: false
+  };
+  if (opts.json) body.response_format = { type: "json_object" };
+  const post = (payload) => fetch(provider.url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      "User-Agent": "ascend-jarvis/4.0 (+https://ascend-delta-sage.vercel.app)"
+    },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(provider.timeoutMs)
+  });
+  let res = await post(body);
+  if (res.status === 400 && opts.json) {
+    const { response_format: _drop, ...withoutFormat } = body;
+    res = await post(withoutFormat);
+  }
+  if (!res.ok) {
+    const detail = (await res.text().catch(() => "")).slice(0, 300);
+    throw new Error(`${provider.name} ${res.status}: ${detail}`);
+  }
+  const data = await res.json();
+  const text = data.choices?.[0]?.message?.content ?? "";
+  if (!text.trim()) throw new Error(`${provider.name} returned empty content`);
+  return text;
+}
+async function callGemini(opts, model) {
   const ai = await getGemini();
+  const response = await ai.models.generateContent({
+    model,
+    contents: opts.messages.map((m) => ({
+      role: m.role === "user" ? "user" : "model",
+      parts: [{ text: m.content }]
+    })),
+    config: {
+      systemInstruction: opts.system,
+      maxOutputTokens: opts.maxTokens ?? 4096,
+      ...opts.json ? { responseMimeType: "application/json" } : {},
+      ...opts.temperature !== void 0 ? { temperature: opts.temperature } : {}
+    }
+  });
+  return response.text ?? "";
+}
+async function generateChat(opts) {
+  for (const provider of OPENAI_PROVIDERS) {
+    const apiKey = process.env[provider.keyEnv];
+    if (!apiKey) continue;
+    try {
+      return await callOpenAICompat(opts, provider, apiKey);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[llm] ${provider.name} failed, trying next provider:`, msg);
+    }
+  }
+  try {
+    return await callGemini(opts, GEMINI_MODEL);
+  } catch (err) {
+    if (!isQuotaError(err)) throw err;
+    try {
+      return await callGemini(opts, GEMINI_FALLBACK_MODEL);
+    } catch (err2) {
+      if (isQuotaError(err2)) {
+        throw new GeminiError(
+          429,
+          "I've hit the limits on every AI provider for now, sir \u2014 quotas reset within minutes to hours. Give it a short while and try again."
+        );
+      }
+      throw err2;
+    }
+  }
+}
+async function generateStructured(opts) {
   const system = `${opts.system}
 
 Respond with a single JSON object and nothing else \u2014 no prose, no markdown fences. It must conform exactly to this JSON Schema (every required field, correct types):
 
 ${JSON.stringify(opts.schema, null, 2)}`;
-  const response = await ai.models.generateContent({
-    model: GEMINI_MODEL,
-    contents: opts.prompt,
-    config: {
-      systemInstruction: system,
-      responseMimeType: "application/json",
-      maxOutputTokens: opts.maxTokens ?? 8192
-    }
+  const text = await generateChat({
+    system,
+    messages: [{ role: "user", content: opts.prompt }],
+    json: true,
+    maxTokens: opts.maxTokens ?? 8192
   });
-  const text = response.text ?? "";
   if (!text) throw new GeminiError(502, "The model returned no output. Please try again.");
   try {
     return JSON.parse(extractJson(text));
@@ -298,7 +404,11 @@ launchRouter.use((err, _req, res, _next) => {
 // jarvis-routes.ts
 import { Router as Router2 } from "express";
 var jarvisRouter = Router2();
-var PERSONA = `You are JARVIS, the AI command core of Ascend Protocol \u2014 a personal life-management operating system. You are calm, sharp, lightly witty (Iron Man's JARVIS energy) and ruthlessly concise. Address the user as "sir" occasionally, never every message. Speak like an OS the user trusts, not a chatbot.
+var PERSONA = `You are JARVIS, the AI command core of Ascend Protocol \u2014 a personal life-management operating system. You are calm, sharp, lightly witty (Iron Man's JARVIS energy). Address the user as "sir" occasionally, never every message. Speak like an OS the user trusts, not a chatbot.
+
+You are ALSO a fully capable general-purpose assistant. When the user asks about anything unrelated to Ascend \u2014 general knowledge, explanations, advice, math, writing, current topics, casual conversation \u2014 answer it directly and completely, exactly as a top-tier AI assistant would. NEVER refuse, deflect, or say you can only help with app-related things. App awareness layers on top of general capability; it never limits it.
+
+This is an ongoing conversation: the message history contains the prior turns of this session. Maintain continuity \u2014 remember and reference what was said earlier in the conversation, resolve pronouns and follow-ups against previous messages, and never treat a follow-up as a brand-new request.
 
 You receive a CONTEXT snapshot of the live app: the current page, the user's metrics (discipline score, streak, water, steps, weight, points), rituals, tasks, primary objective, ideas, pain levels, business pipeline, and a MEMORY block (facts the user asked you to remember + your recent actions). Use it to answer with real numbers \u2014 never invent values. If the answer is already in context, just answer; don't call a tool. Don't ask for information the context already contains.
 
@@ -308,7 +418,10 @@ You control the app by calling TOOLS. Rules:
 - Give each tool call a "confidence" from 0 to 1 (how sure you are it's the right action + args). Use < 0.5 only when genuinely unsure.
 - If the request is truly ambiguous or missing something essential, set "needsClarification": true, return an empty toolCalls array, and ask ONE short question \u2014 otherwise infer sensibly and act.
 - Briefly explain multi-step actions in "plan".
-- Keep "reply" short and spoken-word friendly; it will be read aloud.`;
+
+Reply lengths:
+- "reply" is what is DISPLAYED. For confirmations of actions, keep it to a sentence or two. For informational or general-knowledge questions, give a genuinely useful, complete answer \u2014 markdown lists, tables, and code blocks are supported. Do not artificially truncate a real answer.
+- "speak" is the short spoken version (under ~40 words), read aloud via text-to-speech. Include it whenever "reply" is more than a couple of sentences; omit it when "reply" is already short.`;
 function buildSystem(tools, context) {
   const toolLines = tools.map((t) => {
     const params = t.parameters && Object.keys(t.parameters).length ? Object.entries(t.parameters).map(([k, d]) => `${k} (${d})`).join(", ") : "none";
@@ -323,7 +436,7 @@ CONTEXT (live app state):
 ${JSON.stringify(context ?? {}, null, 0)}
 
 RESPONSE FORMAT \u2014 return ONLY a raw JSON object, no markdown fences:
-{"reply":"<short spoken reply, under ~60 words>","plan":"<optional one-line plan when several tools run>","toolCalls":[{"tool":"<name>","args":{...},"confidence":0.0}],"needsClarification":false}
+{"reply":"<displayed answer \u2014 complete for questions, brief for actions>","speak":"<optional short spoken version, under ~40 words>","plan":"<optional one-line plan when several tools run>","toolCalls":[{"tool":"<name>","args":{...},"confidence":0.0}],"needsClarification":false}
 "toolCalls" MUST be an empty array when no tool is needed.`;
 }
 jarvisRouter.post("/", async (req, res) => {
@@ -334,25 +447,21 @@ jarvisRouter.post("/", async (req, res) => {
       return;
     }
     const toolDecls = Array.isArray(tools) ? tools.slice(0, 100) : [];
-    const contents = history.slice(-24).map((m) => ({
-      role: m.role === "user" ? "user" : "model",
-      parts: [{ text: String(m.content ?? "") }]
+    const messages = history.slice(-24).map((m) => ({
+      role: m.role === "user" ? "user" : "assistant",
+      content: String(m.content ?? "")
     }));
-    const ai = await getGemini();
-    const response = await ai.models.generateContent({
-      model: GEMINI_MODEL,
-      contents,
-      config: {
-        systemInstruction: buildSystem(toolDecls, context),
-        responseMimeType: "application/json",
-        maxOutputTokens: 2048
-      }
+    const raw = await generateChat({
+      system: buildSystem(toolDecls, context),
+      messages,
+      json: true,
+      maxTokens: 4096
     });
-    const raw = response.text ?? "";
     try {
       const obj = JSON.parse(extractJson(raw));
       res.json({
         reply: typeof obj.reply === "string" ? obj.reply : "Systems glitch, sir. Say that again?",
+        speak: typeof obj.speak === "string" ? obj.speak : void 0,
         plan: typeof obj.plan === "string" ? obj.plan : void 0,
         toolCalls: Array.isArray(obj.toolCalls) ? obj.toolCalls : [],
         needsClarification: obj.needsClarification === true
@@ -368,13 +477,315 @@ jarvisRouter.post("/", async (req, res) => {
   }
 });
 
+// transcribe-routes.ts
+import express, { Router as Router3 } from "express";
+var transcribeRouter = Router3();
+transcribeRouter.use(express.json({ limit: "6mb" }));
+var ALLOWED_MIME = /* @__PURE__ */ new Set([
+  "audio/webm",
+  "audio/ogg",
+  "audio/mp4",
+  "audio/mpeg",
+  "audio/wav"
+]);
+transcribeRouter.post("/", async (req, res) => {
+  try {
+    const { audio, mimeType } = req.body ?? {};
+    if (typeof audio !== "string" || audio.length === 0) {
+      res.status(400).json({ error: "`audio` must be a non-empty base64 string." });
+      return;
+    }
+    const mime = typeof mimeType === "string" ? mimeType.split(";")[0] : "";
+    if (!ALLOWED_MIME.has(mime)) {
+      res.status(400).json({ error: `Unsupported mimeType "${mime}".` });
+      return;
+    }
+    const ai = await getGemini();
+    const response = await ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { inlineData: { mimeType: mime, data: audio } },
+            {
+              text: "Transcribe this audio verbatim. Output ONLY the spoken words as plain text \u2014 no labels, no quotes, no commentary. Preserve the language spoken (English/Hindi/Hinglish as heard). If the audio contains no speech, output an empty string."
+            }
+          ]
+        }
+      ],
+      config: { maxOutputTokens: 2048 }
+    });
+    res.json({ text: (response.text ?? "").trim() });
+  } catch (err) {
+    const status = err instanceof GeminiError ? err.status : 500;
+    const message = err instanceof Error ? err.message : "Transcription failed";
+    if (status >= 500) console.error("[transcribe]", err);
+    res.status(status).json({ error: message });
+  }
+});
+
+// stocks-routes.ts
+import { Router as Router4 } from "express";
+var stocksRouter = Router4();
+var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36";
+var cache = /* @__PURE__ */ new Map();
+var CACHE_MS = 6e4;
+async function fetchQuote(symbol) {
+  const hit = cache.get(symbol);
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.quote;
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=1d`;
+  const res = await fetch(url, { headers: { "User-Agent": UA, Accept: "application/json" } });
+  if (!res.ok) return null;
+  const data = await res.json().catch(() => null);
+  const meta = data?.chart?.result?.[0]?.meta;
+  if (!meta || typeof meta.regularMarketPrice !== "number") return null;
+  const prevClose = typeof meta.chartPreviousClose === "number" ? meta.chartPreviousClose : null;
+  const quote = {
+    symbol: meta.symbol ?? symbol,
+    name: meta.shortName ?? meta.longName ?? null,
+    price: meta.regularMarketPrice,
+    prevClose,
+    changePct: prevClose ? (meta.regularMarketPrice - prevClose) / prevClose * 100 : null,
+    currency: meta.currency ?? null,
+    exchange: meta.exchangeName ?? null
+  };
+  cache.set(symbol, { at: Date.now(), quote });
+  return quote;
+}
+stocksRouter.get("/quotes", async (req, res) => {
+  const raw = String(req.query.symbols ?? "").trim();
+  if (!raw) {
+    res.status(400).json({ error: "`symbols` query param is required (comma-separated)." });
+    return;
+  }
+  const symbols = [...new Set(raw.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean))].slice(0, 25);
+  try {
+    const results = await Promise.all(
+      symbols.map(async (s) => {
+        try {
+          return await fetchQuote(s);
+        } catch {
+          return null;
+        }
+      })
+    );
+    const quotes = results.filter((q) => q !== null);
+    const failed = symbols.filter((s) => !quotes.some((q) => q.symbol.toUpperCase() === s));
+    res.json({ quotes, failed });
+  } catch (err) {
+    console.error("[stocks]", err);
+    res.status(502).json({ error: "Market data is unavailable right now (upstream error)." });
+  }
+});
+stocksRouter.get("/search", async (req, res) => {
+  const q = String(req.query.q ?? "").trim();
+  if (!q) {
+    res.status(400).json({ error: "`q` query param is required." });
+    return;
+  }
+  try {
+    const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=8&newsCount=0`;
+    const res2 = await fetch(url, { headers: { "User-Agent": UA, Accept: "application/json" } });
+    if (!res2.ok) throw new Error(`upstream ${res2.status}`);
+    const data = await res2.json();
+    const matches = (data?.quotes ?? []).filter((m) => m.symbol && (m.quoteType === "EQUITY" || m.quoteType === "ETF" || m.quoteType === "INDEX" || m.quoteType === "MUTUALFUND")).map((m) => ({ symbol: m.symbol, name: m.shortname ?? m.longname ?? null, exchange: m.exchDisp ?? m.exchange ?? null }));
+    res.json({ matches });
+  } catch (err) {
+    console.error("[stocks:search]", err);
+    res.status(502).json({ error: "Symbol search is unavailable right now (upstream error)." });
+  }
+});
+
+// tts-routes.ts
+import { Router as Router5 } from "express";
+var ttsRouter = Router5();
+var ELEVEN_URL = "https://api.elevenlabs.io/v1/text-to-speech";
+var MAX_CHARS = 500;
+ttsRouter.post("/", async (req, res) => {
+  try {
+    const key = process.env.ELEVENLABS_API_KEY;
+    if (!key) {
+      res.status(503).json({ error: "ElevenLabs is not configured.", code: "not_configured" });
+      return;
+    }
+    const text = String(req.body?.text ?? "").trim().slice(0, MAX_CHARS);
+    const voiceId = String(req.body?.voiceId ?? "").trim();
+    if (!text || !/^[A-Za-z0-9]{10,40}$/.test(voiceId)) {
+      res.status(400).json({ error: "`text` and a valid `voiceId` are required." });
+      return;
+    }
+    const upstream = await fetch(`${ELEVEN_URL}/${voiceId}?output_format=mp3_44100_64`, {
+      method: "POST",
+      headers: { "xi-api-key": key, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text,
+        model_id: "eleven_flash_v2_5",
+        voice_settings: { stability: 0.5, similarity_boost: 0.75 }
+      }),
+      signal: AbortSignal.timeout(2e4)
+    });
+    if (!upstream.ok) {
+      const detail = (await upstream.text().catch(() => "")).slice(0, 300);
+      const quota = upstream.status === 401 || upstream.status === 429 || /quota_exceeded|character_limit/i.test(detail);
+      if (!quota) console.error("[tts] upstream", upstream.status, detail);
+      res.status(quota ? 429 : 502).json({ error: quota ? "ElevenLabs quota reached." : "TTS failed upstream.", code: quota ? "quota" : "upstream" });
+      return;
+    }
+    const audio = Buffer.from(await upstream.arrayBuffer());
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Cache-Control", "no-store");
+    res.send(audio);
+  } catch (err) {
+    console.error("[tts]", err);
+    res.status(502).json({ error: "TTS request failed.", code: "upstream" });
+  }
+});
+
+// search-routes.ts
+import { Router as Router6 } from "express";
+var searchRouter = Router6();
+searchRouter.get("/", async (req, res) => {
+  try {
+    const key = process.env.TAVILY_API_KEY;
+    if (!key) {
+      res.status(503).json({ error: "Web search is not configured.", code: "not_configured" });
+      return;
+    }
+    const q = String(req.query.q ?? "").trim().slice(0, 400);
+    if (!q) {
+      res.status(400).json({ error: "Provide a search query via ?q=." });
+      return;
+    }
+    const upstream = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ query: q, search_depth: "basic", max_results: 5, include_answer: true }),
+      signal: AbortSignal.timeout(2e4)
+    });
+    if (!upstream.ok) {
+      const detail = (await upstream.text().catch(() => "")).slice(0, 300);
+      const quota = upstream.status === 429 || upstream.status === 432 || /limit|quota/i.test(detail);
+      if (!quota) console.error("[search] upstream", upstream.status, detail);
+      res.status(quota ? 429 : 502).json({ error: quota ? "Search quota exhausted for the month." : "Search failed upstream.", code: quota ? "quota" : "upstream" });
+      return;
+    }
+    const data = await upstream.json();
+    res.json({
+      answer: data.answer ?? null,
+      results: (data.results ?? []).map((r) => ({
+        title: r.title ?? "",
+        url: r.url ?? "",
+        snippet: (r.content ?? "").slice(0, 300)
+      }))
+    });
+  } catch (err) {
+    console.error("[search]", err);
+    res.status(502).json({ error: "Search request failed.", code: "upstream" });
+  }
+});
+
+// kite-routes.ts
+import { Router as Router7 } from "express";
+import { createHash } from "node:crypto";
+var kiteRouter = Router7();
+var KITE_BASE = "https://api.kite.trade";
+kiteRouter.get("/login", (_req, res) => {
+  const apiKey = process.env.KITE_API_KEY;
+  if (!apiKey) {
+    res.redirect("/#kite_error=not_configured");
+    return;
+  }
+  res.redirect(`https://kite.zerodha.com/connect/login?v=3&api_key=${encodeURIComponent(apiKey)}`);
+});
+kiteRouter.get("/callback", async (req, res) => {
+  const apiKey = process.env.KITE_API_KEY;
+  const apiSecret = process.env.KITE_API_SECRET;
+  const requestToken = String(req.query.request_token ?? "").trim();
+  if (!apiKey || !apiSecret) {
+    res.redirect("/#kite_error=not_configured");
+    return;
+  }
+  if (req.query.status !== "success" || !requestToken) {
+    res.redirect("/#kite_error=denied");
+    return;
+  }
+  try {
+    const checksum = createHash("sha256").update(apiKey + requestToken + apiSecret).digest("hex");
+    const upstream = await fetch(`${KITE_BASE}/session/token`, {
+      method: "POST",
+      headers: { "X-Kite-Version": "3", "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ api_key: apiKey, request_token: requestToken, checksum }),
+      signal: AbortSignal.timeout(2e4)
+    });
+    const data = await upstream.json().catch(() => null);
+    const accessToken = data?.data?.access_token;
+    if (!upstream.ok || !accessToken) {
+      console.error("[kite] token exchange failed", upstream.status, data?.message ?? "");
+      res.redirect("/#kite_error=exchange_failed");
+      return;
+    }
+    res.redirect(`/#kite_token=${encodeURIComponent(accessToken)}`);
+  } catch (err) {
+    console.error("[kite] callback", err);
+    res.redirect("/#kite_error=exchange_failed");
+  }
+});
+var DATA_PATHS = {
+  holdings: "/portfolio/holdings",
+  positions: "/portfolio/positions",
+  margins: "/user/margins"
+};
+for (const [name, path] of Object.entries(DATA_PATHS)) {
+  kiteRouter.get(`/${name}`, async (req, res) => {
+    const apiKey = process.env.KITE_API_KEY;
+    if (!apiKey) {
+      res.status(503).json({ error: "Kite Connect is not configured.", code: "not_configured" });
+      return;
+    }
+    const token = String(req.header("x-kite-token") ?? "").trim();
+    if (!token) {
+      res.status(400).json({ error: "Missing x-kite-token header." });
+      return;
+    }
+    try {
+      const upstream = await fetch(`${KITE_BASE}${path}`, {
+        headers: { "X-Kite-Version": "3", Authorization: `token ${apiKey}:${token}` },
+        signal: AbortSignal.timeout(2e4)
+      });
+      const data = await upstream.json().catch(() => null);
+      if (upstream.status === 403 || data?.error_type === "TokenException") {
+        res.status(401).json({
+          error: "Kite session expired \u2014 access tokens reset daily around 7:30am IST. Reconnect from Settings.",
+          code: "kite_token_expired"
+        });
+        return;
+      }
+      if (!upstream.ok || data?.status !== "success") {
+        console.error("[kite]", name, upstream.status, data?.message ?? "");
+        res.status(502).json({ error: data?.message ?? "Kite request failed.", code: "upstream" });
+        return;
+      }
+      res.json(data.data);
+    } catch (err) {
+      console.error("[kite]", name, err);
+      res.status(502).json({ error: "Kite request failed.", code: "upstream" });
+    }
+  });
+}
+
 // server.ts
 dotenv.config({ override: true });
-var app = express();
+var app = express2();
 app.set("trust proxy", true);
-app.use(express.json({ limit: "256kb" }));
+app.use("/api/transcribe", transcribeRouter);
+app.use(express2.json({ limit: "256kb" }));
 app.use("/api/launch", launchRouter);
 app.use("/api/jarvis", jarvisRouter);
+app.use("/api/stocks", stocksRouter);
+app.use("/api/tts", ttsRouter);
+app.use("/api/search", searchRouter);
+app.use("/api/kite", kiteRouter);
 var PHYSIO_SYSTEM_PROMPT = `You are Alex, a highly knowledgeable personal AI physiotherapist assistant specialising in spinal rehab, posture correction, gait mechanics, sports recovery, and mobility training.
 
 Your role is to help the user safely manage and improve these conditions:
@@ -430,20 +841,19 @@ app.post("/api/physio-chat", async (req, res) => {
     if (!Array.isArray(history)) {
       return res.status(400).json({ error: "`history` must be an array of messages." });
     }
-    const ai = await getGemini();
-    const response = await ai.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: history.map((m) => ({
-        role: m.role === "user" ? "user" : "model",
-        parts: [{ text: m.content }]
-      })),
-      config: { systemInstruction: PHYSIO_SYSTEM_PROMPT }
+    const reply = await generateChat({
+      system: PHYSIO_SYSTEM_PROMPT,
+      messages: history.map((m) => ({
+        role: m.role === "user" ? "user" : "assistant",
+        content: String(m.content ?? "")
+      }))
     });
-    res.json({ reply: response.text });
+    res.json({ reply });
   } catch (err) {
+    const status = err instanceof GeminiError ? err.status : 500;
     const message = err instanceof Error ? err.message : "Failed to fetch response";
-    console.error("[physio-chat] Error:", err);
-    res.status(500).json({ error: message });
+    if (status >= 500) console.error("[physio-chat] Error:", err);
+    res.status(status).json({ error: message });
   }
 });
 var server_default = app;
