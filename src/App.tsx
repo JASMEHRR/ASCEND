@@ -30,6 +30,7 @@ import RewardModal from './components/RewardModal';
 import LoginScreen from './components/auth/LoginScreen';
 import Jarvis from './features/jarvis/Jarvis';
 import ObsidianRegistrar from './features/obsidian/ObsidianRegistrar';
+import RemindersRegistrar from './features/reminders/RemindersRegistrar';
 
 // Route views that aren't the default are code-split to keep the initial bundle small.
 const LaunchHub = lazy(() => import('./features/launch/LaunchHub'));
@@ -329,6 +330,7 @@ export default function App() {
 
       <Jarvis state={state} updateState={updateState} view={view} setView={setView} />
       <ObsidianRegistrar />
+      <RemindersRegistrar />
     </div>
   );
 }

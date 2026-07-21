@@ -6,6 +6,7 @@ import { DialogProvider } from './context/DialogContext';
 import { LaunchStateProvider } from './features/launch/LaunchStateContext';
 import { JarvisProvider } from './features/jarvis/engine/JarvisProvider';
 import { ObsidianProvider } from './features/obsidian/ObsidianContext';
+import { RemindersProvider } from './features/reminders/RemindersContext';
 import './index.css';
 
 createRoot(document.getElementById('root')!).render(
@@ -14,9 +15,11 @@ createRoot(document.getElementById('root')!).render(
       <LaunchStateProvider>
         <DialogProvider>
           <ObsidianProvider>
-            <JarvisProvider>
-              <App />
-            </JarvisProvider>
+            <RemindersProvider>
+              <JarvisProvider>
+                <App />
+              </JarvisProvider>
+            </RemindersProvider>
           </ObsidianProvider>
         </DialogProvider>
       </LaunchStateProvider>

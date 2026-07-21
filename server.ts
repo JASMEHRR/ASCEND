@@ -15,11 +15,15 @@ import dotenv from "dotenv";
 import { getGemini, GEMINI_MODEL } from "./gemini";
 import { launchRouter } from "./launch-routes";
 import { jarvisRouter } from "./jarvis-routes";
+import { transcribeRouter } from "./transcribe-routes";
 
 dotenv.config({ override: true });
 
 const app = express();
 app.set("trust proxy", true);
+// Mounted BEFORE the app-wide 256kb JSON parser: audio payloads need the
+// router's own larger body limit, and Express uses the first matching parser.
+app.use("/api/transcribe", transcribeRouter);
 app.use(express.json({ limit: "256kb" }));
 
 // LaunchKit AI endpoints (stateless; persistence lives client-side in Firestore).

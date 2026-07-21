@@ -11,6 +11,7 @@ import Panel from '../../../components/ui/Panel';
 import { useJarvis } from '../engine/JarvisProvider';
 import type { View } from '../context/appContext';
 import JarvisConsole from './JarvisConsole';
+import RemindersPanel from '../../reminders/RemindersPanel';
 
 interface Props {
   state: OSState;
@@ -151,6 +152,9 @@ export default function JarvisDashboard({ state, updateState, setView }: Props) 
               <Droplets size={12} /> Log a glass
             </button>
           </Panel>
+
+          {/* Reminders */}
+          <RemindersPanel />
 
           {/* Quick actions */}
           <Panel>

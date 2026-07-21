@@ -3,6 +3,7 @@ import { OSState } from '../types';
 import AtmosphereSelector from './AtmosphereSelector';
 import { useDialog } from '../context/DialogContext';
 import ObsidianSettings from '../features/obsidian/ObsidianSettings';
+import RemindersSettings from '../features/reminders/RemindersSettings';
 
 interface Props {
   isOpen: boolean;
@@ -38,6 +39,10 @@ export default function SettingsModal({ isOpen, onClose, updateState, selectedAt
             <span className="text-[10px] font-mono font-extrabold text-white/40 uppercase tracking-[0.18em]">Sanctuary Atmosphere</span>
             <AtmosphereSelector value={selectedAtmosphereMode} onChange={setSelectedAtmosphereMode} />
           </section>
+
+          <div className="border-t border-white/8 pt-4">
+            <RemindersSettings />
+          </div>
 
           <div className="border-t border-white/8 pt-4">
             <ObsidianSettings />
