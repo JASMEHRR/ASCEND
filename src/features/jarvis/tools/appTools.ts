@@ -1,4 +1,3 @@
-import { RITUALS } from '../../../constants';
 import type { OSState } from '../../../types';
 import type { JarvisTool } from '../types';
 import { VIEW_LABELS, type View } from '../context/appContext';
@@ -17,7 +16,8 @@ interface Deps {
   setView: (v: View) => void;
 }
 
-/** Built-in tools for the core life-OS modules (nav, health, tasks, rituals, ideas). */
+/** Built-in tools for the core life-OS modules (nav, health, tasks, ideas).
+ *  Habits live in Arena — see arena/ArenaRegistrar for addArenaHabit/tickArenaHabit. */
 export function createAppTools({ stateRef, updateState, setView }: Deps): JarvisTool[] {
   return [
     {
@@ -87,19 +87,6 @@ export function createAppTools({ stateRef, updateState, setView }: Deps): Jarvis
       description: "Read the user's current tasks and their done state.",
       followUp: true,
       execute: () => ({ ok: true, message: 'read tasks', data: stateRef.current.tasks.map((t) => ({ text: t.text, done: t.done })) }),
-    },
-    {
-      name: 'toggleRitual',
-      module: 'Rituals',
-      description: 'Toggle a daily ritual (e.g. meditation, cold shower) done/undone.',
-      parameters: { match: 'words from the ritual name' },
-      validate: (a) => (str(a.match) ? null : 'need a ritual name to match'),
-      execute: (a) => {
-        const ritual = RITUALS.find((r) => fuzzy(r.name, str(a.match)));
-        if (!ritual) return { ok: false, message: `no ritual matches "${str(a.match)}"` };
-        updateState((p) => ({ ...p, rituals: { ...p.rituals, [ritual.id]: !p.rituals[ritual.id] } }));
-        return { ok: true, message: `ritual: ${ritual.name}` };
-      },
     },
     {
       name: 'setPrimaryObjective',

@@ -10,7 +10,8 @@
     "vercel-build": "vite build && npm run build:api",
     "start": "node -e \"process.env.NODE_ENV='production';require('./dist/server.cjs')\"",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "tsx src/features/arena/logic/arena.test.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

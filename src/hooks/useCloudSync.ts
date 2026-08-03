@@ -35,7 +35,6 @@ function syncPayload(s: OSState) {
     weight: s.weight ?? null,
     streak: s.streak ?? 0,
     streakDate: s.streakDate ?? null,
-    physioState: s.physioState ?? null,
     primaryObjective: s.primaryObjective ?? null,
   };
 }
@@ -116,7 +115,6 @@ export function useCloudSync(uid: string | null): CloudSync {
           weight: latestDaily.weight ?? base.weight,
           streak: latestUser.streak ?? base.streak,
           streakDate: latestUser.streakDate ?? base.streakDate,
-          physioState: latestDaily.physioState ?? base.physioState,
           primaryObjective: latestDaily.primaryObjective ?? base.primaryObjective,
           lastVisit: todayStr(),
         };
@@ -179,7 +177,6 @@ export function useCloudSync(uid: string | null): CloudSync {
             water: p.water,
             rituals: p.rituals,
             weight: p.weight,
-            physioState: p.physioState,
             primaryObjective: p.primaryObjective,
           },
           { merge: true },

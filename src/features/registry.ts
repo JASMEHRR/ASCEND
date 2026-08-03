@@ -10,6 +10,7 @@ import {
   NotebookPen,
   Mail,
   LineChart,
+  Puzzle,
 } from 'lucide-react';
 import type { OSState } from '../types';
 
@@ -32,7 +33,8 @@ export type FeatureId =
   | 'insights'
   | 'journal'
   | 'gmail'
-  | 'stocks';
+  | 'stocks'
+  | 'arena';
 
 export interface FeatureModule {
   id: FeatureId;
@@ -68,9 +70,19 @@ export const FEATURES: FeatureModule[] = [
     status: 'active',
   },
   {
+    id: 'arena',
+    label: 'Arena',
+    description: 'Shared habit board — rooms, puzzles, and a live leaderboard.',
+    icon: Puzzle,
+    nav: true,
+    mobile: true,
+    defaultEnabled: true,
+    status: 'active',
+  },
+  {
     id: 'physio',
     label: 'AI Physio',
-    description: 'Pain tracking and recovery guidance.',
+    description: 'Recovery, mobility, and posture guidance.',
     icon: Activity,
     nav: true,
     mobile: true,
@@ -127,7 +139,7 @@ export const FEATURES: FeatureModule[] = [
   },
   {
     id: 'journal',
-    label: 'Journaling & Reflection',
+    label: 'Journal',
     description: 'Text or voice journaling that syncs to your Obsidian vault.',
     icon: NotebookPen,
     nav: true,
@@ -154,43 +166,6 @@ export const FEATURES: FeatureModule[] = [
     status: 'active',
   },
 ];
-
-/**
- * Sub-features: individually toggleable tools INSIDE a parent module. They
- * share the same `state.features` record (ids are namespaced to avoid
- * collisions) and are only active while their parent module is enabled.
- */
-export type SubFeatureId =
-  | 'launch_command'
-  | 'launch_validate'
-  | 'launch_offer'
-  | 'launch_prospects'
-  | 'launch_outreach'
-  | 'launch_ideas';
-
-export interface SubFeature {
-  id: SubFeatureId;
-  parent: FeatureId;
-  label: string;
-  description: string;
-  defaultEnabled: boolean;
-}
-
-export const SUB_FEATURES: SubFeature[] = [
-  { id: 'launch_command', parent: 'business', label: 'Command', description: 'Pipeline overview and launch plan.', defaultEnabled: true },
-  { id: 'launch_validate', parent: 'business', label: 'Validate', description: 'Demand/competition idea scoring.', defaultEnabled: true },
-  { id: 'launch_offer', parent: 'business', label: 'Offer', description: 'AI offer and pricing builder.', defaultEnabled: true },
-  { id: 'launch_prospects', parent: 'business', label: 'Prospects', description: 'Prospect archetype builder.', defaultEnabled: true },
-  { id: 'launch_outreach', parent: 'business', label: 'Outreach', description: 'Outbound/inbound sequence studio.', defaultEnabled: true },
-  { id: 'launch_ideas', parent: 'business', label: 'Ideas', description: 'Free-form idea inbox.', defaultEnabled: true },
-];
-
-export function isSubFeatureEnabled(state: Pick<OSState, 'features'> | null, id: SubFeatureId): boolean {
-  const sub = SUB_FEATURES.find((s) => s.id === id);
-  if (!sub) return false;
-  if (!isFeatureEnabled(state, sub.parent)) return false;
-  return state?.features?.[id] ?? sub.defaultEnabled;
-}
 
 export const FEATURE_MAP: Record<FeatureId, FeatureModule> = FEATURES.reduce(
   (acc, f) => {

@@ -2,13 +2,9 @@ import { useCallback, useMemo } from 'react';
 import type { OSState } from '../types';
 import {
   FEATURES,
-  SUB_FEATURES,
   isFeatureEnabled,
-  isSubFeatureEnabled,
   type FeatureId,
   type FeatureModule,
-  type SubFeature,
-  type SubFeatureId,
 } from './registry';
 
 export interface FeaturesApi {
@@ -22,12 +18,23 @@ export interface FeaturesApi {
   navModules: FeatureModule[];
   /** Every user-toggleable module (active, non-core) for the settings panel. */
   toggleable: FeatureModule[];
-  /** Is a sub-tool inside a module active (parent must be on too)? */
-  isSubEnabled: (id: SubFeatureId) => boolean;
-  /** Flip a sub-tool on/off. */
-  toggleSub: (id: SubFeatureId) => void;
-  /** The sub-tools of a module, for nested settings rows. */
-  subFeaturesOf: (parent: FeatureId) => SubFeature[];
+  /** Every enabled nav module in user order, including ones hidden from the rail. */
+  navAll: FeatureModule[];
+  /** Is this module hidden from the sidebar (but still reachable)? */
+  isNavHidden: (id: FeatureId) => boolean;
+  /** Show/hide a module in the sidebar without disabling it. */
+  toggleNavHidden: (id: FeatureId) => void;
+  /** Move a module up or down the sidebar order. */
+  moveNav: (id: FeatureId, dir: -1 | 1) => void;
+  /** Restore registry order and unhide everything. */
+  resetNav: () => void;
+}
+
+/** Applies the user's saved order to a module list; unknown ids keep registry order. */
+function applyOrder(mods: FeatureModule[], order: string[] | undefined): FeatureModule[] {
+  if (!order?.length) return mods;
+  const rank = new Map(order.map((id, i) => [id, i]));
+  return [...mods].sort((a, b) => (rank.get(a.id) ?? 999) - (rank.get(b.id) ?? 999));
 }
 
 /**
@@ -61,26 +68,50 @@ export function useFeatures(
     [updateState],
   );
 
-  const navModules = useMemo(
-    () => FEATURES.filter((f) => f.nav && f.status === 'active' && isFeatureEnabled(state, f.id)),
+  // Every enabled nav module, in the user's chosen order.
+  const navAll = useMemo(
+    () => applyOrder(FEATURES.filter((f) => f.nav && f.status === 'active' && isFeatureEnabled(state, f.id)), state?.navOrder),
     [state],
   );
 
-  const toggleable = useMemo(() => FEATURES.filter((f) => !f.core && f.status === 'active'), []);
+  const isNavHidden = useCallback((id: FeatureId) => (state?.navHidden ?? []).includes(id), [state]);
 
-  const isSubEnabled = useCallback((id: SubFeatureId) => isSubFeatureEnabled(state, id), [state]);
+  // What the sidebar actually renders: ordered, minus hidden.
+  const navModules = useMemo(() => navAll.filter((f) => !(state?.navHidden ?? []).includes(f.id)), [navAll, state]);
 
-  const toggleSub = useCallback(
-    (id: SubFeatureId) => {
+  const toggleNavHidden = useCallback(
+    (id: FeatureId) => {
       updateState((prev) => {
-        const current = isSubFeatureEnabled(prev, id);
-        return { ...prev, features: { ...(prev.features ?? {}), [id]: !current } };
+        const hidden = prev.navHidden ?? [];
+        return { ...prev, navHidden: hidden.includes(id) ? hidden.filter((h) => h !== id) : [...hidden, id] };
       });
     },
     [updateState],
   );
 
-  const subFeaturesOf = useCallback((parent: FeatureId) => SUB_FEATURES.filter((s) => s.parent === parent), []);
+  const moveNav = useCallback(
+    (id: FeatureId, dir: -1 | 1) => {
+      updateState((prev) => {
+        const current = applyOrder(
+          FEATURES.filter((f) => f.nav && f.status === 'active' && isFeatureEnabled(prev, f.id)),
+          prev.navOrder,
+        ).map((f) => f.id);
+        const i = current.indexOf(id);
+        const j = i + dir;
+        if (i < 0 || j < 0 || j >= current.length) return prev;
+        [current[i], current[j]] = [current[j], current[i]];
+        return { ...prev, navOrder: current };
+      });
+    },
+    [updateState],
+  );
 
-  return { isEnabled, toggle, setEnabled, navModules, toggleable, isSubEnabled, toggleSub, subFeaturesOf };
+  const resetNav = useCallback(
+    () => updateState((prev) => ({ ...prev, navOrder: [], navHidden: [] })),
+    [updateState],
+  );
+
+  const toggleable = useMemo(() => FEATURES.filter((f) => !f.core && f.status === 'active'), []);
+
+  return { isEnabled, toggle, setEnabled, navModules, toggleable, navAll, isNavHidden, toggleNavHidden, moveNav, resetNav };
 }

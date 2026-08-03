@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useState } from 'react';
 import { LayoutDashboard, Crosshair, Package, Users, Send, Lightbulb, Loader2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { OSState } from '../../types';
-import { isSubFeatureEnabled, type SubFeatureId } from '../registry';
 import { useLaunchStateContext } from './LaunchStateContext';
 import BusinessHub from '../../components/BusinessHub';
 import LaunchDashboard from './panels/LaunchDashboard';
@@ -13,13 +12,13 @@ import OutreachStudio from './panels/OutreachStudio';
 
 type Tab = 'command' | 'validate' | 'offer' | 'prospects' | 'outreach' | 'ideas';
 
-const TABS: { key: Tab; sub: SubFeatureId; label: string; icon: ReactNode }[] = [
-  { key: 'command', sub: 'launch_command', label: 'Command', icon: <LayoutDashboard size={14} /> },
-  { key: 'validate', sub: 'launch_validate', label: 'Validate', icon: <Crosshair size={14} /> },
-  { key: 'offer', sub: 'launch_offer', label: 'Offer', icon: <Package size={14} /> },
-  { key: 'prospects', sub: 'launch_prospects', label: 'Prospects', icon: <Users size={14} /> },
-  { key: 'outreach', sub: 'launch_outreach', label: 'Outreach', icon: <Send size={14} /> },
-  { key: 'ideas', sub: 'launch_ideas', label: 'Ideas', icon: <Lightbulb size={14} /> },
+const TABS: { key: Tab; label: string; icon: ReactNode }[] = [
+  { key: 'command', label: 'Command', icon: <LayoutDashboard size={14} /> },
+  { key: 'validate', label: 'Validate', icon: <Crosshair size={14} /> },
+  { key: 'offer', label: 'Offer', icon: <Package size={14} /> },
+  { key: 'prospects', label: 'Prospects', icon: <Users size={14} /> },
+  { key: 'outreach', label: 'Outreach', icon: <Send size={14} /> },
+  { key: 'ideas', label: 'Ideas', icon: <Lightbulb size={14} /> },
 ];
 
 /**
@@ -39,23 +38,7 @@ export default function LaunchHub({
 
   const launchReady = state !== null;
 
-  // Each sub-tool is individually deactivatable (Settings → Strategic Command).
-  const visibleTabs = useMemo(() => TABS.filter((t) => isSubFeatureEnabled(osState, t.sub)), [osState]);
-
-  // If the active tab gets toggled off, fall back to the first enabled one.
-  useEffect(() => {
-    if (!visibleTabs.some((t) => t.key === tab) && visibleTabs.length > 0) setTab(visibleTabs[0].key);
-  }, [visibleTabs, tab]);
-
-  if (visibleTabs.length === 0) {
-    return (
-      <div className="flex min-h-[240px] items-center justify-center text-center">
-        <p className="max-w-xs text-[13px] text-white/40">
-          All Strategic Command tools are switched off. Re-enable them in Settings → Modules.
-        </p>
-      </div>
-    );
-  }
+  const visibleTabs = TABS;
 
   return (
     <div className="flex flex-col gap-6 pb-8">

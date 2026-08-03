@@ -35,7 +35,7 @@ function deriveInsights(s: OSState): Insight[] {
     out.push({ id: 'task-pileup', message: `${open} tasks are open. Want me to help triage the list down to what actually matters?` });
   }
   if (h >= 19 && disciplineScore(s) < 40) {
-    out.push({ id: 'streak-risk', message: `Discipline is at ${disciplineScore(s)}/100 with the evening closing in — a couple of rituals would rescue the day.` });
+    out.push({ id: 'streak-risk', message: `Discipline is at ${disciplineScore(s)}/100 with the evening closing in — a couple of habits would rescue the day.` });
   }
   const month = new Date().toISOString().slice(0, 7);
   const spent = (s.finance?.expenses ?? []).filter((e) => e.at.slice(0, 7) === month).reduce((sum, e) => sum + e.amount, 0);

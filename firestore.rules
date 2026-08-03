@@ -14,6 +14,92 @@ service cloud.firestore {
       allow read, write: if isOwner(userId);
     }
 
+    // --- Arena: shared habit rooms -------------------------------------
+    // Unlike the rest of Ascend, Arena data is deliberately visible to the
+    // room — that visibility IS the product. But "visible to my room" is not
+    // "public", and one player may never write another player's habits or
+    // ticks, so reads are room-scoped and writes are self-scoped.
+    match /arenaRooms/{roomId} {
+
+      function signedIn() {
+        return request.auth != null;
+      }
+
+      // Membership is read from the room doc, so a single get() authorises the
+      // whole subtree rather than a lookup per document.
+      function isMember() {
+        return signedIn()
+          && request.auth.uid in get(/databases/$(database)/documents/arenaRooms/$(roomId)).data.memberIds;
+      }
+
+      // Any signed-in user may read a room doc, because joining by code means
+      // finding the room before you belong to it. Note this also permits
+      // enumerating rooms: rules filter documents, not queries, so a client
+      // could list every room's name and code. Acceptable while Arena is
+      // invite-only among friends; before opening it up, move code lookup to
+      // a callable function and lock this to isMember().
+      allow read: if signedIn();
+      allow create: if signedIn() && request.auth.uid == request.resource.data.createdBy;
+
+      // Members may update the room, which is how join and leave edit
+      // memberIds — but nobody may rewrite who created it, or a member could
+      // seize deletion rights.
+      allow update: if isMember()
+        && request.resource.data.createdBy == resource.data.createdBy;
+
+      allow delete: if signedIn() && request.auth.uid == resource.data.createdBy;
+
+      match /players/{playerId} {
+
+        function isSelf() {
+          return signedIn() && request.auth.uid == playerId;
+        }
+
+        // Firestore does not cascade deletes, so deleteRoom() walks the
+        // subtree client-side. That means the room's creator must be able to
+        // delete other players' documents — but only delete, never write.
+        function isRoomOwner() {
+          return signedIn()
+            && request.auth.uid == get(/databases/$(database)/documents/arenaRooms/$(roomId)).data.createdBy;
+        }
+
+        // The room sees every player: the leaderboard is the point.
+        allow read: if isMember();
+        // You may only create or edit your own player row.
+        allow write: if isSelf();
+        allow delete: if isSelf() || isRoomOwner();
+
+        // Habits, daily ticks and puzzle canvases are NOT stored here — they
+        // live under users/{uid}/arenaHabits, /arenaDays and /arenaWeeks,
+        // because they belong to the person rather than to any one room. Join
+        // a second room and the same habits come with you.
+        //
+        // What the room may read is the derived summary below: how many tiles
+        // you earned, out of how many habits, and whether you cleared the day.
+        // Enough for the leaderboard and the room streak; never a habit name.
+        match /public/{docId} {
+          allow read: if isMember();
+          allow write: if isSelf();
+          allow delete: if isSelf() || isRoomOwner();
+        }
+      }
+
+      match /messages/{messageId} {
+        allow read: if isMember();
+        // A message must be attributed to its author; system events are
+        // written by members too, but cannot impersonate another player.
+        allow create: if isMember()
+          && (request.resource.data.playerId == request.auth.uid
+              || request.resource.data.playerId == null);
+        // Batched messages are updated in place by their own author.
+        allow update: if isMember() && resource.data.playerId == request.auth.uid;
+        // Chat is not individually deletable, but deleting the room must be
+        // able to clear it — otherwise the messages outlive their room.
+        allow delete: if signedIn()
+          && request.auth.uid == get(/databases/$(database)/documents/arenaRooms/$(roomId)).data.createdBy;
+      }
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

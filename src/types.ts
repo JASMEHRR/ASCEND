@@ -48,19 +48,25 @@ export interface OSState {
    * features/registry.ts). Absent keys fall back to each module's default.
    */
   features?: Record<string, boolean>;
+  /**
+   * Glass opacity multiplier (0.2–1) driving the `--glass-opacity` CSS
+   * variable. Lower = more see-through UI. Defaults to 1.
+   */
+  glassOpacity?: number;
+  /** Backdrop blur radius in px behind glass surfaces (0–40). Defaults to 20. */
+  glassBlur?: number;
+  /**
+   * Sidebar nav order (FeatureIds) and hidden entries, both user-editable in
+   * Settings → Modules. Absent = registry order, nothing hidden.
+   */
+  navOrder?: string[];
+  navHidden?: string[];
   /** Per-user Jarvis behaviour preferences (persisted in users/{uid}). */
   jarvisPrefs?: {
     /** Jarvis greets proactively on login (default true). */
     greetOnLogin?: boolean;
     /** Local hours [start, end) when proactive insights may speak (default 8–22). */
     activeHours?: { start: number; end: number };
-  };
-  physioState?: {
-    back: number;
-    tailbone: number;
-    knees: number;
-    foot: number;
-    neck: number;
   };
   /** Stocks & Finance module (manual entries; live quotes come from /api/stocks). */
   finance?: FinanceState;

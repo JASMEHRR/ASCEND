@@ -8,3 +8,6 @@ coverage/
 !.env.example
 .firebase/
 .vercel
+
+# Local agent/session files — never pushed.
+.claude/

@@ -12,6 +12,7 @@ import { RemindersProvider } from './features/reminders/RemindersContext';
 import { KiteProvider } from './features/kite/KiteContext';
 import { GoogleProvider } from './features/google/GoogleContext';
 import { PlanningProvider } from './features/planning/PlanningContext';
+import { ArenaProvider } from './features/arena/ArenaContext';
 import './index.css';
 
 createRoot(document.getElementById('root')!).render(
@@ -27,7 +28,9 @@ createRoot(document.getElementById('root')!).render(
                 <GoogleProvider>
                   <JarvisProvider>
                     <PlanningProvider>
-                      <App />
+                      <ArenaProvider>
+                        <App />
+                      </ArenaProvider>
                     </PlanningProvider>
                   </JarvisProvider>
                 </GoogleProvider>

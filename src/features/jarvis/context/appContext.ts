@@ -1,9 +1,8 @@
 import type { OSState } from '../../../types';
-import { RITUALS } from '../../../constants';
 import type { LaunchState, ProspectStatus } from '../../launch/types';
 import { FEATURES, isFeatureEnabled } from '../../registry';
 
-export type View = 'dashboard' | 'physio' | 'business' | 'vision' | 'buy_list' | 'stocks' | 'journal';
+export type View = 'dashboard' | 'physio' | 'business' | 'vision' | 'buy_list' | 'stocks' | 'journal' | 'arena';
 
 export const VIEW_LABELS: Record<View, string> = {
   dashboard: 'Dashboard',
@@ -13,6 +12,7 @@ export const VIEW_LABELS: Record<View, string> = {
   buy_list: 'Purchases',
   stocks: 'Stocks & Finance',
   journal: 'Journal',
+  arena: 'Arena',
 };
 
 interface ContextInputs {
@@ -29,9 +29,6 @@ interface ContextInputs {
  * user's current situation, so it never asks for information the app already has.
  */
 export function buildAppContext({ state, launch, view, userEmail, disciplineScore, streak }: ContextInputs): Record<string, unknown> {
-  const ritualsDone = Object.entries(state.rituals)
-    .filter(([, v]) => v)
-    .map(([id]) => RITUALS.find((r) => r.id === id)?.name ?? id);
 
   const prospectsByStatus = launch
     ? launch.prospects.reduce<Record<string, number>>((acc, p) => {
@@ -62,11 +59,9 @@ export function buildAppContext({ state, launch, view, userEmail, disciplineScor
       water: state.water,
       weight: state.weight ?? null,
     },
-    rituals: { done: ritualsDone, available: RITUALS.map((r) => r.name) },
     tasks: state.tasks.map((t) => ({ text: t.text, done: t.done })),
     primaryObjective: state.primaryObjective ?? null,
     ideas: state.ideas.map((i) => i.title),
-    pain: state.physioState ?? null,
     strategicCommand: launch
       ? {
           activeOffer: launch.activeOffer?.title ?? null,

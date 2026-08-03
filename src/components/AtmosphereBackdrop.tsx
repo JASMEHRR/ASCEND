@@ -31,7 +31,7 @@ export const ATMOSPHERES: AtmosphereOption[] = [
     rainActive: false,
     blur: 'blur(75px)',
     textColor: 'text-rose-200',
-    backgroundImage: 'https://images.unsplash.com/photo-1520201163981-8cc95007dd2a?q=80&w=1920&auto=format&fit=crop'
+    backgroundImage: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?q=80&w=1920&auto=format&fit=crop'
   },
   {
     id: 'morning',
@@ -76,7 +76,7 @@ export const ATMOSPHERES: AtmosphereOption[] = [
     rainActive: false,
     blur: 'blur(80px)',
     textColor: 'text-amber-200',
-    backgroundImage: 'https://images.unsplash.com/photo-1549226574-d4212ecb8e88?q=80&w=1920&auto=format&fit=crop'
+    backgroundImage: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?q=80&w=1920&auto=format&fit=crop'
   },
   {
     id: 'sunset',
@@ -91,7 +91,7 @@ export const ATMOSPHERES: AtmosphereOption[] = [
     rainActive: false,
     blur: 'blur(75px)',
     textColor: 'text-fuchsia-200',
-    backgroundImage: 'https://images.unsplash.com/photo-1491555103944-7c647fd85706?q=80&w=1920&auto=format&fit=crop'
+    backgroundImage: 'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?q=80&w=1920&auto=format&fit=crop'
   },
   {
     id: 'bluehour',

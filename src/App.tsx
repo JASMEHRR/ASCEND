@@ -4,7 +4,7 @@
  */
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { Sliders, LogOut, Loader2 } from 'lucide-react';
+import { Sliders, LogOut, Loader2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import { useDialog } from './context/DialogContext';
 import { useCloudSync } from './hooks/useCloudSync';
@@ -30,6 +30,7 @@ import WebSearchRegistrar from './features/websearch/WebSearchRegistrar';
 import KiteRegistrar from './features/kite/KiteRegistrar';
 import JournalRegistrar from './features/journal/JournalRegistrar';
 import InsightsEngine from './features/insights/InsightsEngine';
+import ArenaRegistrar from './features/arena/ArenaRegistrar';
 
 // Route views that aren't the default are code-split to keep the initial bundle small.
 const LaunchHub = lazy(() => import('./features/launch/LaunchHub'));
@@ -38,8 +39,9 @@ const ToBuyList = lazy(() => import('./components/ToBuyList'));
 const PhysioAI = lazy(() => import('./components/PhysioAI'));
 const StocksHub = lazy(() => import('./features/stocks/StocksHub'));
 const JournalHub = lazy(() => import('./features/journal/JournalHub'));
+const ArenaHub = lazy(() => import('./features/arena/ArenaHub'));
 
-type View = 'dashboard' | 'business' | 'vision' | 'buy_list' | 'physio' | 'stocks' | 'journal';
+type View = 'dashboard' | 'business' | 'vision' | 'buy_list' | 'physio' | 'stocks' | 'journal' | 'arena';
 
 const REWARDS_LIST = [
   'Take a 5-minute break outside.',
@@ -113,6 +115,14 @@ export default function App() {
   const [selectedAtmosphereMode, setSelectedAtmosphereMode] = useState('auto');
   const [, setTimeTick] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Collapsing the nav hands the width to whichever module is open — the
+  // puzzle and the stocks table both want it. Remembered across reloads.
+  const [navOpen, setNavOpen] = useState(() => localStorage.getItem('ascend_nav') !== 'closed');
+  const toggleNav = () =>
+    setNavOpen((open) => {
+      localStorage.setItem('ascend_nav', open ? 'closed' : 'open');
+      return !open;
+    });
   const [rewardModalOpen, setRewardModalOpen] = useState(false);
   const [currentReward, setCurrentReward] = useState('');
   const [lastPointMilestone, setLastPointMilestone] = useState(0);
@@ -122,6 +132,13 @@ export default function App() {
     const timer = setInterval(() => setTimeTick((n) => n + 1), 60000);
     return () => clearInterval(timer);
   }, []);
+
+  // Drive the global glass look from the user's Appearance preferences.
+  useEffect(() => {
+    const root = document.documentElement.style;
+    root.setProperty('--glass-opacity', String(state?.glassOpacity ?? 1));
+    root.setProperty('--glass-blur', `${state?.glassBlur ?? 20}px`);
+  }, [state?.glassOpacity, state?.glassBlur]);
 
   const activeAtmosphereId = selectedAtmosphereMode === 'auto' ? getAutoAtmosphereId() : selectedAtmosphereMode;
   const activeAtmosphere = ATMOSPHERES.find((a) => a.id === activeAtmosphereId) || ATMOSPHERES[1];
@@ -178,7 +195,49 @@ export default function App() {
       {/* CORE */}
       <div className="relative flex flex-1 flex-col sm:flex-row gap-5 min-h-0 z-10">
         {/* SIDEBAR */}
-        <aside className="hidden md:flex w-64 shrink-0 flex-col gap-4">
+        {/* Collapsed nav: an icon strip that keeps every module one click away. */}
+        {!navOpen && (
+          <aside className="hidden md:flex shrink-0">
+            <div className="liquid-glass-panel flex h-full flex-col items-center gap-1.5 rounded-[2rem] p-2">
+              <button
+                onClick={toggleNav}
+                aria-label="Expand navigation"
+                title="Expand navigation"
+                className="rounded-xl p-2 text-white/40 transition-colors hover:bg-white/10 hover:text-white cursor-pointer"
+              >
+                <PanelLeftOpen size={16} />
+              </button>
+              <span className="my-0.5 h-px w-6 bg-white/10" />
+              {features.navModules.map((mod) => {
+                const Icon = mod.icon;
+                const active = view === mod.id;
+                return (
+                  <button
+                    key={mod.id}
+                    onClick={() => setView(mod.id as View)}
+                    aria-label={mod.label}
+                    title={mod.label}
+                    className={`rounded-xl p-2.5 transition-all cursor-pointer ${
+                      active ? 'bg-white/15 text-white' : 'text-white/40 hover:bg-white/[0.07] hover:text-white/85'
+                    }`}
+                  >
+                    <Icon size={15} />
+                  </button>
+                );
+              })}
+              <button
+                onClick={() => setSettingsOpen(true)}
+                aria-label="Settings"
+                title="Settings"
+                className="mt-auto rounded-xl p-2.5 text-white/40 transition-colors hover:bg-white/10 hover:text-white cursor-pointer"
+              >
+                <Sliders size={15} />
+              </button>
+            </div>
+          </aside>
+        )}
+
+        <aside className={navOpen ? 'hidden md:flex w-64 shrink-0 flex-col gap-4' : 'hidden'}>
           <div className="liquid-glass-panel rounded-[2rem] p-4 flex flex-col gap-5 h-full overflow-y-auto custom-scrollbar">
             <div className="flex flex-col items-center justify-center -mx-2">
               <FlipClock compact />
@@ -190,7 +249,17 @@ export default function App() {
             </div>
 
             <nav className="space-y-1.5 pt-1 border-t border-white/5" aria-label="Primary">
-              <p className="text-[9px] font-extrabold text-white/40 uppercase tracking-[0.18em] mb-2.5 pl-1.5 leading-none font-mono">Navigation</p>
+              <div className="mb-2.5 flex items-center justify-between gap-2 pl-1.5">
+                <p className="text-[9px] font-extrabold text-white/40 uppercase tracking-[0.18em] leading-none font-mono">Navigation</p>
+                <button
+                  onClick={toggleNav}
+                  aria-label="Collapse navigation"
+                  title="Collapse navigation"
+                  className="rounded-lg p-1 text-white/35 transition-colors hover:bg-white/10 hover:text-white cursor-pointer"
+                >
+                  <PanelLeftClose size={13} />
+                </button>
+              </div>
               <div className="grid grid-cols-1 gap-1.5">
                 {features.navModules.map((mod) => {
                   const badge = badgeFor(mod.id, state.ideas.length, openTasks);
@@ -201,15 +270,15 @@ export default function App() {
                       key={mod.id}
                       onClick={() => setView(mod.id as View)}
                       aria-current={active ? 'page' : undefined}
-                      className={`w-full relative flex items-center justify-between px-4.5 py-3 rounded-2xl text-[11px] font-bold uppercase tracking-wider transition-all border cursor-pointer ${
+                      className={`w-full relative flex items-center justify-between gap-2 px-4 py-3 rounded-2xl text-[11px] font-bold uppercase tracking-wider transition-all border cursor-pointer text-left ${
                         active
                           ? 'bg-white/15 text-white border-white/20 shadow-sm backdrop-blur-md font-extrabold'
                           : 'text-white/40 border-transparent bg-white/[0.01] hover:text-white/85 hover:bg-white/[0.07] hover:border-white/10'
                       }`}
                     >
-                      <div className="flex items-center gap-3.5">
-                        <span className={active ? 'text-white' : 'text-white/40'}><Icon size={14} /></span>
-                        {mod.label}
+                      <div className="flex min-w-0 items-center gap-3.5">
+                        <span className={`shrink-0 ${active ? 'text-white' : 'text-white/40'}`}><Icon size={14} /></span>
+                        <span className="min-w-0 truncate">{mod.label}</span>
                       </div>
                       {badge > 0 && (
                         <span className="bg-brand-500/20 text-brand-400 min-w-5 h-5 flex items-center justify-center rounded-full text-[9px] px-1.5 ml-2 font-mono ring-1 ring-brand-500/50">
@@ -262,6 +331,7 @@ export default function App() {
                 {view === 'buy_list' && <ToBuyList state={state} updateState={updateState} />}
                 {view === 'stocks' && <StocksHub state={state} updateState={updateState} />}
                 {view === 'journal' && <JournalHub state={state} updateState={updateState} />}
+                {view === 'arena' && <ArenaHub />}
               </Suspense>
           </motion.div>
         </main>
@@ -309,6 +379,7 @@ export default function App() {
       {isFeatureEnabled(state, 'stocks') && <KiteRegistrar />}
       {isFeatureEnabled(state, 'journal') && <JournalRegistrar state={state} updateState={updateState} />}
       {isFeatureEnabled(state, 'insights') && <InsightsEngine state={state} />}
+      {isFeatureEnabled(state, 'arena') && <ArenaRegistrar />}
     </div>
   );
 }

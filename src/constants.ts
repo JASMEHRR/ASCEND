@@ -1,5 +1,14 @@
 import { Ritual } from './types';
 
+/**
+ * The original fixed ritual list.
+ *
+ * Superseded by Arena habits, which are per-user, editable, and feed the
+ * weekly picture. This array survives only as the source for the one-time
+ * import in features/arena/data/migrate.ts — deleting it would strip anyone
+ * who hasn't opened Arena yet of the routine they were already keeping.
+ * Once every user has migrated, this and OSState.rituals can go.
+ */
 export const RITUALS: Ritual[] = [
   // Morning
   { id: 'ritual-m1', name: 'Wake Up 6AM', category: 'morning' },
