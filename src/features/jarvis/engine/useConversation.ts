@@ -11,6 +11,23 @@ const MAX_STORED_MESSAGES = 200;
 const CONFIDENCE_THRESHOLD = 0.45;
 
 /**
+ * After this much idle time, the *visible* thread resets to a clean slate on
+ * the next message — the old exchange archives into chatHistory instead of
+ * sitting there forever. Jarvis's own memory/context is untouched either way;
+ * this only tidies up what's shown on screen.
+ */
+const IDLE_RESET_MS = 5 * 60 * 1000;
+
+/** Cap on how many past sessions the Log panel keeps around. */
+const MAX_CHAT_HISTORY = 30;
+
+export interface ChatSession {
+  id: string;
+  endedAt: string;
+  messages: JarvisMessage[];
+}
+
+/**
  * The transcript sent to the model: role + clean content only. UI-only status
  * chips (✓/⚠) must never leak into multi-turn context.
  */
@@ -56,6 +73,8 @@ export interface Conversation {
   /** Proactively push (and speak) an assistant line without an LLM round-trip. */
   greet: (text: string) => void;
   abort: () => void;
+  /** Past visible sessions, archived on idle-reset. Newest first. */
+  chatHistory: ChatSession[];
 }
 
 /**
@@ -66,12 +85,23 @@ export interface Conversation {
  */
 export function useConversation(deps: ConversationDeps): Conversation {
   const [messages, setMessages] = useState<JarvisMessage[]>([GREETING]);
+  const [chatHistory, setChatHistory] = useState<ChatSession[]>([]);
   const [thinking, setThinking] = useState(false);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
   const thinkingRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const lastSyncedRef = useRef('');
+  // Timestamp of the last message (either side). Used to detect a >5min gap
+  // and archive the visible thread before starting the next one fresh.
+  const lastActivityRef = useRef(Date.now());
+  /**
+   * The durable conversation Jarvis actually reasons over — kept separate
+   * from the `messages` UI state so an idle-reset can clear what's rendered
+   * on screen without Jarvis losing context of what was discussed. Reset only
+   * on sign-in/out (see the load effect below), never on idle.
+   */
+  const modelHistoryRef = useRef<JarvisMessage[]>([]);
   // 'unset' is distinct from both a real uid and null (signed out), so the
   // very first render always runs the load-transcript effect once.
   const loadedForUidRef = useRef<string | null | 'unset'>('unset');
@@ -119,6 +149,8 @@ export function useConversation(deps: ConversationDeps): Conversation {
       /* ignore */
     }
     setMessages(seed);
+    modelHistoryRef.current = seed;
+    lastActivityRef.current = Date.now();
     lastSyncedRef.current = '';
     if (!uid) {
       // No account to wait on — the local cache IS the source of truth.
@@ -141,6 +173,7 @@ export function useConversation(deps: ConversationDeps): Conversation {
         if (!Array.isArray(stored) || stored.length === 0) return;
         lastSyncedRef.current = JSON.stringify(stored);
         setMessages(stored);
+        modelHistoryRef.current = stored;
       },
       (err) => {
         console.warn('[jarvis chat] listener error:', err.message);
@@ -176,13 +209,42 @@ export function useConversation(deps: ConversationDeps): Conversation {
     return () => clearTimeout(t);
   }, [messages, deps.uid]);
 
-  const push = (msg: JarvisMessage) => setMessages((prev) => [...prev, msg]);
+  const push = (msg: JarvisMessage) => {
+    setMessages((prev) => [...prev, msg]);
+    modelHistoryRef.current = [...modelHistoryRef.current, msg];
+  };
 
   const abort = useCallback(() => abortRef.current?.abort(), []);
+
+  /**
+   * Called at the start of every new turn. If the visible thread has been
+   * quiet for IDLE_RESET_MS, archive what's currently on screen into
+   * chatHistory and clear it back to just the greeting. modelHistoryRef is
+   * deliberately left alone — Jarvis keeps reasoning with full context even
+   * though the screen looks fresh.
+   */
+  const archiveIfIdle = () => {
+    const now = Date.now();
+    const idleFor = now - lastActivityRef.current;
+    lastActivityRef.current = now;
+    if (idleFor < IDLE_RESET_MS) return;
+    const current = messagesRef.current;
+    // Nothing beyond the greeting to archive — skip the no-op session.
+    if (current.length <= 1) return;
+    setChatHistory((prev) =>
+      [{ id: `session_${now}`, endedAt: new Date(now).toISOString(), messages: current }, ...prev].slice(
+        0,
+        MAX_CHAT_HISTORY,
+      ),
+    );
+    setMessages([GREETING]);
+    messagesRef.current = [GREETING];
+  };
 
   const greet = useCallback(
     (text: string) => {
       if (!text.trim()) return;
+      archiveIfIdle();
       push({ role: 'assistant', content: text });
       deps.speak(text);
     },
@@ -193,6 +255,7 @@ export function useConversation(deps: ConversationDeps): Conversation {
     async (raw: string, origin: 'text' | 'voice' = 'text') => {
       const text = raw.trim();
       if (!text || thinkingRef.current) return;
+      archiveIfIdle();
       // Voice always gets a spoken reply; typed only does if opted in.
       const shouldSpeak = origin === 'voice' || deps.speakOnText;
       const speak = (t: string) => shouldSpeak && deps.speak(t);
@@ -201,9 +264,15 @@ export function useConversation(deps: ConversationDeps): Conversation {
       const ctrl = new AbortController();
       abortRef.current = ctrl;
 
-      const uiHistory = [...messagesRef.current, { role: 'user', content: text } as JarvisMessage];
+      const userMsg = { role: 'user', content: text } as JarvisMessage;
+      const uiHistory = [...messagesRef.current, userMsg];
       setMessages(uiHistory);
-      const history = toModelHistory(uiHistory);
+      // The model's context keeps the full conversation regardless of what's
+      // visibly on screen — an idle-reset clears the display, not Jarvis's
+      // memory of what was discussed.
+      const fullHistory = [...modelHistoryRef.current, userMsg];
+      modelHistoryRef.current = fullHistory;
+      const history = toModelHistory(fullHistory);
       thinkingRef.current = true;
       setThinking(true);
 
@@ -303,5 +372,5 @@ export function useConversation(deps: ConversationDeps): Conversation {
     [deps],
   );
 
-  return { messages, thinking, sendMessage, greet, abort };
+  return { messages, thinking, sendMessage, greet, abort, chatHistory };
 }

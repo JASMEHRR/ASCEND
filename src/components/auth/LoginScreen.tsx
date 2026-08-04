@@ -1,48 +1,39 @@
-import { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { Mail, Lock, LogIn, Loader2 } from 'lucide-react';
+import { useState } from 'react';
+import { motion } from 'motion/react';
+import { Mail, Lock, LogIn, Loader2, Flame, MessageCircle, Swords, RefreshCw } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import JarvisOrb from '../../features/jarvis/ui/JarvisOrb';
 
 type Mode = 'signin' | 'signup';
 
-/** Rotating one-liners introducing what's inside, shown next to the orb. */
-const PITCH_LINES = [
-  "I'm Jarvis — I run this place with you.",
-  'Habits, rituals, and streaks, tracked daily.',
-  'A vision board, journal, and idea log in one spot.',
-  'Race friends on shared habit puzzles in Arena.',
-  'Ask me anything — I can see your whole day.',
-  'Stocks, tasks, and goals, all synced across devices.',
+/** What the app actually does — static, so it can be read before signing in. */
+const FEATURES = [
+  { icon: Flame, text: 'Track daily habits and streaks' },
+  { icon: MessageCircle, text: 'Jarvis, an AI that runs your day with you' },
+  { icon: Swords, text: 'Race friends on shared habit puzzles in Arena' },
+  { icon: RefreshCw, text: 'Everything synced across your devices' },
 ];
 
 function LoginPitch() {
-  const [i, setI] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => setI((n) => (n + 1) % PITCH_LINES.length), 3400);
-    return () => clearInterval(t);
-  }, []);
-
   return (
     <div className="mb-8 flex flex-col items-center text-center">
       <JarvisOrb state="idle" size={72} />
       <p className="mt-4 text-[10px] font-mono font-black uppercase tracking-[0.3em] text-brand-400">
         Ascend Protocol
       </p>
-      <div className="mt-2.5 h-9 max-w-xs px-2">
-        <AnimatePresence mode="wait">
-          <motion.p
-            key={i}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.35 }}
-            className="text-[13px] leading-snug text-white/60"
-          >
-            {PITCH_LINES[i]}
-          </motion.p>
-        </AnimatePresence>
-      </div>
+      <p className="mt-2 max-w-xs text-[13px] leading-snug text-white/60">
+        A life-management OS with an AI assistant built in — habits, goals, and a shared game with friends, all in one place.
+      </p>
+      <ul className="mt-4 flex w-full max-w-[15.5rem] flex-col gap-1.5 text-left">
+        {FEATURES.map(({ icon: Icon, text }) => (
+          <li key={text} className="flex items-center gap-2.5 text-[11.5px] text-white/50">
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-500/10 text-brand-400">
+              <Icon size={11} />
+            </span>
+            {text}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

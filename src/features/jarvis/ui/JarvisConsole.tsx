@@ -80,6 +80,13 @@ export default function JarvisConsole({ autoFocus = false }: { autoFocus?: boole
     setInput('');
   };
 
+  // Keep the window short: only the last exchange (the most recent user
+  // message plus Jarvis's reply to it) stays visible, not the whole growing
+  // thread. Everything else is still logged (see the Log panel), just not
+  // rendered here.
+  const lastUserIdx = messages.map((m) => m.role).lastIndexOf('user');
+  const visibleMessages = lastUserIdx === -1 ? messages.slice(-2) : messages.slice(lastUserIdx);
+
   const interrupt = () => {
     abort();
     voice.stopSpeaking();
@@ -89,8 +96,8 @@ export default function JarvisConsole({ autoFocus = false }: { autoFocus?: boole
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div ref={chatRef} className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-1 py-2 space-y-3">
-        {messages.map((m, i) => (
-          <Bubble key={i} message={m} animate={i === messages.length - 1 && m.role === 'assistant'} stopSignal={stopSignal} />
+        {visibleMessages.map((m, i) => (
+          <Bubble key={i} message={m} animate={i === visibleMessages.length - 1 && m.role === 'assistant'} stopSignal={stopSignal} />
         ))}
         {voice.interim && (
           <div className="flex justify-end">
