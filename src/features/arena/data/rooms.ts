@@ -249,13 +249,12 @@ export function subscribePublicDays(
   playerId: string,
   cb: (days: (DaySummary & { day: DayKey })[]) => void,
 ): Unsubscribe {
-  return onSnapshot(collection(db, publicPath(roomId, playerId)), (snap) => {
-    cb(
-      snap.docs
-        .filter((d) => d.id.startsWith('day_'))
-        .map((d) => d.data() as DaySummary & { day: DayKey }),
-    );
-  });
+  return onSnapshot(
+    collection(db, publicPath(roomId, playerId)),
+    (snap) =>
+      cb(snap.docs.filter((d) => d.id.startsWith('day_')).map((d) => d.data() as DaySummary & { day: DayKey })),
+    () => cb([]),
+  );
 }
 
 // --- chat ----------------------------------------------------------------
@@ -304,9 +303,14 @@ export async function sendMessage(roomId: string, playerId: string, body: string
 
 /** Live player list for the leaderboard. */
 export function subscribePlayers(roomId: string, cb: (players: Player[]) => void): Unsubscribe {
-  return onSnapshot(collection(db, playersPath(roomId)), (snap) => {
-    cb(snap.docs.map((d) => ({ id: d.id, roomId, userId: d.id, ...(d.data() as Omit<Player, 'id' | 'roomId' | 'userId'>) })));
-  });
+  return onSnapshot(
+    collection(db, playersPath(roomId)),
+    (snap) =>
+      cb(snap.docs.map((d) => ({ id: d.id, roomId, userId: d.id, ...(d.data() as Omit<Player, 'id' | 'roomId' | 'userId'>) }))),
+    // Denied reads (rules not deployed, or not a member yet) should degrade to
+    // an empty board, not an uncaught listener error.
+    () => cb([]),
+  );
 }
 
 export function subscribeMessages(
@@ -314,9 +318,11 @@ export function subscribeMessages(
   cb: (messages: (MessageDoc & { id: string })[]) => void,
   max = 100,
 ): Unsubscribe {
-  return onSnapshot(query(collection(db, messagesPath(roomId)), orderBy('at', 'desc'), fsLimit(max)), (snap) => {
-    cb(snap.docs.map((d) => ({ id: d.id, ...(d.data() as MessageDoc) })).reverse());
-  });
+  return onSnapshot(
+    query(collection(db, messagesPath(roomId)), orderBy('at', 'desc'), fsLimit(max)),
+    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...(d.data() as MessageDoc) })).reverse()),
+    () => cb([]),
+  );
 }
 
 /** The current week key, for callers that shouldn't import the date helpers. */

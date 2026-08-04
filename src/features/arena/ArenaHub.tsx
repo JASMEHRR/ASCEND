@@ -237,12 +237,13 @@ export default function ArenaHub() {
               </button>
             ))}
           </div>
+          {/* A room is optional, so this must tolerate not having one. */}
           <button
             onClick={() => setJoining(true)}
-            aria-label="Switch or join a room"
+            aria-label={room ? 'Switch or join a room' : 'Start or join a room'}
             className="shrink-0 rounded-full border border-white/12 bg-white/[0.05] px-3 py-2 font-mono text-[10px] tracking-[0.15em] text-brand-300 cursor-pointer"
           >
-            {room.code}
+            {room?.code ?? '+ room'}
           </button>
         </div>
 
