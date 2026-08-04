@@ -29,6 +29,7 @@ import ArenaSettings from './panels/ArenaSettings';
 import ArenaJoin from './panels/ArenaJoin';
 import ArenaPuzzle from './panels/ArenaPuzzle';
 import ArenaStats from './panels/ArenaStats';
+import type { OSState } from '../../types';
 
 type Tab = 'today' | 'puzzle' | 'board' | 'stats' | 'chat' | 'settings';
 
@@ -41,7 +42,7 @@ const TABS: { key: Tab; label: string; brief: string; icon: ReactNode }[] = [
   { key: 'settings', label: 'Settings', brief: 'Habits, privacy, room.', icon: <Settings2 size={15} /> },
 ];
 
-export default function ArenaHub() {
+export default function ArenaHub({ state, updateState }: { state: OSState; updateState: (updater: (prev: OSState) => OSState) => void }) {
   const { loading, room, rooms, selectRoom } = useArena();
   const [tab, setTab] = useState<Tab>('today');
   const [joining, setJoining] = useState(false);
@@ -76,7 +77,7 @@ export default function ArenaHub() {
 
   const body = (
     <>
-      {tab === 'today' && <ArenaToday onManualSetup={() => setTab('settings')} />}
+      {tab === 'today' && <ArenaToday onManualSetup={() => setTab('settings')} state={state} updateState={updateState} />}
       {tab === 'puzzle' && <ArenaPuzzle onNeedHabits={() => setTab('today')} />}
       {needsRoom && !room && (
         <div className="mx-auto flex min-h-[240px] max-w-sm flex-col items-center justify-center gap-3 text-center">

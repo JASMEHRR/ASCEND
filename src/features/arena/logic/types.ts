@@ -86,6 +86,12 @@ export interface TilePlacement {
    */
   repair: boolean;
   at: string;
+  /**
+   * Who earned this tile. Only meaningful on a shared room canvas, where one
+   * picture holds placements from every member — absent on a solo canvas,
+   * where every placement is implicitly the owner's.
+   */
+  playerId?: string;
 }
 
 export interface PuzzleWeek {
@@ -135,4 +141,10 @@ export interface Room {
   name: string;
   createdBy: string;
   createdAt: string;
+  /**
+   * Whether the weekly puzzle is per-member ('solo', the default) or one
+   * shared canvas the whole room fills together ('shared'). Set by the
+   * creator in Arena → Settings. Missing on older rooms, which means solo.
+   */
+  puzzleMode?: 'solo' | 'shared';
 }

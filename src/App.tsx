@@ -332,7 +332,7 @@ export default function App() {
                 {view === 'buy_list' && <ToBuyList state={state} updateState={updateState} />}
                 {view === 'stocks' && <StocksHub state={state} updateState={updateState} />}
                 {view === 'journal' && <JournalHub state={state} updateState={updateState} />}
-                {view === 'arena' && <ArenaHub />}
+                {view === 'arena' && <ArenaHub state={state} updateState={updateState} />}
               </Suspense>
           </motion.div>
         </main>

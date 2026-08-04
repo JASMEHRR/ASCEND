@@ -20,7 +20,6 @@ import {
   Bell,
   PanelRightClose,
   PanelRightOpen,
-  Minus,
 } from 'lucide-react';
 import type { OSState } from '../../../types';
 import { readStore, writeStore } from '../../../lib/storage';
@@ -128,7 +127,6 @@ export default function JarvisDashboard({ state, updateState, setView, openSetti
   };
   const toggleFocus = () => updateState((p) => (p.primaryObjective ? { ...p, primaryObjective: { ...p.primaryObjective, done: !p.primaryObjective.done } } : p));
   const addWater = () => updateState((p) => ({ ...p, water: p.water + 1 }));
-  const adjustWishes = (delta: number) => updateState((p) => ({ ...p, wishes: Math.max(0, (p.wishes ?? 0) + delta) }));
 
   const togglePanel = (id: DockPanel) => setOpenPanel((cur) => (cur === id ? null : id));
 
@@ -152,17 +150,6 @@ export default function JarvisDashboard({ state, updateState, setView, openSetti
                 {greeting()}, <span className="capitalize">{name}</span>.
               </h2>
               <p className="mt-1 text-[13px] text-white/45">{briefing}</p>
-              {(state.showWishes ?? true) && (
-                <p className="mt-1 flex items-center justify-center gap-1 text-[11px] text-white/30">
-                  <button onClick={() => adjustWishes(-1)} aria-label="Decrease wishes" className="rounded p-0.5 hover:text-white/60 cursor-pointer">
-                    <Minus size={10} />
-                  </button>
-                  <span>{state.wishes ?? 0} wishes</span>
-                  <button onClick={() => adjustWishes(1)} aria-label="Increase wishes" className="rounded p-0.5 hover:text-white/60 cursor-pointer">
-                    <Plus size={10} />
-                  </button>
-                </p>
-              )}
             </>
           )}
         </div>

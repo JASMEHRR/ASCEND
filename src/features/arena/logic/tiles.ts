@@ -158,6 +158,19 @@ export function projectedTiles(habits: Habit[], week: WeekKey, day: DayKey): num
 }
 
 /**
+ * Placements against one player's spendable balance for a set of days.
+ *
+ * On a solo canvas every placement is implicitly the owner's, so `playerId`
+ * is omitted and everything in range counts. On a shared room canvas one
+ * picture holds tiles from every member, so `playerId` filters to just the
+ * ones this player spent — otherwise one active member's placements would
+ * look like they'd drained everyone else's balance too.
+ */
+export function spentThisWeek(placements: TilePlacement[], days: DayKey[], playerId?: string): number {
+  return placements.filter((p) => days.includes(p.earnedOn) && (playerId === undefined || p.playerId === playerId)).length;
+}
+
+/**
  * Grid dimensions for a tile count, kept as close to the image's aspect ratio
  * as possible so tiles stay roughly square.
  */

@@ -65,8 +65,8 @@ export async function createRoom(userId: string, name: string, profile: { name: 
     const existing = await getRoomByCode(code);
     if (existing) continue;
     const ref = doc(collection(db, ROOMS));
-    const room: Room = { id: ref.id, code, name, createdBy: userId, createdAt: now() };
-    await setDoc(ref, { code, name, createdBy: userId, createdAt: room.createdAt, memberIds: [userId] });
+    const room: Room = { id: ref.id, code, name, createdBy: userId, createdAt: now(), puzzleMode: 'solo' };
+    await setDoc(ref, { code, name, createdBy: userId, createdAt: room.createdAt, memberIds: [userId], puzzleMode: 'solo' });
     await addPlayer(ref.id, userId, profile);
     return room;
   }
@@ -112,6 +112,36 @@ export async function joinRoom(code: string, userId: string, profile: { name: st
     if (!members.includes(userId)) await updateDoc(roomRef, { memberIds: [...members, userId] });
   }
   return room;
+}
+
+/** Set by the room creator in Arena → Settings. See Room.puzzleMode. */
+export async function setPuzzleMode(roomId: string, mode: 'solo' | 'shared'): Promise<void> {
+  await updateDoc(doc(db, ROOMS, roomId), { puzzleMode: mode });
+}
+
+// --- shared puzzle canvas --------------------------------------------------
+//
+// Only used when the room's puzzleMode is 'shared': one canvas for the whole
+// room, at arenaRooms/{roomId}/weeks/{week}, distinct from the per-user
+// canvases at users/{uid}/arenaWeeks/{week} that solo mode reads. Switching
+// modes never merges the two — a shared canvas simply starts empty.
+
+export const roomWeeksPath = (roomId: string) => `${ROOMS}/${roomId}/weeks`;
+
+export async function getRoomWeek(roomId: string, week: WeekKey): Promise<WeekDoc | null> {
+  const snap = await getDoc(doc(db, roomWeeksPath(roomId), week));
+  return snap.exists() ? (snap.data() as WeekDoc) : null;
+}
+
+export async function saveRoomWeek(roomId: string, week: WeekKey, data: Partial<WeekDoc>): Promise<void> {
+  await setDoc(doc(db, roomWeeksPath(roomId), week), data, { merge: true });
+}
+
+export async function listRoomWeeks(roomId: string): Promise<(WeekDoc & { week: WeekKey })[]> {
+  const snap = await getDocs(collection(db, roomWeeksPath(roomId)));
+  return snap.docs
+    .map((d) => ({ week: d.id, ...(d.data() as WeekDoc) }))
+    .sort((a, b) => b.week.localeCompare(a.week));
 }
 
 /**

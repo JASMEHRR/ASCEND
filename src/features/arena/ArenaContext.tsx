@@ -27,6 +27,7 @@ import {
   mirrorDay,
   postBatch,
   postEvent,
+  setPuzzleMode as setPuzzleModeDoc,
   subscribeMessages,
   subscribeMyRooms,
   subscribePlayers,
@@ -35,6 +36,7 @@ import {
 // belong to. Rooms hold membership, chat, and the public summaries.
 import {
   addHabit as addHabitDoc,
+  deleteHabit as deleteHabitDoc,
   getDay,
   removeHabit as removeHabitDoc,
   setAllHabitsPrivacy as setAllPrivacyDoc,
@@ -78,9 +80,12 @@ export interface ArenaValue {
   deleteRoom: () => Promise<void>;
   /** Whether the signed-in player created the active room. */
   isRoomOwner: boolean;
+  /** Room creator only; see Room.puzzleMode. */
+  setPuzzleMode: (mode: 'solo' | 'shared') => Promise<void>;
   addHabit: (habit: NewHabit) => Promise<void>;
   updateHabit: (habitId: string, fields: Partial<Habit>) => Promise<void>;
   removeHabit: (habitId: string) => Promise<void>;
+  deleteHabit: (habitId: string) => Promise<void>;
   setPrivacy: (habitId: string, isPrivate: boolean) => Promise<void>;
   setAllPrivacy: (isPrivate: boolean) => Promise<void>;
   tick: (habit: Habit, value: number) => Promise<void>;
@@ -256,6 +261,19 @@ export function ArenaProvider({ children }: { children: ReactNode }) {
     setRoomId(null);
   }, [roomId]);
 
+  const setPuzzleMode = useCallback(
+    async (mode: 'solo' | 'shared') => {
+      if (!roomId) return;
+      try {
+        await setPuzzleModeDoc(roomId, mode);
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        toast.show({ kind: 'warning', title: "That didn't save", message: msg });
+      }
+    },
+    [roomId, toast],
+  );
+
   /**
    * A day's stored values as the Entry list the pure logic expects. The tick
    * path needs this before the subscription round-trips, so the chat message
@@ -364,9 +382,11 @@ export function ArenaProvider({ children }: { children: ReactNode }) {
     leaveRoom,
     deleteRoom,
     isRoomOwner: !!room && !!uid && room.createdBy === uid,
+    setPuzzleMode,
     addHabit: (habit) => guard((u) => addHabitDoc(u, habit)).then(() => undefined),
     updateHabit: (habitId, fields) => guard((u) => updateHabitDoc(u, habitId, fields)),
     removeHabit: (habitId) => guard((u) => removeHabitDoc(u, habitId)),
+    deleteHabit: (habitId) => guard((u) => deleteHabitDoc(u, habitId)),
     setPrivacy: (habitId, p) => guard((u) => setPrivacyDoc(u, habitId, p)),
     setAllPrivacy: (p) => guard((u) => setAllPrivacyDoc(u, p)),
     tick: (habit, v) => guard((u) => writeTick(u, habit.id, v)),

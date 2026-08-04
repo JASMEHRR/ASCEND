@@ -41,11 +41,36 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create: if signedIn() && request.auth.uid == request.resource.data.createdBy;
 
-      // Members may update the room, which is how join and leave edit
-      // memberIds — but nobody may rewrite who created it, or a member could
-      // seize deletion rights.
-      allow update: if isMember()
-        && request.resource.data.createdBy == resource.data.createdBy;
+      /**
+       * Joining is the one write a NON-member has to be able to make: you add
+       * your own uid to memberIds, and only then does isMember() become true.
+       * Requiring membership to join is a deadlock — it's why invite codes
+       * failed with "Missing or insufficient permissions".
+       *
+       * Narrowly scoped: memberIds is the only field that may change, the
+       * caller must not already be in it, and the new list must be exactly the
+       * old one plus themselves. So nobody can add a third party, remove
+       * anyone, or smuggle another field through on the same write.
+       */
+      function joiningSelf() {
+        return signedIn()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds'])
+          && !(request.auth.uid in resource.data.memberIds)
+          && request.resource.data.memberIds == resource.data.memberIds.concat([request.auth.uid]);
+      }
+
+      /** Leaving: the mirror image — remove only yourself, touch nothing else. */
+      function leavingSelf() {
+        return signedIn()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds'])
+          && request.resource.data.memberIds == resource.data.memberIds.removeAll([request.auth.uid]);
+      }
+
+      // Members may update the room, but nobody may rewrite who created it, or
+      // a member could seize deletion rights.
+      allow update: if (isMember() && request.resource.data.createdBy == resource.data.createdBy)
+        || joiningSelf()
+        || leavingSelf();
 
       allow delete: if signedIn() && request.auth.uid == resource.data.createdBy;
 
@@ -63,8 +88,11 @@ service cloud.firestore {
             && request.auth.uid == get(/databases/$(database)/documents/arenaRooms/$(roomId)).data.createdBy;
         }
 
-        // The room sees every player: the leaderboard is the point.
-        allow read: if isMember();
+        // The room sees every player: the leaderboard is the point. `isSelf`
+        // is also allowed because joinRoom() checks whether your own player
+        // document already exists BEFORE you become a member — requiring
+        // membership for that read is the other half of the join deadlock.
+        allow read: if isMember() || isSelf();
         // You may only create or edit your own player row.
         allow write: if isSelf();
         allow delete: if isSelf() || isRoomOwner();
@@ -82,6 +110,15 @@ service cloud.firestore {
           allow write: if isSelf();
           allow delete: if isSelf() || isRoomOwner();
         }
+      }
+
+      // The shared puzzle canvas — only used when the room's puzzleMode is
+      // 'shared'. One picture for the whole room, so unlike the per-user
+      // canvases under users/{uid}/arenaWeeks, every member may place a tile
+      // on it, not just its owner.
+      match /weeks/{week} {
+        allow read: if isMember();
+        allow write: if isMember();
       }
 
       match /messages/{messageId} {
