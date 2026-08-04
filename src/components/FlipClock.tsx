@@ -137,12 +137,13 @@ export default function FlipClock({ compact = false }: { compact?: boolean }) {
   const m1 = minutes[0];
   const m2 = minutes[1];
 
-  // Dynamic uppercase format: MONDAY, MAY 19, 2025
+  // Compact single-line format that actually fits the sidebar column:
+  // MON, AUG 5 (short weekday, short month, no year — keeps it short enough
+  // to never wrap or overflow at the narrow compact width).
   const uppercaseDate = time.toLocaleDateString('en-US', {
-    weekday: 'long',
+    weekday: 'short',
     month: 'short',
     day: 'numeric',
-    year: 'numeric'
   }).toUpperCase();
 
   return (
@@ -170,10 +171,10 @@ export default function FlipClock({ compact = false }: { compact?: boolean }) {
       </div>
 
       {/* Centered clean metadata info — date on its own line, AM/PM below it. */}
-      <div className={`mt-5 z-10 flex flex-col items-center select-none ${compact ? 'gap-1' : 'gap-1.5'}`}>
+      <div className={`mt-5 z-10 flex w-full flex-col items-center select-none ${compact ? 'gap-1' : 'gap-1.5'}`}>
         <span
-          className={`whitespace-nowrap text-center font-mono font-bold uppercase text-white/60 ${
-            compact ? 'text-[9px] tracking-[0.14em]' : 'text-[11px] tracking-[0.22em] sm:text-xs'
+          className={`max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-center font-mono font-bold uppercase text-white/60 ${
+            compact ? 'text-[9px] tracking-[0.08em]' : 'text-[11px] tracking-[0.22em] sm:text-xs'
           }`}
         >
           {uppercaseDate}
