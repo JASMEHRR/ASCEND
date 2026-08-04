@@ -60,9 +60,11 @@ export default function ArenaStats() {
     return n;
   })();
 
-  const completedWeeks = new Set(canvases.filter((c) => c.complete).map((c) => c.week));
-  const weeksDesc = canvases.map((c) => c.week);
-  const pictureStreak = weeklyStreak(completedWeeks, weeksDesc);
+  // weeklyStreak just walks a descending, gapless id sequence — puzzle ids
+  // (each window's own start day) work the same way calendar week keys did.
+  const completedWeeks = new Set(canvases.filter((c) => c.complete).map((c) => c.id));
+  const idsDesc = canvases.map((c) => c.id);
+  const pictureStreak = weeklyStreak(completedWeeks, idsDesc);
 
   const weekTiles = weekDays(today).reduce((n, d) => n + tilesEarnedOn(habits, entries, d), 0);
 

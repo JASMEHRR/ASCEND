@@ -148,8 +148,9 @@ export default function ArenaSettings() {
           {isRoomOwner && (
             <div className="space-y-1.5">
               <p className="text-[10.5px] leading-snug text-white/30">
-                Puzzle mode. Shared starts one canvas for the whole room from the next placement — switching
-                back leaves it as-is.
+                Puzzle mode. Shared turns on a room-wide competition in the Puzzle tab: set a length, everyone
+                readies up, then you start it together. Solo puzzles keep running either way — switching back
+                just hides the room game, it doesn't erase it.
               </p>
               <div className="flex gap-2">
                 {(['solo', 'shared'] as const).map((mode) => {

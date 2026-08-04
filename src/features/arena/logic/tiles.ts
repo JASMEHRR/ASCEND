@@ -9,7 +9,7 @@
  * Pure functions only — no React, no Firestore. See tiles.test.ts.
  */
 import type { DayKey, Entry, Habit, TilePlacement, TileWallet, WeekKey } from './types';
-import { weekDays, weekKey } from './dates';
+import { addDays, weekDays, weekKey } from './dates';
 
 /** Misses allowed per week before they start costing tiles. */
 export const WEEKLY_MISS_BUDGET = 5;
@@ -155,6 +155,36 @@ export function projectedTiles(habits: Habit[], week: WeekKey, day: DayKey): num
     return removalWeek < week;
   }).length;
   return Math.max(1, base + penalties * REMOVAL_PENALTY_TILES);
+}
+
+/**
+ * The days a puzzle window covers, given its start and length. Mirrors
+ * `weekDays` in shape (a plain array of DayKey) but for an arbitrary window
+ * instead of a calendar week — this is what lets a solo puzzle or a room game
+ * run on its own clock instead of Monday–Sunday.
+ */
+export function windowDays(startsAt: DayKey, days: number): DayKey[] {
+  return Array.from({ length: Math.max(1, days) }, (_, i) => addDays(startsAt, i));
+}
+
+/**
+ * The projected tile count for an arbitrary window (a solo puzzle or a room
+ * game), sized the same way as `projectedTiles` but off the window's own
+ * start day and length instead of the calendar week.
+ *
+ * Habits active at the window's start day × its length. Habits added after
+ * the window opened don't enlarge it — same "surplus, not growth" rule as
+ * the weekly canvas — and there's no removal-penalty carry-in here, since a
+ * window doesn't have a "previous window" the way calendar weeks do.
+ */
+export function projectedWindowTiles(habits: Habit[], startsAt: DayKey, days: number): number {
+  const base = activeHabits(habits, startsAt).length * Math.max(1, days);
+  return Math.max(1, base);
+}
+
+/** Tiles earned across an arbitrary window. */
+export function tilesEarnedInWindow(habits: Habit[], entries: Entry[], startsAt: DayKey, days: number): number {
+  return windowDays(startsAt, days).reduce((n, d) => n + tilesEarnedOn(habits, entries, d), 0);
 }
 
 /**

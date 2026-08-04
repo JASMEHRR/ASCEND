@@ -30,7 +30,7 @@ import {
 import { db } from '../../../lib/firebase';
 import { todayStr, weekKey } from '../logic/dates';
 import { activeHabits, tilesEarnedOn } from '../logic/tiles';
-import type { DayKey, Entry, Habit, Player, Room, WeekKey } from '../logic/types';
+import type { DayKey, Entry, Habit, Player, PuzzleId, Room, RoomGame, WeekKey } from '../logic/types';
 import {
   ROOMS,
   batchMessageId,
@@ -43,10 +43,12 @@ import {
   publicDayId,
   publicPath,
   publicWeekId,
+  roomGamesPath,
   weeksPath,
   type DayDoc,
   type DaySummary,
   type MessageDoc,
+  type PuzzleDoc,
   type WeekDoc,
 } from './schema';
 
@@ -123,6 +125,110 @@ export async function joinRoom(code: string, userId: string, profile: { name: st
 /** Set by the room creator in Arena → Settings. See Room.puzzleMode. */
 export async function setPuzzleMode(roomId: string, mode: 'solo' | 'shared'): Promise<void> {
   await updateDoc(doc(db, ROOMS, roomId), { puzzleMode: mode });
+}
+
+// --- the room game lifecycle -----------------------------------------------
+//
+// A 'shared' room's puzzle only exists while game.status is 'active'. Getting
+// there is a lobby: the owner sets a duration, every current member readies
+// up, and only then can the owner start it. When the timer runs out the game
+// ends on its own (checked client-side — see ArenaContext) and the room drops
+// back into a fresh lobby for the next one.
+
+/** Owner sets how many days the next game will run, while still in lobby. */
+export async function setGameDuration(roomId: string, durationDays: number): Promise<void> {
+  await setDoc(
+    doc(db, ROOMS, roomId),
+    { game: { status: 'lobby', durationDays, ready: {} } satisfies RoomGame },
+    { merge: true },
+  );
+}
+
+/** A member readies up (or un-readies) in the lobby. */
+export async function setReady(roomId: string, uid: string, ready: boolean): Promise<void> {
+  await updateDoc(doc(db, ROOMS, roomId), { [`game.ready.${uid}`]: ready });
+}
+
+/**
+ * Start the game: every member must be ready, per the room-owner rule. Opens
+ * a fresh game canvas at `games/{startedAt}` — no stockpiled tiles carry in,
+ * only fresh completions from here on count.
+ */
+export async function startGame(roomId: string, durationDays: number): Promise<PuzzleId> {
+  const startedAt = new Date().toISOString();
+  const endsAt = new Date(Date.now() + durationDays * 86400000).toISOString();
+  await updateDoc(doc(db, ROOMS, roomId), {
+    game: { status: 'active', durationDays, ready: {}, startedAt, endsAt } satisfies RoomGame,
+  });
+  return startedAt;
+}
+
+/**
+ * End the game — by timer or by the owner. The canvas is left exactly as it
+ * stood (finished or not); a Gartic-Phone-style reveal posts that snapshot to
+ * chat along with who placed how many pieces, then the room drops back to an
+ * unconfigured lobby for the next round.
+ */
+export async function endGame(roomId: string, gameId: PuzzleId, playerNames: Record<string, string> = {}): Promise<void> {
+  const snap = await getDoc(doc(db, roomGamesPath(roomId), gameId));
+  const puzzle = snap.exists() ? (snap.data() as PuzzleDoc) : null;
+  await setDoc(doc(db, roomGamesPath(roomId), gameId), { ended: true }, { merge: true });
+  await updateDoc(doc(db, ROOMS, roomId), { game: { status: 'lobby', ready: {} } satisfies RoomGame });
+
+  if (puzzle) {
+    const total = puzzle.cols * puzzle.rows;
+    const placed = puzzle.placements.length;
+    const perPlayer = new Map<string, number>();
+    for (const p of puzzle.placements) {
+      if (p.playerId) perPlayer.set(p.playerId, (perPlayer.get(p.playerId) ?? 0) + 1);
+    }
+    const breakdown = [...perPlayer.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([uid, n]) => `${playerNames[uid] ?? 'Someone'}: ${n}`)
+      .join(', ');
+    const headline = placed >= total ? 'The picture finished' : `Time's up — ${placed}/${total} pieces placed`;
+    await postEvent(roomId, breakdown ? `${headline}. ${breakdown}.` : `${headline}.`);
+  }
+}
+
+// --- the room's game canvas -------------------------------------------------
+//
+// Successor to the shared-mode weeksPath below: keyed by PuzzleId (the game's
+// startedAt) instead of a calendar WeekKey, since a game's window is set by
+// the owner, not the calendar.
+
+export async function getGamePuzzle(roomId: string, gameId: PuzzleId): Promise<PuzzleDoc | null> {
+  const snap = await getDoc(doc(db, roomGamesPath(roomId), gameId));
+  return snap.exists() ? (snap.data() as PuzzleDoc) : null;
+}
+
+export async function saveGamePuzzle(roomId: string, gameId: PuzzleId, data: Partial<PuzzleDoc>): Promise<void> {
+  await setDoc(doc(db, roomGamesPath(roomId), gameId), data, { merge: true });
+}
+
+export async function listGamePuzzles(roomId: string): Promise<(PuzzleDoc & { id: PuzzleId })[]> {
+  const snap = await getDocs(collection(db, roomGamesPath(roomId)));
+  return snap.docs
+    .map((d) => ({ id: d.id, ...(d.data() as PuzzleDoc) }))
+    .sort((a, b) => b.id.localeCompare(a.id));
+}
+
+/**
+ * Live version of getGamePuzzle. A tile another member places, or the game
+ * ending on someone else's clock, needs to show up on this canvas without the
+ * viewer switching tabs or doing anything to trigger a refetch — the whole
+ * point of a shared board is seeing it move in real time.
+ */
+export function subscribeGamePuzzle(
+  roomId: string,
+  gameId: PuzzleId,
+  cb: (puzzle: PuzzleDoc | null) => void,
+): Unsubscribe {
+  return onSnapshot(
+    doc(db, roomGamesPath(roomId), gameId),
+    (snap) => cb(snap.exists() ? (snap.data() as PuzzleDoc) : null),
+    () => cb(null),
+  );
 }
 
 // --- shared puzzle canvas --------------------------------------------------

@@ -27,8 +27,8 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../../lib/firebase';
 import { todayStr } from '../logic/dates';
-import type { DayKey, Entry, Habit, WeekKey } from '../logic/types';
-import type { DayDoc, WeekDoc } from './schema';
+import type { DayKey, Entry, Habit, PuzzleId, WeekKey } from '../logic/types';
+import { puzzlesPath as puzzlesPathSchema, type DayDoc, type PuzzleDoc, type WeekDoc } from './schema';
 
 const now = () => new Date().toISOString();
 
@@ -145,4 +145,29 @@ export async function listWeeks(uid: string): Promise<(WeekDoc & { week: WeekKey
   return snap.docs
     .map((d) => ({ week: d.id, ...(d.data() as WeekDoc) }))
     .sort((a, b) => b.week.localeCompare(a.week));
+}
+
+// --- windowed solo puzzles -------------------------------------------------
+//
+// The successor to weeksPath: a solo puzzle's window (start day + length) is
+// chosen by the player rather than locked to the calendar week. `weeksPath`
+// above is kept read-only for the gallery so older completed pictures don't
+// disappear.
+
+export const puzzlesPath = (uid: string) => puzzlesPathSchema(uid);
+
+export async function getPuzzle(uid: string, id: PuzzleId): Promise<PuzzleDoc | null> {
+  const snap = await getDoc(doc(db, puzzlesPath(uid), id));
+  return snap.exists() ? (snap.data() as PuzzleDoc) : null;
+}
+
+export async function savePuzzle(uid: string, id: PuzzleId, data: Partial<PuzzleDoc>): Promise<void> {
+  await setDoc(doc(db, puzzlesPath(uid), id), data, { merge: true });
+}
+
+export async function listPuzzles(uid: string): Promise<(PuzzleDoc & { id: PuzzleId })[]> {
+  const snap = await getDocs(collection(db, puzzlesPath(uid)));
+  return snap.docs
+    .map((d) => ({ id: d.id, ...(d.data() as PuzzleDoc) }))
+    .sort((a, b) => b.id.localeCompare(a.id));
 }

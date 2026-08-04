@@ -24,7 +24,7 @@
  * updates, so concurrent writes to different habits don't clobber each other.
  */
 
-import type { TilePlacement } from '../logic/types';
+import type { DayKey, TilePlacement } from '../logic/types';
 
 export const ROOMS = 'arenaRooms';
 
@@ -92,6 +92,36 @@ export interface WeekDoc {
   sharedWith?: string;
   createdAt: string;
 }
+
+/**
+ * A windowed puzzle — the successor to WeekDoc, keyed by PuzzleId (a start
+ * day for solo, a start timestamp for a room game) instead of a calendar
+ * WeekKey. Adds the window's own start/length so the canvas is self-describing
+ * rather than depending on ISO week math.
+ */
+export interface PuzzleDoc {
+  imageUrl: string;
+  cols: number;
+  rows: number;
+  aspect?: number;
+  placements: StoredPlacement[];
+  revealed: boolean;
+  /** First day this puzzle's tiles can be earned/placed. */
+  startsAt: DayKey;
+  /** How many days this window runs. */
+  days: number;
+  /** True once the window has ended (auto or manual) — frozen, goes to gallery. */
+  ended?: boolean;
+  /** Hides this entry from anyone but its owner in the gallery. Solo only. */
+  private?: boolean;
+  /** Legacy two-player split on a solo canvas — see reveal.ts::halfFor. */
+  sharedWith?: string;
+  createdAt: string;
+}
+
+/** Puzzle collections, successors to weeksPath — see PuzzleDoc. */
+export const puzzlesPath = (uid: string) => `users/${uid}/arenaPuzzles`;
+export const roomGamesPath = (roomId: string) => `${ROOMS}/${roomId}/games`;
 
 /**
  * Chat is batched: one rolling document per player per day, so ticking eight

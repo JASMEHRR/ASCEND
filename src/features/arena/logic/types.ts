@@ -12,8 +12,29 @@
 /** A day key, 'YYYY-MM-DD' in the player's local timezone. */
 export type DayKey = string;
 
-/** A week key, 'YYYY-Www' (ISO week), e.g. '2026-W31'. */
+/** A week key, 'YYYY-Www' (ISO week), e.g. '2026-W31'. Used only for streaks/misses. */
 export type WeekKey = string;
+
+/**
+ * A puzzle's identity, independent of calendar weeks.
+ *
+ * Solo puzzles: the id is the window's start day ('YYYY-MM-DD'), since one
+ * player can't start two puzzles the same day and the format still sorts
+ * lexicographically like WeekKey did.
+ *
+ * Group games: the id is the game's start timestamp (ISO), since a room could
+ * in principle start a new game the same calendar day an old one ended.
+ */
+export type PuzzleId = string;
+
+/** A puzzle's time window: when it opened and how many days it runs. */
+export interface PuzzleWindow {
+  id: PuzzleId;
+  /** First day this window's tiles can be earned/placed. */
+  startsAt: DayKey;
+  /** How many days the window covers. */
+  days: number;
+}
 
 export type HabitKind = 'good' | 'bad';
 
@@ -115,6 +136,21 @@ export interface PuzzleWeek {
   createdAt: string;
 }
 
+/** Room-level group game status. Absent Room.game means never configured. */
+export type GameStatus = 'lobby' | 'active';
+
+export interface RoomGame {
+  status: GameStatus;
+  /** Set by the owner while the room sits in lobby, before starting. */
+  durationDays?: number;
+  /** uid -> ready. Starting requires every current member to be true. */
+  ready: Record<string, boolean>;
+  /** ISO timestamp the game was started. Also this game's PuzzleId. */
+  startedAt?: string;
+  /** ISO timestamp the game auto-ends. startedAt + durationDays. */
+  endsAt?: string;
+}
+
 /** The running tile balance for one player. */
 export interface TileWallet {
   /** Tiles earned across all time. */
@@ -147,4 +183,11 @@ export interface Room {
    * creator in Arena → Settings. Missing on older rooms, which means solo.
    */
   puzzleMode?: 'solo' | 'shared';
+  /**
+   * The room's competition state. A 'shared' room only has an active group
+   * canvas while game.status is 'active' — otherwise it sits in a lobby
+   * where members ready up and the owner sets a duration. Absent entirely on
+   * rooms that have never configured a game.
+   */
+  game?: RoomGame;
 }

@@ -121,6 +121,14 @@ service cloud.firestore {
         allow write: if isMember();
       }
 
+      // Successor to /weeks: a room game's canvas, keyed by the game's
+      // startedAt instead of a calendar week. Same rule shape — any member
+      // may read or place a tile, since the whole room shares one picture.
+      match /games/{gameId} {
+        allow read: if isMember();
+        allow write: if isMember();
+      }
+
       match /messages/{messageId} {
         allow read: if isMember();
         // A message must be attributed to its author; system events are

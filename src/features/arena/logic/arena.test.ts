@@ -14,11 +14,14 @@ import {
   isHabitActiveOn,
   missesOn,
   projectedTiles,
+  projectedWindowTiles,
   spentThisWeek,
   tilesEarnedInWeek,
+  tilesEarnedInWindow,
   tilesEarnedOn,
   wallet,
   weekMisses,
+  windowDays,
 } from './tiles';
 import { halfFor, isComplete, nextSlot, placeTile, progress, revealOrder } from './reveal';
 import { clearedDay, dailyStreak, roomStreak, weeklyStreak } from './streaks';
@@ -356,6 +359,32 @@ test('the room streak needs every player to clear', () => {
 test('weeklyStreak counts back-to-back finished pictures', () => {
   const done = new Set(['2026-W32', '2026-W31']);
   assert.equal(weeklyStreak(done, ['2026-W32', '2026-W31', '2026-W30']), 2);
+});
+
+// --- windowed puzzles (arbitrary start/duration, not calendar weeks) -----
+
+test('windowDays returns the requested span starting from the given day', () => {
+  assert.deepEqual(windowDays('2026-08-05', 3), ['2026-08-05', '2026-08-06', '2026-08-07']);
+  // Never fewer than 1 day, even if asked for 0 or negative.
+  assert.deepEqual(windowDays('2026-08-05', 0), ['2026-08-05']);
+});
+
+test('projectedWindowTiles sizes off the window start, not calendar Monday', () => {
+  // A brand-new account adding 11 habits mid-week: a calendar-locked canvas
+  // would size off Monday (0 active habits => 1-piece stub). A window
+  // starting today sizes off today instead.
+  const hs = Array.from({ length: 11 }, (_, i) => habit(`h${i}`, { startsAt: '2026-08-05T00:00:00.000Z' }));
+  assert.equal(projectedWindowTiles(hs, '2026-08-05', 7), 11 * 7);
+  // Habits that start after the window opens don't count or enlarge it.
+  const late = habit('late', { startsAt: '2026-08-06T00:00:00.000Z' });
+  assert.equal(projectedWindowTiles([...hs, late], '2026-08-05', 7), 11 * 7);
+});
+
+test('tilesEarnedInWindow sums earned tiles across an arbitrary span', () => {
+  const hs = [habit('a')];
+  const es = [entry('a', '2026-08-05'), entry('a', '2026-08-06'), entry('a', '2026-08-09')];
+  // A 3-day window from the 5th only sees the first two.
+  assert.equal(tilesEarnedInWindow(hs, es, '2026-08-05', 3), 2);
 });
 
 console.log(`arena logic: ${passed} tests passed`);

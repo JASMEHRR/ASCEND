@@ -10,6 +10,7 @@ import { useState, type ReactNode } from 'react';
 import {
   BarChart3,
   CheckSquare,
+  ImagePlus,
   Loader2,
   MessagesSquare,
   Plus,
@@ -29,15 +30,17 @@ import ArenaSettings from './panels/ArenaSettings';
 import ArenaJoin from './panels/ArenaJoin';
 import ArenaPuzzle from './panels/ArenaPuzzle';
 import ArenaStats from './panels/ArenaStats';
+import ArenaGallery from './panels/ArenaGallery';
 import type { OSState } from '../../types';
 
-type Tab = 'today' | 'puzzle' | 'board' | 'stats' | 'chat' | 'settings';
+type Tab = 'today' | 'puzzle' | 'board' | 'stats' | 'gallery' | 'chat' | 'settings';
 
 const TABS: { key: Tab; label: string; brief: string; icon: ReactNode }[] = [
   { key: 'today', label: 'Today', brief: "Tick off today's habits.", icon: <CheckSquare size={15} /> },
-  { key: 'puzzle', label: 'Puzzle', brief: "This week's picture.", icon: <Puzzle size={15} /> },
+  { key: 'puzzle', label: 'Puzzle', brief: 'Your picture and group games.', icon: <Puzzle size={15} /> },
   { key: 'board', label: 'Board', brief: 'Who showed up this week.', icon: <Trophy size={15} /> },
   { key: 'stats', label: 'Stats', brief: 'Streaks and history.', icon: <BarChart3 size={15} /> },
+  { key: 'gallery', label: 'Gallery', brief: 'Every picture, solo and group.', icon: <ImagePlus size={15} /> },
   { key: 'chat', label: 'Chat', brief: 'Talk to the room.', icon: <MessagesSquare size={15} /> },
   { key: 'settings', label: 'Settings', brief: 'Habits, privacy, room.', icon: <Settings2 size={15} /> },
 ];
@@ -98,6 +101,7 @@ export default function ArenaHub({ state, updateState }: { state: OSState; updat
       {tab === 'chat' && room && <ArenaChat />}
       {tab === 'settings' && <ArenaSettings />}
       {tab === 'stats' && <ArenaStats />}
+      {tab === 'gallery' && <ArenaGallery />}
     </>
   );
 

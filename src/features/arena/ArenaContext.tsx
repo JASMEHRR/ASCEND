@@ -82,6 +82,13 @@ export interface ArenaValue {
   isRoomOwner: boolean;
   /** Room creator only; see Room.puzzleMode. */
   setPuzzleMode: (mode: 'solo' | 'shared') => Promise<void>;
+  /**
+   * Run any Arena write, surfacing a permission-denied error as the same
+   * "deploy the rules" toast as every other mutation here. Exposed so
+   * satellite hooks (useRoomGame, the gallery) don't need to duplicate the
+   * error-toast wiring themselves.
+   */
+  guardArena: <T,>(fn: () => Promise<T>) => Promise<T | undefined>;
   addHabit: (habit: NewHabit) => Promise<void>;
   updateHabit: (habitId: string, fields: Partial<Habit>) => Promise<void>;
   removeHabit: (habitId: string) => Promise<void>;
@@ -363,6 +370,9 @@ export function ArenaProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  /** Same error handling as `guard`, for callers that don't need the uid. */
+  const guardArena = <T,>(fn: () => Promise<T>): Promise<T | undefined> => guard(() => fn());
+
   const value: ArenaValue = {
     loading,
     room,
@@ -383,6 +393,7 @@ export function ArenaProvider({ children }: { children: ReactNode }) {
     deleteRoom,
     isRoomOwner: !!room && !!uid && room.createdBy === uid,
     setPuzzleMode,
+    guardArena,
     addHabit: (habit) => guard((u) => addHabitDoc(u, habit)).then(() => undefined),
     updateHabit: (habitId, fields) => guard((u) => updateHabitDoc(u, habitId, fields)),
     removeHabit: (habitId) => guard((u) => removeHabitDoc(u, habitId)),
