@@ -136,6 +136,14 @@ export interface MessageDoc {
   day?: string;
   /** For 'batch': how many tiles placed so far today. */
   count?: number;
+  /**
+   * For 'text': an attached image, prepared the same way puzzle uploads are
+   * (downscaled/compressed to fit Firestore's 1 MB doc cap — see logic/image.ts).
+   * A message can carry an image with or without body text.
+   */
+  imageUrl?: string;
+  /** For 'text': player ids of anyone @mentioned in this message. */
+  mentions?: string[];
   at: string;
 }
 

@@ -67,13 +67,6 @@ export default function SettingsModal({ isOpen, onClose, state, updateState, fea
   const englishVoices = voice.voices.filter((v) => /^en[-_]/i.test(v.lang));
   const pickerVoices = englishVoices.length ? englishVoices : voice.voices;
 
-  const greetOnLogin = state.jarvisPrefs?.greetOnLogin ?? true;
-  const toggleGreet = () =>
-    updateState((s) => ({
-      ...s,
-      jarvisPrefs: { ...(s.jarvisPrefs ?? {}), greetOnLogin: !(s.jarvisPrefs?.greetOnLogin ?? true) },
-    }));
-
   const activeHours = state.jarvisPrefs?.activeHours ?? { start: 8, end: 22 };
   const setActiveHours = (patch: Partial<{ start: number; end: number }>) =>
     updateState((s) => ({
@@ -257,18 +250,8 @@ export default function SettingsModal({ isOpen, onClose, state, updateState, fea
           {tab === 'jarvis' && (
           <section className="space-y-2">
             <SectionTitle>Jarvis</SectionTitle>
-            <button
-              onClick={toggleGreet}
-              role="switch"
-              aria-checked={greetOnLogin}
-              className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl bg-white/[0.03] border border-white/8 hover:bg-white/[0.06] hover:border-white/15 transition-all cursor-pointer text-left"
-            >
-              <span className="flex-1 min-w-0">
-                <span className="block text-[12px] font-bold text-white/85 leading-tight">Proactive greeting on login</span>
-                <span className="block text-[10.5px] text-white/35">When off, Jarvis stays idle until you speak first.</span>
-              </span>
-              <ToggleTrack on={greetOnLogin} />
-            </button>
+            {/* Proactive greeting on login now lives on the main dashboard,
+                right by the orb it affects — see JarvisDashboard.tsx. */}
 
             <div className="px-3.5 py-2.5 rounded-2xl bg-white/[0.03] border border-white/8 space-y-1.5">
               <div className="flex items-center gap-2">

@@ -432,11 +432,18 @@ export async function postEvent(roomId: string, body: string, playerId: string |
   } satisfies MessageDoc);
 }
 
-export async function sendMessage(roomId: string, playerId: string, body: string): Promise<void> {
+export async function sendMessage(
+  roomId: string,
+  playerId: string,
+  body: string,
+  extra: { imageUrl?: string; mentions?: string[] } = {},
+): Promise<void> {
   await setDoc(doc(collection(db, messagesPath(roomId))), {
     playerId,
     kind: 'text',
     body,
+    ...(extra.imageUrl ? { imageUrl: extra.imageUrl } : {}),
+    ...(extra.mentions && extra.mentions.length > 0 ? { mentions: extra.mentions } : {}),
     at: now(),
   } satisfies MessageDoc);
 }

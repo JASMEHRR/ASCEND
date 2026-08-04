@@ -113,6 +113,14 @@ export default function JarvisDashboard({ state, updateState, setView, openSetti
   const name = (user?.email ?? 'there').split('@')[0];
   const conversationStarted = messages.length > 1;
 
+  // Off by default — Jarvis stays idle until spoken to, unless opted in here.
+  const greetOnLogin = state.jarvisPrefs?.greetOnLogin === true;
+  const toggleGreet = () =>
+    updateState((s) => ({
+      ...s,
+      jarvisPrefs: { ...(s.jarvisPrefs ?? {}), greetOnLogin: !(s.jarvisPrefs?.greetOnLogin === true) },
+    }));
+
   const briefing = useMemo(() => {
     const bits: string[] = [`Discipline ${score}/100`];
     if (streak > 0) bits.push(`${streak}-day streak`);
@@ -150,6 +158,26 @@ export default function JarvisDashboard({ state, updateState, setView, openSetti
                 {greeting()}, <span className="capitalize">{name}</span>.
               </h2>
               <p className="mt-1 text-[13px] text-white/45">{briefing}</p>
+              <button
+                onClick={toggleGreet}
+                role="switch"
+                aria-checked={greetOnLogin}
+                className="mx-auto mt-2.5 flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[10.5px] text-white/45 transition-all hover:border-white/20 hover:text-white/75 cursor-pointer"
+              >
+                <span
+                  aria-hidden="true"
+                  className={`relative h-[16px] w-[28px] shrink-0 rounded-full border transition-colors ${
+                    greetOnLogin ? 'border-brand-400/50 bg-brand-500/30' : 'border-white/12 bg-white/8'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-1/2 h-[11px] w-[11px] -translate-y-1/2 rounded-full bg-white shadow transition-all ${
+                      greetOnLogin ? 'left-[14px]' : 'left-[2px]'
+                    }`}
+                  />
+                </span>
+                Greet me on login
+              </button>
             </>
           )}
         </div>

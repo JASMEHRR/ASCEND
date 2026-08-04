@@ -39,7 +39,11 @@ export async function createModule(
   data: Omit<CustomModule, 'id' | 'createdAt'>,
 ): Promise<CustomModule> {
   const ref = doc(collection(db, modulesPath(uid)));
-  const body = { ...data, createdAt: new Date().toISOString() };
+  // Firestore's setDoc rejects any field whose value is literally `undefined`
+  // — icon is optional, so it must be omitted entirely rather than included
+  // as undefined when the caller didn't pass one.
+  const { icon, ...rest } = data;
+  const body = { ...rest, ...(icon ? { icon } : {}), createdAt: new Date().toISOString() };
   await setDoc(ref, body);
   return { id: ref.id, ...body };
 }

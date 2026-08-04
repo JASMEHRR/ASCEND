@@ -60,7 +60,7 @@ export default function CoreRegistrar({ state, updateState, view, setView }: Pro
   // Runs after a short settle so the UI (and speech voices) are ready.
   useEffect(() => {
     if (!user?.uid) return;
-    if (stateRef.current.jarvisPrefs?.greetOnLogin === false) return; // opted out — stay idle
+    if (stateRef.current.jarvisPrefs?.greetOnLogin !== true) return; // off by default — stay idle until opted in
     const key = `jarvis_greeted_${user.uid}`;
     if (sessionStorage.getItem(key)) return;
     sessionStorage.setItem(key, '1');

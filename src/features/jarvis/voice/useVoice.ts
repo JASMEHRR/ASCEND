@@ -13,6 +13,9 @@ const synthAvailable = typeof window !== 'undefined' && 'speechSynthesis' in win
 const VOICE_STORAGE_KEY = 'ascend_jarvis_voice_uri';
 const HANDS_FREE_KEY = 'ascend_jarvis_handsfree';
 const MUTE_STORAGE_KEY = 'ascend_jarvis_muted';
+/** Whether a typed message also gets a spoken reply. Off by default — voice
+ *  replies are for when you spoke to Jarvis, not when you typed to it. */
+const SPEAK_ON_TEXT_KEY = 'ascend_jarvis_speak_on_text';
 
 /**
  * ElevenLabs voices are pinned with this prefix in the same storage key as
@@ -81,7 +84,14 @@ export function useVoice({ onResult }: UseVoiceOptions) {
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [voiceURI, setVoiceURIState] = useState<string | null>(() => {
     try {
-      return localStorage.getItem(VOICE_STORAGE_KEY);
+      const stored = localStorage.getItem(VOICE_STORAGE_KEY);
+      if (stored) return stored;
+      // Nothing pinned yet: default to Daniel rather than waiting on the
+      // browser-voice heuristic below, which only ever picks a local
+      // SpeechSynthesis voice, never the (better-sounding) ElevenLabs ones.
+      const daniel = `${ELEVEN_PREFIX}${ELEVEN_VOICES[0].id}`;
+      localStorage.setItem(VOICE_STORAGE_KEY, daniel);
+      return daniel;
     } catch {
       return null;
     }
@@ -349,6 +359,15 @@ export function useVoice({ onResult }: UseVoiceOptions) {
     });
   }, [stopSpeaking]);
 
+  // Off by default: typing to Jarvis gets a text reply, not a spoken one.
+  const [speakOnText, setSpeakOnText] = useState(() => readStore(SPEAK_ON_TEXT_KEY) === '1');
+  const toggleSpeakOnText = useCallback(() => {
+    setSpeakOnText((v) => {
+      writeStore(SPEAK_ON_TEXT_KEY, v ? '0' : '1');
+      return !v;
+    });
+  }, []);
+
   useEffect(() => stopSpeaking, [stopSpeaking]);
 
   return {
@@ -361,6 +380,8 @@ export function useVoice({ onResult }: UseVoiceOptions) {
     voiceURI,
     elevenStatus,
     setVoiceURI,
+    speakOnText,
+    toggleSpeakOnText,
     start,
     stop,
     speak,

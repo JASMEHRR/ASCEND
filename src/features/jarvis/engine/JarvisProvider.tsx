@@ -43,12 +43,22 @@ export function JarvisProvider({ children }: { children: ReactNode }) {
   );
 
   // Voice's onResult must call the latest sendMessage — routed through a ref.
-  const sendRef = useRef<(t: string) => void>(() => {});
-  const voice = useVoice({ onResult: (t) => sendRef.current(t) });
+  // Tagged 'voice' so useConversation always speaks the reply for this path,
+  // regardless of the speakOnText preference (that preference only governs
+  // typed messages).
+  const sendRef = useRef<(t: string, origin?: 'text' | 'voice') => void>(() => {});
+  const voice = useVoice({ onResult: (t) => sendRef.current(t, 'voice') });
 
   const convoDeps = useMemo(
-    () => ({ getTools: registry.getTools, buildContext, recordAction: memory.recordAction, speak: voice.speak, uid: user?.uid ?? null }),
-    [registry.getTools, buildContext, memory.recordAction, voice.speak, user?.uid],
+    () => ({
+      getTools: registry.getTools,
+      buildContext,
+      recordAction: memory.recordAction,
+      speak: voice.speak,
+      uid: user?.uid ?? null,
+      speakOnText: voice.speakOnText,
+    }),
+    [registry.getTools, buildContext, memory.recordAction, voice.speak, user?.uid, voice.speakOnText],
   );
   const conversation = useConversation(convoDeps);
   sendRef.current = conversation.sendMessage;

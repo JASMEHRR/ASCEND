@@ -39,12 +39,20 @@ interface ConversationDeps {
   speak: (text: string) => void;
   /** Signed-in uid, for persisting the transcript. Null while signed out. */
   uid: string | null;
+  /**
+   * Whether a typed message should still get a spoken reply. Off by default:
+   * a voice reply makes sense when you spoke to Jarvis, not when you typed to
+   * it — a reply that suddenly talks back at you mid-typing session reads as
+   * a bug, not a feature.
+   */
+  speakOnText: boolean;
 }
 
 export interface Conversation {
   messages: JarvisMessage[];
   thinking: boolean;
-  sendMessage: (text: string) => void;
+  /** `origin` distinguishes a typed message from a spoken one, for speakOnText. */
+  sendMessage: (text: string, origin?: 'text' | 'voice') => void;
   /** Proactively push (and speak) an assistant line without an LLM round-trip. */
   greet: (text: string) => void;
   abort: () => void;
@@ -145,9 +153,12 @@ export function useConversation(deps: ConversationDeps): Conversation {
   );
 
   const sendMessage = useCallback(
-    async (raw: string) => {
+    async (raw: string, origin: 'text' | 'voice' = 'text') => {
       const text = raw.trim();
       if (!text || thinkingRef.current) return;
+      // Voice always gets a spoken reply; typed only does if opted in.
+      const shouldSpeak = origin === 'voice' || deps.speakOnText;
+      const speak = (t: string) => shouldSpeak && deps.speak(t);
 
       abortRef.current?.abort();
       const ctrl = new AbortController();
@@ -173,7 +184,7 @@ export function useConversation(deps: ConversationDeps): Conversation {
 
         if (plan.needsClarification || plan.toolCalls.length === 0) {
           push({ role: 'assistant', content: plan.reply });
-          deps.speak(spokenOf(plan));
+          speak(spokenOf(plan));
           return;
         }
 
@@ -242,7 +253,7 @@ export function useConversation(deps: ConversationDeps): Conversation {
         ];
 
         push({ role: 'assistant', content: reply, status });
-        deps.speak(spoken);
+        speak(spoken);
       } catch (e) {
         if ((e as Error).name === 'AbortError') return;
         push({ role: 'assistant', content: `Connection issue: ${(e as Error).message}. Try again.` });

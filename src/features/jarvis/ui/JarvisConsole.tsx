@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { Mic, MicOff, Radio, Send, Square } from 'lucide-react';
+import { Mic, MicOff, Radio, Send, Square, Volume2, VolumeX } from 'lucide-react';
 import { useJarvis } from '../engine/JarvisProvider';
 import type { JarvisMessage } from '../types';
 import MessageContent from './MessageContent';
@@ -76,7 +76,7 @@ export default function JarvisConsole({ autoFocus = false }: { autoFocus?: boole
 
   const submit = () => {
     if (!input.trim() || thinking) return;
-    sendMessage(input);
+    sendMessage(input, 'text');
     setInput('');
   };
 
@@ -139,6 +139,24 @@ export default function JarvisConsole({ autoFocus = false }: { autoFocus?: boole
             <Radio size={15} className={voice.handsFree ? 'animate-pulse' : ''} />
           </button>
         )}
+
+        {/* Off by default: a typed message gets a text reply, not a spoken
+            one. Voice input always speaks back regardless of this toggle. */}
+        <button
+          type="button"
+          onClick={voice.toggleSpeakOnText}
+          role="switch"
+          aria-checked={voice.speakOnText}
+          title={voice.speakOnText ? 'Typed replies are also spoken' : 'Typed replies stay text-only'}
+          aria-label={voice.speakOnText ? 'Stop speaking replies to typed messages' : 'Speak replies to typed messages too'}
+          className={`grid h-10 w-10 shrink-0 place-items-center rounded-full border transition-all cursor-pointer ${
+            voice.speakOnText
+              ? 'border-brand-400/50 bg-brand-500/20 text-brand-300'
+              : 'border-white/10 bg-white/[0.06] text-white/45 hover:bg-white/10 hover:text-white/80'
+          }`}
+        >
+          {voice.speakOnText ? <Volume2 size={15} /> : <VolumeX size={15} />}
+        </button>
         <input
           ref={inputRef}
           value={input}
