@@ -2,15 +2,26 @@
  * Arena settings — habits, privacy, and the room itself.
  */
 import { useState } from 'react';
-import { Copy, Lock, LogOut, Plus, Trash2, Unlock } from 'lucide-react';
+import { Copy, Lock, LogOut, Plus, Trash2, Unlock, XCircle } from 'lucide-react';
 import { useArena } from '../ArenaContext';
 import { useDialog } from '../../../context/DialogContext';
 import { useToast } from '../../../context/ToastContext';
 import { REMOVAL_PENALTY_TILES } from '../logic/tiles';
 
 export default function ArenaSettings() {
-  const { room, habits, addHabit, removeHabit, setPrivacy, setAllPrivacy, leaveRoom, deleteRoom, isRoomOwner, setPuzzleMode } =
-    useArena();
+  const {
+    room,
+    habits,
+    addHabit,
+    removeHabit,
+    deleteHabit,
+    setPrivacy,
+    setAllPrivacy,
+    leaveRoom,
+    deleteRoom,
+    isRoomOwner,
+    setPuzzleMode,
+  } = useArena();
   const { confirm } = useDialog();
   const toast = useToast();
   const [label, setLabel] = useState('');
@@ -34,14 +45,31 @@ export default function ArenaSettings() {
     toast.show({ message: `"${name}" starts counting tomorrow.` });
   };
 
+  /**
+   * Soft remove: the habit keeps showing and keeps counting through the rest
+   * of this week — it does NOT disappear immediately, that's the point. It
+   * drops off on its own once the week ends, and the following picture grows
+   * by REMOVAL_PENALTY_TILES as the cost of dropping it.
+   */
   const remove = async (habitId: string, name: string) => {
     const ok = await confirm({
-      title: `Remove "${name}"?`,
-      message: `It keeps counting until the week ends. Next week's picture grows by ${REMOVAL_PENALTY_TILES} pieces — that's the cost of dropping a habit.`,
-      confirmLabel: 'Remove',
+      title: `Wind down "${name}"?`,
+      message: `It keeps counting until the week ends, then it's gone — this doesn't remove it right now. Next week's picture grows by ${REMOVAL_PENALTY_TILES} pieces, the cost of dropping a habit. Added it by mistake? Use "Delete outright" instead.`,
+      confirmLabel: 'Wind down',
       danger: true,
     });
     if (ok) await removeHabit(habitId);
+  };
+
+  /** Hard delete: gone immediately, no penalty, no trace. For mistakes only. */
+  const deleteOutright = async (habitId: string, name: string) => {
+    const ok = await confirm({
+      title: `Delete "${name}" outright?`,
+      message: 'Removes it immediately with no penalty and no history — only for habits added by mistake.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (ok) await deleteHabit(habitId);
   };
 
   return (
@@ -114,10 +142,19 @@ export default function ArenaSettings() {
               </button>
               <button
                 onClick={() => remove(h.id, h.label)}
-                aria-label={`Remove ${h.label}`}
-                className="rounded-lg p-2 text-white/30 transition-colors hover:bg-white/10 hover:text-red-400 cursor-pointer"
+                aria-label={`Wind down ${h.label} — keeps counting until the week ends`}
+                title="Wind down — keeps counting until the week ends, then drops off"
+                className="rounded-lg p-2 text-white/30 transition-colors hover:bg-white/10 hover:text-amber-400 cursor-pointer"
               >
                 <Trash2 size={13} />
+              </button>
+              <button
+                onClick={() => deleteOutright(h.id, h.label)}
+                aria-label={`Delete ${h.label} outright — added by mistake`}
+                title="Delete outright — added by mistake, no penalty"
+                className="rounded-lg p-2 text-white/30 transition-colors hover:bg-white/10 hover:text-red-400 cursor-pointer"
+              >
+                <XCircle size={13} />
               </button>
             </div>
           ))}

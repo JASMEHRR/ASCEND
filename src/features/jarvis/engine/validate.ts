@@ -10,7 +10,7 @@ export function parseJarvisResponse(raw: unknown): JarvisResponse {
   const reply =
     typeof obj.reply === 'string' && obj.reply.trim()
       ? obj.reply.trim()
-      : "I didn't quite catch that, sir. Could you rephrase?";
+      : "I didn't quite catch that. Could you rephrase?";
   const plan = typeof obj.plan === 'string' && obj.plan.trim() ? obj.plan.trim() : undefined;
   const speak = typeof obj.speak === 'string' && obj.speak.trim() ? obj.speak.trim() : undefined;
   const needsClarification = obj.needsClarification === true;

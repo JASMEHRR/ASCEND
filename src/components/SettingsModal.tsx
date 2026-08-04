@@ -300,7 +300,7 @@ export default function SettingsModal({ isOpen, onClose, state, updateState, fea
                   )}
                 </select>
                 <button
-                  onClick={() => voice.speak('Voice check complete. All systems nominal, sir.')}
+                  onClick={() => voice.speak('Voice check complete. All systems nominal.')}
                   aria-label="Test voice"
                   className="p-2 rounded-full bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/15 transition-colors cursor-pointer shrink-0"
                 >

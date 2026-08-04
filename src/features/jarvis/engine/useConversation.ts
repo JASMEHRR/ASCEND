@@ -171,7 +171,7 @@ export function useConversation(deps: ConversationDeps): Conversation {
         deps.speak(spoken);
       } catch (e) {
         if ((e as Error).name === 'AbortError') return;
-        push({ role: 'assistant', content: `Connection issue: ${(e as Error).message}. Try again, sir.` });
+        push({ role: 'assistant', content: `Connection issue: ${(e as Error).message}. Try again.` });
       } finally {
         thinkingRef.current = false;
         setThinking(false);

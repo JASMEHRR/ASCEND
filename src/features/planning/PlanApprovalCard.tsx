@@ -69,7 +69,7 @@ export default function PlanApprovalCard({ updateState }: Props) {
     });
     greet(
       token
-        ? `Plan locked in, sir. ${synced} block${synced === 1 ? '' : 's'} on the calendar${failed ? `; ${failed} failed to sync` : ''}.`
+        ? `Plan locked in. ${synced} block${synced === 1 ? '' : 's'} on the calendar${failed ? `; ${failed} failed to sync` : ''}.`
         : `Plan approved. I filed ${synced} block${synced === 1 ? '' : 's'} as tasks — connect Google Calendar in Settings for real scheduling.`,
     );
     setApplying(false);

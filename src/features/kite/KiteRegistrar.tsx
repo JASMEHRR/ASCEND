@@ -74,7 +74,7 @@ export default function KiteRegistrar() {
     const failMessage = (e: unknown): string => {
       if (e instanceof KiteExpiredError) {
         markExpired();
-        return 'Kite session expired — reconnect from Settings, sir.';
+        return 'Kite session expired — reconnect from Settings.';
       }
       return `Kite unavailable: ${(e as Error).message}`;
     };

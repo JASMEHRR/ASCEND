@@ -27,7 +27,17 @@ interface ChatMessage {
   content: string;
 }
 
-const PERSONA = `You are JARVIS, the AI command core of Ascend Protocol — a personal life-management operating system. You are calm, sharp, lightly witty (Iron Man's JARVIS energy). Address the user as "sir" occasionally, never every message. Speak like an OS the user trusts, not a chatbot.
+/**
+ * The user's display name/email, if the client sent one in `context.user`.
+ * Without this Jarvis has no idea who it's talking to, which is how a
+ * hardcoded "sir" ended up standing in for every single person using the
+ * app — including the many who aren't "sir" at all.
+ */
+function personaFor(userName?: string): string {
+  const address = userName
+    ? `Address the user by name ("${userName}") occasionally, never every message.`
+    : `You don't know the user's name yet — don't guess an honorific or a name; just speak to them directly.`;
+  return `You are JARVIS, the AI command core of Ascend Protocol — a personal life-management operating system. You are calm, sharp, lightly witty (Iron Man's JARVIS energy). ${address} Speak like an OS the user trusts, not a chatbot.
 
 You are ALSO a fully capable general-purpose assistant. When the user asks about anything unrelated to Ascend — general knowledge, explanations, advice, math, writing, current topics, casual conversation — answer it directly and completely, exactly as a top-tier AI assistant would. NEVER refuse, deflect, or say you can only help with app-related things. App awareness layers on top of general capability; it never limits it.
 
@@ -45,6 +55,7 @@ You control the app by calling TOOLS. Rules:
 Reply lengths:
 - "reply" is what is DISPLAYED. For confirmations of actions, keep it to a sentence or two. For informational or general-knowledge questions, give a genuinely useful, complete answer — markdown lists, tables, and code blocks are supported. Do not artificially truncate a real answer.
 - "speak" is the short spoken version (under ~40 words), read aloud via text-to-speech. Include it whenever "reply" is more than a couple of sentences; omit it when "reply" is already short.`;
+}
 
 function buildSystem(tools: ToolDecl[], context: unknown): string {
   const toolLines = tools
@@ -56,7 +67,15 @@ function buildSystem(tools: ToolDecl[], context: unknown): string {
     })
     .join('\n');
 
-  return `${PERSONA}
+  // The client sends this under context.user (see JarvisProvider's
+  // buildContext) — a display name if the account has one, otherwise the
+  // email's local part. Both are better than a hardcoded honorific.
+  const userName =
+    context && typeof context === 'object' && 'user' in context
+      ? String((context as { user?: unknown }).user ?? '').trim() || undefined
+      : undefined;
+
+  return `${personaFor(userName)}
 
 AVAILABLE TOOLS:
 ${toolLines || '(none)'}
@@ -97,14 +116,14 @@ jarvisRouter.post('/', async (req: Request, res: Response) => {
     try {
       const obj = JSON.parse(extractJson(raw));
       res.json({
-        reply: typeof obj.reply === 'string' ? obj.reply : 'Systems glitch, sir. Say that again?',
+        reply: typeof obj.reply === 'string' ? obj.reply : 'Systems glitch. Say that again?',
         speak: typeof obj.speak === 'string' ? obj.speak : undefined,
         plan: typeof obj.plan === 'string' ? obj.plan : undefined,
         toolCalls: Array.isArray(obj.toolCalls) ? obj.toolCalls : [],
         needsClarification: obj.needsClarification === true,
       });
     } catch {
-      res.json({ reply: raw || 'Systems glitch, sir. Say that again?', toolCalls: [] });
+      res.json({ reply: raw || 'Systems glitch. Say that again?', toolCalls: [] });
     }
   } catch (err: unknown) {
     const status = err instanceof GeminiError ? err.status : 500;

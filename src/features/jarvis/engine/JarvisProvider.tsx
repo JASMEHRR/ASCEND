@@ -30,10 +30,16 @@ export function JarvisProvider({ children }: { children: ReactNode }) {
   const registry = useToolRegistry();
   const memory = useJarvisMemory(user?.uid ?? null);
 
+  // A name for the backend to actually address the user by, instead of the
+  // hardcoded "sir" that used to stand in for everyone. Prefers a real display
+  // name; falls back to the email's local part; omitted entirely if neither
+  // exists, so Jarvis just doesn't use an honorific rather than guessing one.
+  const userName = user?.displayName?.trim() || user?.email?.split('@')[0] || undefined;
+
   // Context always carries layered memory (facts + recent actions).
   const buildContext = useMemo(
-    () => () => ({ ...registry.buildContext(), memory: memory.snapshot() }),
-    [registry.buildContext, memory.snapshot],
+    () => () => ({ ...registry.buildContext(), memory: memory.snapshot(), user: userName }),
+    [registry.buildContext, memory.snapshot, userName],
   );
 
   // Voice's onResult must call the latest sendMessage — routed through a ref.
