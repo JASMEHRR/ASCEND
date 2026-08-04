@@ -11,6 +11,7 @@ export const INITIAL_STATE: OSState = {
   ideas: [],
   visionBoard: [],
   points: 0,
+  wishes: 0,
 };
 
 function todayStr(): string {
@@ -25,6 +26,8 @@ function syncPayload(s: OSState) {
     ideas: s.ideas,
     visionBoard: s.visionBoard,
     points: s.points ?? 0,
+    wishes: s.wishes ?? 0,
+    showWishes: s.showWishes ?? true,
     features: s.features ?? null,
     jarvisPrefs: s.jarvisPrefs ?? null,
     finance: s.finance ?? null,
@@ -106,6 +109,8 @@ export function useCloudSync(uid: string | null): CloudSync {
           ideas: latestUser.ideas ?? base.ideas,
           visionBoard: latestUser.visionBoard ?? base.visionBoard,
           points: latestUser.points ?? base.points,
+          wishes: latestUser.wishes ?? base.wishes,
+          showWishes: latestUser.showWishes ?? base.showWishes,
           features: latestUser.features ?? base.features,
           jarvisPrefs: latestUser.jarvisPrefs ?? base.jarvisPrefs,
           finance: latestUser.finance ?? base.finance,
@@ -168,7 +173,7 @@ export function useCloudSync(uid: string | null): CloudSync {
       try {
         await setDoc(
           doc(db, 'users', uid),
-          { tasks: p.tasks, ideas: p.ideas, visionBoard: p.visionBoard, points: p.points, streak: p.streak, streakDate: p.streakDate, features: p.features, jarvisPrefs: p.jarvisPrefs, finance: p.finance, journal: p.journal },
+          { tasks: p.tasks, ideas: p.ideas, visionBoard: p.visionBoard, points: p.points, wishes: p.wishes, showWishes: p.showWishes, streak: p.streak, streakDate: p.streakDate, features: p.features, jarvisPrefs: p.jarvisPrefs, finance: p.finance, journal: p.journal },
           { merge: true },
         );
         await setDoc(

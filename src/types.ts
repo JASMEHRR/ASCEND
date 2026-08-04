@@ -43,6 +43,9 @@ export interface OSState {
   streakDate?: string;
   primaryObjective?: PrimaryObjective;
   points?: number;
+  wishes?: number;
+  /** Whether the wish counter shows on the dashboard. Defaults to on. */
+  showWishes?: boolean;
   /**
    * Per-user module enable/disable state, keyed by FeatureId (see
    * features/registry.ts). Absent keys fall back to each module's default.

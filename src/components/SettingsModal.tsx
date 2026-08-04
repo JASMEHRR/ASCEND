@@ -61,6 +61,8 @@ export default function SettingsModal({ isOpen, onClose, state, updateState, fea
   const setGlassOpacity = (v: number) => updateState((s) => ({ ...s, glassOpacity: v }));
   const glassBlur = state.glassBlur ?? 20;
   const setGlassBlur = (v: number) => updateState((s) => ({ ...s, glassBlur: v }));
+  const showWishes = state.showWishes ?? true;
+  const toggleShowWishes = () => updateState((s) => ({ ...s, showWishes: !(s.showWishes ?? true) }));
 
   const englishVoices = voice.voices.filter((v) => /^en[-_]/i.test(v.lang));
   const pickerVoices = englishVoices.length ? englishVoices : voice.voices;
@@ -418,6 +420,19 @@ export default function SettingsModal({ isOpen, onClose, state, updateState, fea
               <SectionTitle>Sanctuary Atmosphere</SectionTitle>
               <AtmosphereSelector value={selectedAtmosphereMode} onChange={setSelectedAtmosphereMode} />
             </div>
+
+            <button
+              onClick={toggleShowWishes}
+              role="switch"
+              aria-checked={showWishes}
+              className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl bg-white/[0.03] border border-white/8 hover:bg-white/[0.06] hover:border-white/15 transition-all cursor-pointer text-left"
+            >
+              <span className="flex-1 min-w-0">
+                <span className="block text-[12px] font-bold text-white/85 leading-tight">Wish counter</span>
+                <span className="block text-[10.5px] text-white/35">Shows the wish count on the dashboard.</span>
+              </span>
+              <ToggleTrack on={showWishes} />
+            </button>
           </section>
           )}
 
