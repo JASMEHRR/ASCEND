@@ -27,9 +27,22 @@ interface Props {
    * stretches to fit it. Falls back to the grid ratio only when unknown.
    */
   aspect?: number;
+  /**
+   * Player id -> display name, for a shared room canvas where tiles carry
+   * who earned them. Absent on a solo canvas, where every tile is the
+   * viewer's own and attribution would be redundant.
+   */
+  playerNames?: Record<string, string>;
 }
 
-export default function PuzzleCanvas({ imageUrl, cols, rows, placements, landing, hidden, aspect }: Props) {
+/** A stable, low-saturation colour per player id — just enough to tell tiles apart. */
+function playerColor(id: string): string {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0;
+  return `hsl(${Math.abs(hash) % 360} 70% 65%)`;
+}
+
+export default function PuzzleCanvas({ imageUrl, cols, rows, placements, landing, hidden, aspect, playerNames }: Props) {
   const byIndex = new Map(placements.map((p) => [p.index, p]));
 
   return (
@@ -64,7 +77,17 @@ export default function PuzzleCanvas({ imageUrl, cols, rows, placements, landing
               transition={{ type: 'spring', stiffness: 260, damping: 24 }}
               className="relative"
               style={style}
+              title={tile.playerId && playerNames?.[tile.playerId] ? playerNames[tile.playerId] : undefined}
             >
+              {/* On a shared canvas, a thin border in the earner's colour —
+                  subtle, but enough to tell whose tiles are whose on hover. */}
+              {tile.playerId && (
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0"
+                  style={{ boxShadow: `inset 0 0 0 1.5px ${playerColor(tile.playerId)}` }}
+                />
+              )}
               {/* Repairs are marked: this tile was earned in a later week. */}
               {tile.repair && (
                 <span

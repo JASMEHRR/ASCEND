@@ -14,6 +14,7 @@ import {
   isHabitActiveOn,
   missesOn,
   projectedTiles,
+  spentThisWeek,
   tilesEarnedInWeek,
   tilesEarnedOn,
   wallet,
@@ -193,6 +194,34 @@ test('the wallet carries unspent tiles forward', () => {
   assert.equal(w.earned, 3);
   assert.equal(w.placed, 1);
   assert.equal(w.available, 2); // spendable on this week or an old one
+});
+
+test('spentThisWeek counts every placement on a solo canvas, regardless of playerId', () => {
+  const days = weekDays('2026-08-05');
+  const placements: TilePlacement[] = [
+    { index: 0, week: '2026-W32', earnedOn: '2026-08-03', repair: false, at: '' },
+    { index: 1, week: '2026-W32', earnedOn: '2026-08-04', repair: false, at: '', playerId: 'other' },
+  ];
+  assert.equal(spentThisWeek(placements, days), 2);
+});
+
+test('spentThisWeek on a shared canvas counts only the given player\'s own tiles', () => {
+  const days = weekDays('2026-08-05');
+  const placements: TilePlacement[] = [
+    { index: 0, week: '2026-W32', earnedOn: '2026-08-03', repair: false, at: '', playerId: 'me' },
+    { index: 1, week: '2026-W32', earnedOn: '2026-08-04', repair: false, at: '', playerId: 'them' },
+    { index: 2, week: '2026-W32', earnedOn: '2026-08-05', repair: false, at: '', playerId: 'me' },
+  ];
+  assert.equal(spentThisWeek(placements, days, 'me'), 2);
+  assert.equal(spentThisWeek(placements, days, 'them'), 1);
+});
+
+test('spentThisWeek ignores placements outside the given days', () => {
+  const days = weekDays('2026-08-05');
+  const placements: TilePlacement[] = [
+    { index: 0, week: '2026-W31', earnedOn: '2026-07-29', repair: true, at: '', playerId: 'me' },
+  ];
+  assert.equal(spentThisWeek(placements, days, 'me'), 0);
 });
 
 test('tilesEarnedInWeek sums the week', () => {

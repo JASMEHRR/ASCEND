@@ -9,7 +9,7 @@ import { useToast } from '../../../context/ToastContext';
 import { REMOVAL_PENALTY_TILES } from '../logic/tiles';
 
 export default function ArenaSettings() {
-  const { room, habits, addHabit, removeHabit, setPrivacy, setAllPrivacy, leaveRoom, deleteRoom, isRoomOwner } =
+  const { room, habits, addHabit, removeHabit, setPrivacy, setAllPrivacy, leaveRoom, deleteRoom, isRoomOwner, setPuzzleMode } =
     useArena();
   const { confirm } = useDialog();
   const toast = useToast();
@@ -144,6 +144,34 @@ export default function ArenaSettings() {
               <Copy size={13} />
             </button>
           </div>
+
+          {isRoomOwner && (
+            <div className="space-y-1.5">
+              <p className="text-[10.5px] leading-snug text-white/30">
+                Puzzle mode. Shared starts one canvas for the whole room from the next placement — switching
+                back leaves it as-is.
+              </p>
+              <div className="flex gap-2">
+                {(['solo', 'shared'] as const).map((mode) => {
+                  const active = (room.puzzleMode ?? 'solo') === mode;
+                  return (
+                    <button
+                      key={mode}
+                      onClick={() => setPuzzleMode(mode)}
+                      className={`flex-1 rounded-xl border py-2 text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                        active
+                          ? 'border-brand-400/40 bg-brand-500/15 text-white'
+                          : 'border-white/10 bg-white/[0.03] text-white/50 hover:text-white/85 hover:border-white/20'
+                      }`}
+                    >
+                      {mode === 'solo' ? 'Solo' : 'Shared'}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-2">
             <button
               onClick={async () => {

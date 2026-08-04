@@ -2,7 +2,7 @@
  * The Puzzle tab: this week's picture, spare tiles, and older weeks you can
  * still repair.
  */
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Eye, ImagePlus, Link2, ListPlus, Loader2, Puzzle, Upload, Wrench } from 'lucide-react';
 import { useArena } from '../ArenaContext';
 import { usePuzzle } from '../usePuzzle';
@@ -10,8 +10,13 @@ import { measureImage, prepareImage } from '../logic/image';
 import PuzzleCanvas from './PuzzleCanvas';
 
 export default function ArenaPuzzle({ onNeedHabits }: { onNeedHabits?: () => void }) {
-  const { habits } = useArena();
+  const { habits, players, room } = useArena();
   const { loading, busy, current, repairable, canvases, available, setImage, place, reveal } = usePuzzle();
+  // Only meaningful on a shared canvas, where tiles carry who earned them.
+  const playerNames = useMemo(
+    () => (room?.puzzleMode === 'shared' ? Object.fromEntries(players.map((p) => [p.id, p.name])) : undefined),
+    [players, room?.puzzleMode],
+  );
   const [landing, setLanding] = useState<number | null>(null);
   const [url, setUrl] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -202,6 +207,7 @@ export default function ArenaPuzzle({ onNeedHabits }: { onNeedHabits?: () => voi
         aspect={current.aspect}
         placements={current.placements}
         landing={landing}
+        playerNames={playerNames}
       />
 
       {/* Old unfinished weeks — spare tiles can still rescue them. */}
@@ -227,6 +233,7 @@ export default function ArenaPuzzle({ onNeedHabits }: { onNeedHabits?: () => voi
                   rows={c.rows}
                   aspect={c.aspect}
                   placements={c.placements}
+                  playerNames={playerNames}
                 />
                 <span className="block px-0.5 font-mono text-[9.5px] text-white/35">
                   {c.week} · {c.placed}/{c.total}
@@ -254,6 +261,7 @@ export default function ArenaPuzzle({ onNeedHabits }: { onNeedHabits?: () => voi
                     rows={c.rows}
                     aspect={c.aspect}
                     placements={c.placements}
+                    playerNames={playerNames}
                   />
                   <span className="block px-0.5 font-mono text-[9px] text-white/30">{c.week}</span>
                 </div>
