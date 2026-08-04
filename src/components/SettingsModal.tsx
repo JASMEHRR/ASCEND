@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { X, Settings2, Lock, Volume2, Blocks, Bot, Palette, Plug, LifeBuoy, GripVertical, Eye, EyeOff, RotateCcw, ChevronUp, ChevronDown } from 'lucide-react';
 import { OSState } from '../types';
-import AtmosphereSelector from './AtmosphereSelector';
+import SanctuaryBackgrounds from './SanctuaryBackgrounds';
 import { useDialog } from '../context/DialogContext';
 import { useJarvis } from '../features/jarvis/engine/JarvisProvider';
 import ObsidianSettings from '../features/obsidian/ObsidianSettings';
@@ -401,7 +401,12 @@ export default function SettingsModal({ isOpen, onClose, state, updateState, fea
 
             <div className="space-y-2 pt-2">
               <SectionTitle>Sanctuary Atmosphere</SectionTitle>
-              <AtmosphereSelector value={selectedAtmosphereMode} onChange={setSelectedAtmosphereMode} />
+              <SanctuaryBackgrounds
+                value={selectedAtmosphereMode}
+                onChange={setSelectedAtmosphereMode}
+                customBackgrounds={state.customBackgrounds ?? []}
+                updateState={updateState}
+              />
             </div>
 
             <button

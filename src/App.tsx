@@ -14,8 +14,7 @@ import { useFeatures } from './features/useFeatures';
 import { isFeatureEnabled, type FeatureId, type FeatureModule } from './features/registry';
 import { disciplineScore } from './lib/discipline';
 import JarvisDashboard from './features/jarvis/ui/JarvisDashboard';
-import AtmosphereBackdrop, { getAutoAtmosphereId, ATMOSPHERES } from './components/AtmosphereBackdrop';
-import AtmosphereSelector from './components/AtmosphereSelector';
+import AtmosphereBackdrop, { getAutoAtmosphereId, atmosphereFromCustom, ATMOSPHERES } from './components/AtmosphereBackdrop';
 import CondensationEffect from './components/CondensationEffect';
 import FlipClock from './components/FlipClock';
 import SettingsModal from './components/SettingsModal';
@@ -115,7 +114,6 @@ export default function App() {
   const features = useFeatures(state, updateState);
 
   const [view, setView] = useState<View>('dashboard');
-  const [selectedAtmosphereMode, setSelectedAtmosphereMode] = useState('auto');
   const [, setTimeTick] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Collapsing the nav hands the width to whichever module is open — the
@@ -143,8 +141,16 @@ export default function App() {
     root.setProperty('--glass-blur', `${state?.glassBlur ?? 20}px`);
   }, [state?.glassOpacity, state?.glassBlur]);
 
+  // Persisted (not local state) so the choice survives a reload — it never
+  // did before, silently resetting to auto every time the app was reopened.
+  const selectedAtmosphereMode = state?.atmosphereMode ?? 'auto';
+  const setSelectedAtmosphereMode = (mode: string) => updateState((s) => ({ ...s, atmosphereMode: mode }));
+  const customBackground = state?.customBackgrounds?.find((b) => b.id === selectedAtmosphereMode);
   const activeAtmosphereId = selectedAtmosphereMode === 'auto' ? getAutoAtmosphereId() : selectedAtmosphereMode;
-  const activeAtmosphere = ATMOSPHERES.find((a) => a.id === activeAtmosphereId) || ATMOSPHERES[1];
+  const activeAtmosphere =
+    (customBackground && atmosphereFromCustom(customBackground)) ||
+    ATMOSPHERES.find((a) => a.id === activeAtmosphereId) ||
+    ATMOSPHERES[1];
 
   // Reward the user on every 10-point milestone.
   useEffect(() => {
@@ -246,12 +252,9 @@ export default function App() {
               <FlipClock compact />
             </div>
 
-            <div className="space-y-2 border-t border-white/5 pt-3">
-              <p className="text-[9px] font-extrabold text-white/40 uppercase tracking-[0.18em] pl-1.5 leading-none font-mono">Sanctuary Atmosphere</p>
-              <AtmosphereSelector value={selectedAtmosphereMode} onChange={setSelectedAtmosphereMode} />
-            </div>
-
-            <nav className="space-y-1.5 pt-1 border-t border-white/5" aria-label="Primary">
+            {/* Sanctuary Atmosphere moved to Settings — pick a background and
+                manage custom ones from there instead of a sidebar dropdown. */}
+            <nav className="space-y-1.5 border-t border-white/5 pt-3" aria-label="Primary">
               <div className="mb-2.5 flex items-center justify-between gap-2 pl-1.5">
                 <p className="text-[9px] font-extrabold text-white/40 uppercase tracking-[0.18em] leading-none font-mono">Navigation</p>
                 <button

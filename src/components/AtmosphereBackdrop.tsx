@@ -155,6 +155,30 @@ export const ATMOSPHERES: AtmosphereOption[] = [
   }
 ];
 
+/**
+ * Wrap a user-uploaded background into the same shape ATMOSPHERES presets
+ * use, so AtmosphereBackdrop needs no special-casing for a custom image —
+ * it's a calm, unobtrusive backdrop with none of the presets' colored glow
+ * or weather effects, since those were hand-tuned per built-in photo.
+ */
+export function atmosphereFromCustom(bg: { id: string; url: string; label: string }): AtmosphereOption {
+  return {
+    id: bg.id,
+    name: bg.label,
+    label: bg.label,
+    gradient: 'linear-gradient(to bottom, #0a0d14 0%, #05070a 100%)',
+    glowColor: 'rgba(255, 255, 255, 0.08)',
+    glowColorSecondary: 'rgba(255, 255, 255, 0.04)',
+    lightning: bg.label,
+    mistIntensity: 0.15,
+    condensationActive: false,
+    rainActive: false,
+    blur: 'blur(70px)',
+    textColor: 'text-white/70',
+    backgroundImage: bg.url,
+  };
+}
+
 export function getAutoAtmosphereId(): string {
   const hr = new Date().getHours();
   if (hr >= 5 && hr < 7) return 'sunrise';

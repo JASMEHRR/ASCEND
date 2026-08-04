@@ -29,6 +29,16 @@ export interface PrimaryObjective {
   done: boolean;
 }
 
+/** A user-supplied background image, picked from Settings → Sanctuary. */
+export interface CustomBackground {
+  id: string;
+  /** Image URL — pasted link or a compressed data URL upload. */
+  url: string;
+  /** Short label shown in the picker, e.g. "My photo". */
+  label: string;
+  createdAt: string;
+}
+
 export interface OSState {
   lastVisit: string;
   water: number;
@@ -71,6 +81,17 @@ export interface OSState {
     /** Local hours [start, end) when proactive insights may speak (default 8–22). */
     activeHours?: { start: number; end: number };
   };
+  /**
+   * Sanctuary atmosphere: 'auto' follows time-of-day, a built-in preset id,
+   * or a custom background's id (see customBackgrounds). Set in Settings.
+   */
+  atmosphereMode?: string;
+  /**
+   * User-added background images, managed in Settings → Sanctuary. Each gets
+   * its own id so atmosphereMode can point at one without touching the
+   * built-in ATMOSPHERES presets.
+   */
+  customBackgrounds?: CustomBackground[];
   /** Stocks & Finance module (manual entries; live quotes come from /api/stocks). */
   finance?: FinanceState;
   /**

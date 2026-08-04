@@ -1,9 +1,51 @@
-import { useState } from 'react';
-import { motion } from 'motion/react';
+import { useEffect, useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Mail, Lock, LogIn, Loader2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import JarvisOrb from '../../features/jarvis/ui/JarvisOrb';
 
 type Mode = 'signin' | 'signup';
+
+/** Rotating one-liners introducing what's inside, shown next to the orb. */
+const PITCH_LINES = [
+  "I'm Jarvis — I run this place with you.",
+  'Habits, rituals, and streaks, tracked daily.',
+  'A vision board, journal, and idea log in one spot.',
+  'Race friends on shared habit puzzles in Arena.',
+  'Ask me anything — I can see your whole day.',
+  'Stocks, tasks, and goals, all synced across devices.',
+];
+
+function LoginPitch() {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setI((n) => (n + 1) % PITCH_LINES.length), 3400);
+    return () => clearInterval(t);
+  }, []);
+
+  return (
+    <div className="mb-8 flex flex-col items-center text-center">
+      <JarvisOrb state="idle" size={72} />
+      <p className="mt-4 text-[10px] font-mono font-black uppercase tracking-[0.3em] text-brand-400">
+        Ascend Protocol
+      </p>
+      <div className="mt-2.5 h-9 max-w-xs px-2">
+        <AnimatePresence mode="wait">
+          <motion.p
+            key={i}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.35 }}
+            className="text-[13px] leading-snug text-white/60"
+          >
+            {PITCH_LINES[i]}
+          </motion.p>
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
 
 /** Maps Firebase auth error codes to friendly, non-technical messages. */
 function friendlyError(code: string): string {
@@ -75,11 +117,13 @@ export default function LoginScreen() {
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: 'spring', stiffness: 260, damping: 26 }}
-        className="relative w-full max-w-sm rounded-[2rem] border border-white/12 bg-white/[0.03] backdrop-blur-2xl p-8 shadow-[0_30px_60px_rgba(0,0,0,0.6)]"
+        className="relative w-full max-w-sm"
       >
+        <LoginPitch />
+
+        <div className="rounded-[2rem] border border-white/12 bg-white/[0.03] backdrop-blur-2xl p-8 shadow-[0_30px_60px_rgba(0,0,0,0.6)]">
         <div className="mb-7 text-center">
-          <p className="text-[10px] font-mono font-black uppercase tracking-[0.28em] text-brand-400">Ascend Protocol</p>
-          <h1 className="mt-2 text-2xl font-extrabold tracking-tight">
+          <h1 className="text-2xl font-extrabold tracking-tight">
             {mode === 'signin' ? 'Welcome back' : 'Create your account'}
           </h1>
           <p className="mt-1.5 text-[12px] text-white/45">
@@ -170,6 +214,7 @@ export default function LoginScreen() {
               Forgot password?
             </button>
           )}
+        </div>
         </div>
       </motion.div>
     </div>

@@ -169,11 +169,22 @@ export default function FlipClock({ compact = false }: { compact?: boolean }) {
         </div>
       </div>
 
-      {/* Centered clean metadata info */}
-      <div className={`flex items-center justify-center text-center font-mono font-bold text-white/55 uppercase mt-5 z-10 select-none ${compact ? 'text-[9px] tracking-[0.15em] flex flex-col gap-1.5' : 'text-[11px] sm:text-xs tracking-[0.24em] gap-2.5 sm:gap-4 px-4'}`}>
-        <span className="whitespace-nowrap">{uppercaseDate}</span>
-        {!compact && <span className="text-white/20 font-light">•</span>}
-        <span className={compact ? 'text-white/80 tracking-widest text-[10px]' : 'text-white/90 text-xs sm:text-sm font-black tracking-normal'}>{ampm}</span>
+      {/* Centered clean metadata info — date on its own line, AM/PM below it. */}
+      <div className={`mt-5 z-10 flex flex-col items-center select-none ${compact ? 'gap-1' : 'gap-1.5'}`}>
+        <span
+          className={`whitespace-nowrap text-center font-mono font-bold uppercase text-white/60 ${
+            compact ? 'text-[9px] tracking-[0.14em]' : 'text-[11px] tracking-[0.22em] sm:text-xs'
+          }`}
+        >
+          {uppercaseDate}
+        </span>
+        <span
+          className={`font-mono font-black uppercase tracking-[0.3em] text-brand-400/90 ${
+            compact ? 'text-[9px]' : 'text-[10px] sm:text-[11px]'
+          }`}
+        >
+          {ampm}
+        </span>
       </div>
     </div>
   );

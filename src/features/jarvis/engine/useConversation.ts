@@ -75,6 +75,25 @@ export function useConversation(deps: ConversationDeps): Conversation {
   // 'unset' is distinct from both a real uid and null (signed out), so the
   // very first render always runs the load-transcript effect once.
   const loadedForUidRef = useRef<string | null | 'unset'>('unset');
+  /**
+   * Guards the write-effect against firing before Firestore's *first* snapshot
+   * for the current uid has actually arrived.
+   *
+   * Without this: on sign-in, `uid` flips to a real value one render before
+   * the async onSnapshot callback delivers the saved transcript. `messages`
+   * is still the stale (often just-the-greeting) local state at that moment,
+   * and the write-effect — which also depends on `deps.uid` — fires in that
+   * same pass and schedules an 800ms write of the stale value. Normally the
+   * follow-up render (once the snapshot lands) cancels that timer before it
+   * fires. But on a slow connection the round-trip can take longer than
+   * 800ms, so the stale write lands first and clobbers the real history —
+   * this was the actual cause of chat "vanishing" on relogin.
+   */
+  const readyForUidRef = useRef<string | null>(null);
+  // Mirrors readyForUidRef but as state, purely so the write-effect re-runs
+  // once readiness flips even when there's no stored data to load (a brand
+  // new account) — a ref flip alone doesn't trigger a re-render.
+  const [, forceRecheck] = useState(0);
 
   /**
    * Persist the transcript the same way Jarvis's memory already does:
@@ -86,6 +105,7 @@ export function useConversation(deps: ConversationDeps): Conversation {
     const uid = deps.uid;
     if (loadedForUidRef.current === uid) return;
     loadedForUidRef.current = uid;
+    readyForUidRef.current = null;
 
     const cacheKey = `ascend_jarvis_chat_${uid ?? 'guest'}`;
     let seed: JarvisMessage[] = [GREETING];
@@ -100,7 +120,11 @@ export function useConversation(deps: ConversationDeps): Conversation {
     }
     setMessages(seed);
     lastSyncedRef.current = '';
-    if (!uid) return;
+    if (!uid) {
+      // No account to wait on — the local cache IS the source of truth.
+      readyForUidRef.current = uid;
+      return;
+    }
 
     const ref = doc(db, 'users', uid, 'jarvis', 'chat');
     return onSnapshot(
@@ -108,11 +132,21 @@ export function useConversation(deps: ConversationDeps): Conversation {
       (snap) => {
         if (snap.metadata.hasPendingWrites) return;
         const stored = snap.data()?.messages;
+        // Even an empty/missing doc counts as "checked" — a genuinely new
+        // account has nothing to load, and that's fine; it just shouldn't be
+        // confused with "haven't heard back yet". forceRecheck re-renders so
+        // the write-effect notices even when there's no data to setMessages.
+        readyForUidRef.current = uid;
+        forceRecheck((n) => n + 1);
         if (!Array.isArray(stored) || stored.length === 0) return;
         lastSyncedRef.current = JSON.stringify(stored);
         setMessages(stored);
       },
-      (err) => console.warn('[jarvis chat] listener error:', err.message),
+      (err) => {
+        console.warn('[jarvis chat] listener error:', err.message);
+        readyForUidRef.current = uid; // don't block writes forever on a denied/broken read
+        forceRecheck((n) => n + 1);
+      },
     );
   }, [deps.uid]);
 
@@ -126,6 +160,9 @@ export function useConversation(deps: ConversationDeps): Conversation {
       /* ignore (private window / storage full) */
     }
     if (!uid) return;
+    // Firestore's own first read for this uid hasn't come back yet — writing
+    // now risks overwriting real history with this render's stale/seed value.
+    if (readyForUidRef.current !== uid) return;
     const payload = JSON.stringify(trimmed);
     if (payload === lastSyncedRef.current) return;
     const t = setTimeout(async () => {
