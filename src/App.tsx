@@ -5,6 +5,7 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Sliders, LogOut, Loader2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { readStore, writeStore } from './lib/storage';
 import { useAuth } from './context/AuthContext';
 import { useDialog } from './context/DialogContext';
 import { useCloudSync } from './hooks/useCloudSync';
@@ -117,10 +118,10 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Collapsing the nav hands the width to whichever module is open — the
   // puzzle and the stocks table both want it. Remembered across reloads.
-  const [navOpen, setNavOpen] = useState(() => localStorage.getItem('ascend_nav') !== 'closed');
+  const [navOpen, setNavOpen] = useState(() => readStore('ascend_nav') !== 'closed');
   const toggleNav = () =>
     setNavOpen((open) => {
-      localStorage.setItem('ascend_nav', open ? 'closed' : 'open');
+      writeStore('ascend_nav', open ? 'closed' : 'open');
       return !open;
     });
   const [rewardModalOpen, setRewardModalOpen] = useState(false);

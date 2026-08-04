@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { readStore, writeStore } from '../../../lib/storage';
 
 // Vendor-prefixed Web Speech API — typed loosely; it isn't in lib.dom yet.
 const SpeechRecognitionImpl: any =
@@ -10,6 +11,7 @@ const synthAvailable = typeof window !== 'undefined' && 'speechSynthesis' in win
 
 /** Persisted so Jarvis sounds the same on every reload and every session. */
 const VOICE_STORAGE_KEY = 'ascend_jarvis_voice_uri';
+const HANDS_FREE_KEY = 'ascend_jarvis_handsfree';
 const MUTE_STORAGE_KEY = 'ascend_jarvis_muted';
 
 /**
@@ -166,6 +168,19 @@ export function useVoice({ onResult }: UseVoiceOptions) {
     setSpeaking(false);
   }, []);
 
+  /**
+   * Speech ended on its own (as opposed to being interrupted by stopSpeaking).
+   * In hands-free mode this is the hand-off point: re-open the mic so the
+   * conversation continues. The short delay lets the audio tail finish so the
+   * recogniser doesn't hear the last syllable of Jarvis's own reply.
+   */
+  const finishSpeaking = useCallback(() => {
+    setSpeaking(false);
+    if (handsFreeRef.current && !suppressRef.current) {
+      window.setTimeout(() => startRef.current(), 350);
+    }
+  }, []);
+
   const speakBrowser = useCallback((cleaned: string) => {
     if (!synthAvailable) return;
     const u = new SpeechSynthesisUtterance(cleaned);
@@ -186,10 +201,10 @@ export function useVoice({ onResult }: UseVoiceOptions) {
     }
     if (voiceRef.current) u.voice = voiceRef.current;
     u.onstart = () => setSpeaking(true);
-    u.onend = () => setSpeaking(false);
+    u.onend = finishSpeaking;
     u.onerror = () => setSpeaking(false);
     window.speechSynthesis.speak(u);
-  }, []);
+  }, [finishSpeaking]);
 
   const speakEleven = useCallback(
     async (cleaned: string, voiceId: string, gen: number) => {
@@ -224,7 +239,7 @@ export function useVoice({ onResult }: UseVoiceOptions) {
           URL.revokeObjectURL(url);
           if (audioRef.current === audio) {
             audioRef.current = null;
-            setSpeaking(false);
+            finishSpeaking();
           }
         };
         audio.onplay = () => setSpeaking(true);
@@ -235,7 +250,7 @@ export function useVoice({ onResult }: UseVoiceOptions) {
         if (gen === speakGenRef.current) speakBrowser(cleaned);
       }
     },
-    [speakBrowser],
+    [speakBrowser, finishSpeaking],
   );
 
   const speak = useCallback(
@@ -254,10 +269,28 @@ export function useVoice({ onResult }: UseVoiceOptions) {
     [stopSpeaking, speakBrowser, speakEleven],
   );
 
-  const stop = useCallback(() => recogRef.current?.stop(), []);
+  /**
+   * Hands-free: after Jarvis finishes speaking, re-open the mic so the
+   * conversation continues without touching anything. Off by default —
+   * an always-listening mic is a thing people should opt into, not
+   * discover. Remembered across reloads.
+   */
+  const [handsFree, setHandsFree] = useState(() => readStore(HANDS_FREE_KEY) === '1');
+  const handsFreeRef = useRef(handsFree);
+  handsFreeRef.current = handsFree;
+
+  /** Set while the user explicitly stops, so we don't immediately re-listen. */
+  const suppressRef = useRef(false);
+
+  const stop = useCallback(() => {
+    // An explicit stop should end the loop, not restart it.
+    suppressRef.current = true;
+    recogRef.current?.stop();
+  }, []);
 
   const start = useCallback(() => {
     if (!SpeechRecognitionImpl || listening) return;
+    suppressRef.current = false;
     stopSpeaking();
     const recog = new SpeechRecognitionImpl();
     recogRef.current = recog;
@@ -288,6 +321,22 @@ export function useVoice({ onResult }: UseVoiceOptions) {
     recog.start();
   }, [listening, stopSpeaking]);
 
+  // speak() needs to restart listening, and start() stops speech — holding
+  // start in a ref keeps that from becoming a dependency cycle.
+  const startRef = useRef<() => void>(() => {});
+  startRef.current = start;
+
+  const toggleHandsFree = useCallback(() => {
+    setHandsFree((on) => {
+      const next = !on;
+      writeStore(HANDS_FREE_KEY, next ? '1' : '0');
+      // Turning it on mid-conversation should start listening straight away.
+      if (next) window.setTimeout(() => startRef.current(), 120);
+      else suppressRef.current = true;
+      return next;
+    });
+  }, []);
+
   const toggleMuted = useCallback(() => {
     setMuted((m) => {
       if (!m) stopSpeaking();
@@ -317,5 +366,7 @@ export function useVoice({ onResult }: UseVoiceOptions) {
     speak,
     stopSpeaking,
     toggleMuted,
+    handsFree,
+    toggleHandsFree,
   };
 }

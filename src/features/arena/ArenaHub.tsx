@@ -20,6 +20,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
 } from 'lucide-react';
+import { readStore, writeStore } from '../../lib/storage';
 import { useArena } from './ArenaContext';
 import ArenaToday from './panels/ArenaToday';
 import ArenaLeaderboard from './panels/ArenaLeaderboard';
@@ -47,11 +48,11 @@ export default function ArenaHub() {
   // The rail is wide, and on a laptop the puzzle wants the room. Remembered so
   // the choice survives a reload.
   const [railOpen, setRailOpen] = useState(
-    () => localStorage.getItem('ascend_arena_rail') !== 'closed',
+    () => readStore('ascend_arena_rail') !== 'closed',
   );
   const toggleRail = () => {
     setRailOpen((open) => {
-      localStorage.setItem('ascend_arena_rail', open ? 'closed' : 'open');
+      writeStore('ascend_arena_rail', open ? 'closed' : 'open');
       return !open;
     });
   };

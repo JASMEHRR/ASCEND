@@ -16,6 +16,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { readStore, writeStore } from '../../lib/storage';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import {
@@ -95,7 +96,7 @@ export function ArenaProvider({ children }: { children: ReactNode }) {
 
   const [loading, setLoading] = useState(true);
   const [rooms, setRooms] = useState<Room[]>([]);
-  const [roomId, setRoomId] = useState<string | null>(() => localStorage.getItem(ROOM_KEY));
+  const [roomId, setRoomId] = useState<string | null>(() => readStore(ROOM_KEY));
   const [players, setPlayers] = useState<Player[]>([]);
   const [habits, setHabits] = useState<Habit[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -151,7 +152,7 @@ export function ArenaProvider({ children }: { children: ReactNode }) {
   }, [uid]);
 
   useEffect(() => {
-    if (roomId) localStorage.setItem(ROOM_KEY, roomId);
+    if (roomId) writeStore(ROOM_KEY, roomId);
   }, [roomId]);
 
   // Carry the old fixed ritual list across on first run, so switching to

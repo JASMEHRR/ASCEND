@@ -22,6 +22,7 @@ import {
   PanelRightOpen,
 } from 'lucide-react';
 import type { OSState } from '../../../types';
+import { readStore, writeStore } from '../../../lib/storage';
 import { useAuth } from '../../../context/AuthContext';
 import { useDialog } from '../../../context/DialogContext';
 import { disciplineScore } from '../../../lib/discipline';
@@ -93,10 +94,10 @@ export default function JarvisDashboard({ state, updateState, setView, openSetti
   const [openPanel, setOpenPanel] = useState<DockPanel | null>(null);
   // The panel rail is a convenience, not a necessity — collapsing it gives the
   // conversation the full width. Remembered across reloads.
-  const [railOpen, setRailOpen] = useState(() => localStorage.getItem('ascend_panel_rail') !== 'closed');
+  const [railOpen, setRailOpen] = useState(() => readStore('ascend_panel_rail') !== 'closed');
   const toggleRail = () =>
     setRailOpen((open) => {
-      localStorage.setItem('ascend_panel_rail', open ? 'closed' : 'open');
+      writeStore('ascend_panel_rail', open ? 'closed' : 'open');
       return !open;
     });
 

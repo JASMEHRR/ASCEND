@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { Mic, MicOff, Send, Square } from 'lucide-react';
+import { Mic, MicOff, Radio, Send, Square } from 'lucide-react';
 import { useJarvis } from '../engine/JarvisProvider';
 import type { JarvisMessage } from '../types';
 import MessageContent from './MessageContent';
@@ -118,6 +118,27 @@ export default function JarvisConsole({ autoFocus = false }: { autoFocus?: boole
         >
           {voice.listening ? <MicOff size={16} /> : <Mic size={16} />}
         </button>
+
+        {/* Hands-free: the mic re-opens after every reply, so a conversation
+            runs without touching anything. Opt-in, and clearly indicated —
+            an always-on mic should never be a surprise. */}
+        {voice.inputSupported && (
+          <button
+            type="button"
+            onClick={voice.toggleHandsFree}
+            role="switch"
+            aria-checked={voice.handsFree}
+            title={voice.handsFree ? 'Hands-free on — mic reopens after each reply' : 'Hands-free conversation'}
+            aria-label={voice.handsFree ? 'Turn off hands-free' : 'Turn on hands-free'}
+            className={`grid h-10 w-10 shrink-0 place-items-center rounded-full border transition-all cursor-pointer ${
+              voice.handsFree
+                ? 'border-brand-400/50 bg-brand-500/20 text-brand-300'
+                : 'border-white/10 bg-white/[0.06] text-white/45 hover:bg-white/10 hover:text-white/80'
+            }`}
+          >
+            <Radio size={15} className={voice.handsFree ? 'animate-pulse' : ''} />
+          </button>
+        )}
         <input
           ref={inputRef}
           value={input}
