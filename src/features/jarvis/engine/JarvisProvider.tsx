@@ -47,8 +47,8 @@ export function JarvisProvider({ children }: { children: ReactNode }) {
   const voice = useVoice({ onResult: (t) => sendRef.current(t) });
 
   const convoDeps = useMemo(
-    () => ({ getTools: registry.getTools, buildContext, recordAction: memory.recordAction, speak: voice.speak }),
-    [registry.getTools, buildContext, memory.recordAction, voice.speak],
+    () => ({ getTools: registry.getTools, buildContext, recordAction: memory.recordAction, speak: voice.speak, uid: user?.uid ?? null }),
+    [registry.getTools, buildContext, memory.recordAction, voice.speak, user?.uid],
   );
   const conversation = useConversation(convoDeps);
   sendRef.current = conversation.sendMessage;

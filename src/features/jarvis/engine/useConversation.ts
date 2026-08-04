@@ -1,6 +1,11 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { db } from '../../../lib/firebase';
 import { callJarvis } from './jarvisClient';
 import type { ActionRecord, JarvisMessage, JarvisResponse, JarvisTool, StatusLine, ToolDeclaration, ToolResult } from '../types';
+
+/** Keep the persisted transcript from growing without bound. */
+const MAX_STORED_MESSAGES = 200;
 
 /** Below this self-reported confidence, a tool call is not executed. */
 const CONFIDENCE_THRESHOLD = 0.45;
@@ -32,6 +37,8 @@ interface ConversationDeps {
   buildContext: () => Record<string, unknown>;
   recordAction: (a: ActionRecord) => void;
   speak: (text: string) => void;
+  /** Signed-in uid, for persisting the transcript. Null while signed out. */
+  uid: string | null;
 }
 
 export interface Conversation {
@@ -56,6 +63,73 @@ export function useConversation(deps: ConversationDeps): Conversation {
   messagesRef.current = messages;
   const thinkingRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
+  const lastSyncedRef = useRef('');
+  // 'unset' is distinct from both a real uid and null (signed out), so the
+  // very first render always runs the load-transcript effect once.
+  const loadedForUidRef = useRef<string | null | 'unset'>('unset');
+
+  /**
+   * Persist the transcript the same way Jarvis's memory already does:
+   * localStorage first for instant reload, then a debounced Firestore write
+   * per user so signing out and back in (or opening on another device) finds
+   * the conversation still there instead of resetting to the greeting.
+   */
+  useEffect(() => {
+    const uid = deps.uid;
+    if (loadedForUidRef.current === uid) return;
+    loadedForUidRef.current = uid;
+
+    const cacheKey = `ascend_jarvis_chat_${uid ?? 'guest'}`;
+    let seed: JarvisMessage[] = [GREETING];
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) seed = parsed;
+      }
+    } catch {
+      /* ignore */
+    }
+    setMessages(seed);
+    lastSyncedRef.current = '';
+    if (!uid) return;
+
+    const ref = doc(db, 'users', uid, 'jarvis', 'chat');
+    return onSnapshot(
+      ref,
+      (snap) => {
+        if (snap.metadata.hasPendingWrites) return;
+        const stored = snap.data()?.messages;
+        if (!Array.isArray(stored) || stored.length === 0) return;
+        lastSyncedRef.current = JSON.stringify(stored);
+        setMessages(stored);
+      },
+      (err) => console.warn('[jarvis chat] listener error:', err.message),
+    );
+  }, [deps.uid]);
+
+  useEffect(() => {
+    const uid = deps.uid;
+    const cacheKey = `ascend_jarvis_chat_${uid ?? 'guest'}`;
+    const trimmed = messages.slice(-MAX_STORED_MESSAGES);
+    try {
+      localStorage.setItem(cacheKey, JSON.stringify(trimmed));
+    } catch {
+      /* ignore (private window / storage full) */
+    }
+    if (!uid) return;
+    const payload = JSON.stringify(trimmed);
+    if (payload === lastSyncedRef.current) return;
+    const t = setTimeout(async () => {
+      lastSyncedRef.current = payload;
+      try {
+        await setDoc(doc(db, 'users', uid, 'jarvis', 'chat'), { messages: trimmed });
+      } catch (err) {
+        console.warn('[jarvis chat] write failed:', (err as Error).message);
+      }
+    }, 800);
+    return () => clearTimeout(t);
+  }, [messages, deps.uid]);
 
   const push = (msg: JarvisMessage) => setMessages((prev) => [...prev, msg]);
 
