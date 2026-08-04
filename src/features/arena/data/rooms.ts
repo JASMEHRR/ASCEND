@@ -106,11 +106,17 @@ export async function joinRoom(code: string, userId: string, profile: { name: st
   const existing = await getDoc(doc(db, playerPath(room.id, userId)));
   if (!existing.exists()) {
     await addPlayer(room.id, userId, profile);
-    const roomRef = doc(db, ROOMS, room.id);
-    const fresh = await getDoc(roomRef);
-    const members: string[] = fresh.data()?.memberIds ?? [];
-    if (!members.includes(userId)) await updateDoc(roomRef, { memberIds: [...members, userId] });
   }
+  // Checked every time, independent of the player doc: a player doc can exist
+  // without membership if a previous join created it but then failed to add
+  // the uid to memberIds (e.g. under rules that hadn't deployed yet). Without
+  // this, retrying the join looks like it succeeds but never actually grants
+  // access — every isMember() read (players, messages, the leaderboard) then
+  // silently comes back empty.
+  const roomRef = doc(db, ROOMS, room.id);
+  const fresh = await getDoc(roomRef);
+  const members: string[] = fresh.data()?.memberIds ?? [];
+  if (!members.includes(userId)) await updateDoc(roomRef, { memberIds: [...members, userId] });
   return room;
 }
 
