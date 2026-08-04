@@ -11,6 +11,7 @@ import {
   Mail,
   LineChart,
   Puzzle,
+  Blocks,
 } from 'lucide-react';
 import type { OSState } from '../types';
 
@@ -34,7 +35,8 @@ export type FeatureId =
   | 'journal'
   | 'gmail'
   | 'stocks'
-  | 'arena';
+  | 'arena'
+  | 'custom';
 
 export interface FeatureModule {
   id: FeatureId;
@@ -162,6 +164,15 @@ export const FEATURES: FeatureModule[] = [
     icon: LineChart,
     nav: true,
     mobile: true,
+    defaultEnabled: true,
+    status: 'active',
+  },
+  {
+    id: 'custom',
+    label: 'My Modules',
+    description: 'Custom trackers, counters, lists, and charts — built by you or by Jarvis on request.',
+    icon: Blocks,
+    nav: true,
     defaultEnabled: true,
     status: 'active',
   },

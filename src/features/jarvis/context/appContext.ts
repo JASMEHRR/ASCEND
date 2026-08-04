@@ -2,7 +2,7 @@ import type { OSState } from '../../../types';
 import type { LaunchState, ProspectStatus } from '../../launch/types';
 import { FEATURES, isFeatureEnabled } from '../../registry';
 
-export type View = 'dashboard' | 'physio' | 'business' | 'vision' | 'buy_list' | 'stocks' | 'journal' | 'arena';
+export type View = 'dashboard' | 'physio' | 'business' | 'vision' | 'buy_list' | 'stocks' | 'journal' | 'arena' | 'custom';
 
 export const VIEW_LABELS: Record<View, string> = {
   dashboard: 'Dashboard',
@@ -13,6 +13,7 @@ export const VIEW_LABELS: Record<View, string> = {
   stocks: 'Stocks & Finance',
   journal: 'Journal',
   arena: 'Arena',
+  custom: 'My Modules',
 };
 
 interface ContextInputs {

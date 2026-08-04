@@ -32,6 +32,7 @@ import KiteRegistrar from './features/kite/KiteRegistrar';
 import JournalRegistrar from './features/journal/JournalRegistrar';
 import InsightsEngine from './features/insights/InsightsEngine';
 import ArenaRegistrar from './features/arena/ArenaRegistrar';
+import CustomModulesRegistrar from './features/custom/CustomModulesRegistrar';
 
 // Route views that aren't the default are code-split to keep the initial bundle small.
 const LaunchHub = lazy(() => import('./features/launch/LaunchHub'));
@@ -41,8 +42,9 @@ const PhysioAI = lazy(() => import('./components/PhysioAI'));
 const StocksHub = lazy(() => import('./features/stocks/StocksHub'));
 const JournalHub = lazy(() => import('./features/journal/JournalHub'));
 const ArenaHub = lazy(() => import('./features/arena/ArenaHub'));
+const CustomModulesHub = lazy(() => import('./features/custom/CustomModulesHub'));
 
-type View = 'dashboard' | 'business' | 'vision' | 'buy_list' | 'physio' | 'stocks' | 'journal' | 'arena';
+type View = 'dashboard' | 'business' | 'vision' | 'buy_list' | 'physio' | 'stocks' | 'journal' | 'arena' | 'custom';
 
 const REWARDS_LIST = [
   'Take a 5-minute break outside.',
@@ -333,6 +335,7 @@ export default function App() {
                 {view === 'stocks' && <StocksHub state={state} updateState={updateState} />}
                 {view === 'journal' && <JournalHub state={state} updateState={updateState} />}
                 {view === 'arena' && <ArenaHub state={state} updateState={updateState} />}
+                {view === 'custom' && <CustomModulesHub />}
               </Suspense>
           </motion.div>
         </main>
@@ -381,6 +384,7 @@ export default function App() {
       {isFeatureEnabled(state, 'journal') && <JournalRegistrar state={state} updateState={updateState} />}
       {isFeatureEnabled(state, 'insights') && <InsightsEngine state={state} />}
       {isFeatureEnabled(state, 'arena') && <ArenaRegistrar />}
+      {isFeatureEnabled(state, 'custom') && <CustomModulesRegistrar />}
     </div>
   );
 }
