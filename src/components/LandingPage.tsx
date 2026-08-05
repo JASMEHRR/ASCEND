@@ -24,8 +24,10 @@ import {
   Droplets,
   Zap,
   BookOpen,
-  Eye,
   ShieldCheck,
+  BellRing,
+  Layers,
+  Users,
 } from 'lucide-react';
 import JarvisOrb from '../features/jarvis/ui/JarvisOrb';
 
@@ -62,19 +64,27 @@ const FEATURES = [
   },
 ];
 
-/** Why it actually helps, not just what it does. */
+/** Why it actually helps, not just what it does. Each gets its own icon and
+ *  its own visual weight — three identical cards in a row reads as
+ *  template filler, not conviction. */
 const BENEFITS = [
   {
+    icon: BellRing,
     title: 'You stop relying on willpower alone',
     desc: 'Jarvis notices the day slipping and says something before it’s gone — a nudge instead of a guilt trip at 11pm.',
+    big: true,
   },
   {
+    icon: Layers,
     title: 'Progress becomes visible',
     desc: 'A streak, a score, a picture filling in tile by tile — habits stop being invisible and start being something you can point to.',
+    big: false,
   },
   {
+    icon: Users,
     title: 'You’re not doing it alone',
     desc: 'Arena turns solo habit-tracking into something you build with friends — showing up for yourself also shows up for the group.',
+    big: false,
   },
 ];
 
@@ -338,6 +348,26 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
         >
           Get started <ArrowRight size={15} />
         </button>
+
+        {/* A texture strip, not just white space — echoes the app's own
+            dashboard stat cards so the pitch already looks like the product. */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="mt-12 flex flex-wrap items-center justify-center gap-x-10 gap-y-4 text-left"
+        >
+          {[
+            { value: '6', label: 'modules in one app' },
+            { value: '1', label: 'AI that sees all of them' },
+            { value: '∞', label: 'friends you can race in Arena' },
+          ].map((s) => (
+            <div key={s.label} className="flex items-baseline gap-2">
+              <span className="text-2xl font-extrabold text-brand-400">{s.value}</span>
+              <span className="text-[12px] text-white/45">{s.label}</span>
+            </div>
+          ))}
+        </motion.div>
       </div>
 
       {/* Animated walkthrough — the centerpiece, full width */}
@@ -357,7 +387,7 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
               Built to change how you actually show up
             </h2>
           </div>
-          <div className="mt-12 grid grid-cols-1 gap-8 sm:grid-cols-3">
+          <div className="mt-12 grid grid-cols-1 gap-5 sm:grid-cols-3">
             {BENEFITS.map((b, i) => (
               <motion.div
                 key={b.title}
@@ -365,13 +395,25 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: '-80px' }}
                 transition={{ delay: i * 0.08 }}
-                className="text-left"
+                className={`flex flex-col justify-between rounded-2xl border p-6 text-left ${
+                  b.big
+                    ? 'sm:col-span-2 border-brand-400/20 bg-brand-500/[0.06]'
+                    : 'border-white/8 bg-white/[0.02]'
+                }`}
               >
-                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-500/10 text-brand-400">
-                  <Eye size={16} />
-                </span>
-                <p className="mt-3 text-[16px] font-bold text-white">{b.title}</p>
-                <p className="mt-1.5 text-[13px] leading-relaxed text-white/50">{b.desc}</p>
+                <div>
+                  <span
+                    className={`flex h-10 w-10 items-center justify-center rounded-full ${
+                      b.big ? 'bg-brand-400/15 text-brand-300' : 'bg-white/[0.06] text-white/60'
+                    }`}
+                  >
+                    <b.icon size={18} />
+                  </span>
+                  <p className={`mt-4 font-bold text-white ${b.big ? 'text-[19px]' : 'text-[16px]'}`}>{b.title}</p>
+                  <p className={`mt-2 leading-relaxed text-white/50 ${b.big ? 'text-[14px] max-w-md' : 'text-[13px]'}`}>
+                    {b.desc}
+                  </p>
+                </div>
               </motion.div>
             ))}
           </div>
@@ -406,13 +448,20 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
         </div>
       </div>
 
-      {/* Final CTA — full width band */}
-      <div className="relative border-t border-white/8 px-6 py-20 text-center sm:py-24">
-        <p className="text-2xl font-extrabold tracking-tight text-white sm:text-3xl">Ready to start your protocol?</p>
-        <p className="mt-2 text-[13.5px] text-white/50">Free to use. Sign in with Google or an email — takes about ten seconds.</p>
+      {/* Final CTA — the orb reappears, closing the loop from the hero
+          instead of ending on a generic footer band. */}
+      <div className="relative overflow-hidden border-t border-white/8 px-6 py-20 text-center sm:py-28">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_bottom,_rgba(16,185,129,0.10),_transparent_55%)]" />
+        <motion.div initial={{ opacity: 0, scale: 0.9 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }} className="relative">
+          <JarvisOrb state="listening" size={64} />
+        </motion.div>
+        <p className="relative mt-6 text-2xl font-extrabold tracking-tight text-white sm:text-4xl">
+          Your protocol starts whenever you're ready.
+        </p>
+        <p className="relative mt-3 text-[13.5px] text-white/50">Free to use. Sign in with Google or an email — takes about ten seconds.</p>
         <button
           onClick={onContinue}
-          className="mx-auto mt-7 flex items-center gap-2 rounded-full border border-brand-400/30 bg-brand-500/15 px-7 py-3.5 text-sm font-bold uppercase tracking-wider text-brand-300 transition-all hover:bg-brand-500/25 cursor-pointer"
+          className="relative mx-auto mt-8 flex items-center gap-2 rounded-full bg-brand-500 px-8 py-3.5 text-sm font-bold uppercase tracking-wider text-black transition-all hover:bg-brand-400 cursor-pointer"
         >
           Sign in <ArrowRight size={15} />
         </button>
