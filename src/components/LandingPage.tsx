@@ -179,16 +179,25 @@ const TOUR_FRAMES: TourFrame[] = [
     desc: 'Every habit you complete adds a tile — solo, and to every group puzzle you’re racing in. The picture only finishes if everyone shows up.',
     render: () => (
       <div className="w-full space-y-3">
-        <div className="grid grid-cols-8 gap-1">
-          {Array.from({ length: 32 }).map((_, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, scale: 0.5 }}
-              animate={{ opacity: i < 21 ? 1 : 0.15, scale: 1 }}
-              transition={{ delay: 0.015 * i }}
-              className={`aspect-square rounded-sm ${i < 21 ? 'bg-brand-400/70' : 'bg-white/10'}`}
-            />
-          ))}
+        <div className="grid grid-cols-8 gap-1 overflow-hidden rounded-xl">
+          {Array.from({ length: 32 }).map((_, i) => {
+            const filled = i < 21;
+            // Per-tile shade variation so the filled area reads as a mosaic
+            // picture assembling itself, not one flat block of solid color.
+            const shade = 55 + ((i * 37) % 30);
+            return (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, scale: 0.5 }}
+                animate={{ opacity: filled ? 1 : 0.12, scale: 1 }}
+                transition={{ delay: 0.015 * i }}
+                className="aspect-square"
+                style={{
+                  background: filled ? `rgba(52, 211, 153, ${shade / 100})` : 'rgba(255,255,255,0.06)',
+                }}
+              />
+            );
+          })}
         </div>
         <motion.div
           initial={{ opacity: 0, y: 8 }}
@@ -295,8 +304,21 @@ function AnimatedWalkthrough() {
 }
 
 export default function LandingPage({ onContinue }: { onContinue: () => void }) {
+  // The signed-in app shell is a fixed-height layout, so `body` is globally
+  // locked to overflow-hidden — an overflow-y-auto wrapper alone can't
+  // scroll a page taller than the viewport if the body itself refuses to
+  // scroll. This page is long, so it needs the lock lifted while it's up,
+  // restored on unmount so the real app's fixed layout is unaffected.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'auto';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
   return (
-    <div className="relative min-h-screen w-full overflow-y-auto bg-app text-white">
+    <div className="relative min-h-screen w-full bg-app text-white">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(16,185,129,0.10),_transparent_55%)]" />
 
       {/* Hero — full width, centered content */}
