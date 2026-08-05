@@ -191,8 +191,10 @@ export default function JarvisDashboard({ state, updateState, setView, openSetti
 
       {/* Console — the one always-present surface besides the orb. Sized to
           its (now-short, last-exchange-only) content rather than stretching
-          to fill the page, so it stays compact whether or not a chat is open. */}
-      <div className="mt-4 flex shrink-0 flex-col">
+          to fill the page. Once a conversation is underway it anchors to the
+          bottom of the column instead of floating right under the orb with a
+          big empty gap below it. */}
+      <div className={`flex shrink-0 flex-col ${conversationStarted ? 'mt-auto mb-2' : 'mt-4'}`}>
         {!conversationStarted && (
           <div className="mb-2 flex flex-wrap justify-center gap-2">
             {SUGGESTIONS.map((s) => (
