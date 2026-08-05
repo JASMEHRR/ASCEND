@@ -72,19 +72,16 @@ const BENEFITS = [
     icon: BellRing,
     title: 'You stop relying on willpower alone',
     desc: 'Jarvis notices the day slipping and says something before it’s gone — a nudge instead of a guilt trip at 11pm.',
-    big: true,
   },
   {
     icon: Layers,
     title: 'Progress becomes visible',
     desc: 'A streak, a score, a picture filling in tile by tile — habits stop being invisible and start being something you can point to.',
-    big: false,
   },
   {
     icon: Users,
     title: 'You’re not doing it alone',
     desc: 'Arena turns solo habit-tracking into something you build with friends — showing up for yourself also shows up for the group.',
-    big: false,
   },
 ];
 
@@ -387,35 +384,48 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
               Built to change how you actually show up
             </h2>
           </div>
-          <div className="mt-12 grid grid-cols-1 gap-5 sm:grid-cols-3">
-            {BENEFITS.map((b, i) => (
-              <motion.div
-                key={b.title}
-                initial={{ opacity: 0, y: 12 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: '-80px' }}
-                transition={{ delay: i * 0.08 }}
-                className={`flex flex-col justify-between rounded-2xl border p-6 text-left ${
-                  b.big
-                    ? 'sm:col-span-2 border-brand-400/20 bg-brand-500/[0.06]'
-                    : 'border-white/8 bg-white/[0.02]'
-                }`}
-              >
-                <div>
-                  <span
-                    className={`flex h-10 w-10 items-center justify-center rounded-full ${
-                      b.big ? 'bg-brand-400/15 text-brand-300' : 'bg-white/[0.06] text-white/60'
-                    }`}
-                  >
-                    <b.icon size={18} />
-                  </span>
-                  <p className={`mt-4 font-bold text-white ${b.big ? 'text-[19px]' : 'text-[16px]'}`}>{b.title}</p>
-                  <p className={`mt-2 leading-relaxed text-white/50 ${b.big ? 'text-[14px] max-w-md' : 'text-[13px]'}`}>
-                    {b.desc}
-                  </p>
-                </div>
-              </motion.div>
-            ))}
+          {/* The featured card sits alone on its own row, then the other two
+              share a row below — a 2+1 split across one row leaves the
+              third card orphaned with empty space beside it at sm widths. */}
+          <div className="mt-12 space-y-5">
+            <motion.div
+              key={BENEFITS[0].title}
+              initial={{ opacity: 0, y: 12 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: '-80px' }}
+              className="flex flex-col justify-between rounded-2xl border border-brand-400/20 bg-brand-500/[0.06] p-6 text-left sm:flex-row sm:items-start sm:gap-8 sm:p-8"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-400/15 text-brand-300">
+                {(() => {
+                  const Icon = BENEFITS[0].icon;
+                  return <Icon size={18} />;
+                })()}
+              </span>
+              <div className="mt-4 sm:mt-0">
+                <p className="text-[19px] font-bold text-white">{BENEFITS[0].title}</p>
+                <p className="mt-2 max-w-md text-[14px] leading-relaxed text-white/50">{BENEFITS[0].desc}</p>
+              </div>
+            </motion.div>
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+              {BENEFITS.slice(1).map((b, i) => (
+                <motion.div
+                  key={b.title}
+                  initial={{ opacity: 0, y: 12 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: '-80px' }}
+                  transition={{ delay: (i + 1) * 0.08 }}
+                  className="flex flex-col justify-between rounded-2xl border border-white/8 bg-white/[0.02] p-6 text-left"
+                >
+                  <div>
+                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.06] text-white/60">
+                      <b.icon size={18} />
+                    </span>
+                    <p className="mt-4 text-[16px] font-bold text-white">{b.title}</p>
+                    <p className="mt-2 text-[13px] leading-relaxed text-white/50">{b.desc}</p>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
