@@ -16,6 +16,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   onSnapshot,
   orderBy,
   query,
@@ -107,4 +108,41 @@ export function draftTitle(firstMessage: string): string {
   const clean = firstMessage.trim().replace(/\s+/g, ' ');
   if (!clean) return 'New chat';
   return clean.length <= 40 ? clean : `${clean.slice(0, 40).trimEnd()}…`;
+}
+
+/** Where the single pre-threads transcript used to live. */
+const legacyDoc = (uid: string) => doc(db, 'users', uid, 'jarvis', 'chat');
+
+/**
+ * One-time import of the old single-transcript conversation into a real chat
+ * thread. Before threads existed everything lived in one document, so without
+ * this an existing user's whole history would simply stop appearing.
+ *
+ * Idempotent: the legacy document is deleted once it's been imported (or found
+ * to be empty), so this is a no-op on every subsequent load. Best-effort — a
+ * failure here must never block the chat list from loading.
+ */
+export async function migrateLegacyChat(uid: string): Promise<void> {
+  try {
+    const snap = await getDoc(legacyDoc(uid));
+    if (!snap.exists()) return;
+    const messages = snap.data()?.messages;
+    // A transcript of one message is just the seeded greeting — nothing to keep.
+    if (!Array.isArray(messages) || messages.length <= 1) {
+      await deleteDoc(legacyDoc(uid)).catch(() => {});
+      return;
+    }
+    const now = new Date().toISOString();
+    const firstUser = messages.find((m) => m?.role === 'user')?.content ?? '';
+    await saveChat(uid, {
+      id: newChatId(),
+      title: firstUser ? draftTitle(String(firstUser)) : 'Earlier conversation',
+      createdAt: now,
+      updatedAt: now,
+      messages: messages as JarvisMessage[],
+    });
+    await deleteDoc(legacyDoc(uid)).catch(() => {});
+  } catch (err) {
+    console.warn('[jarvis chats] legacy import skipped:', (err as Error).message);
+  }
 }

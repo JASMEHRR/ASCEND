@@ -146,8 +146,11 @@ export default function JarvisDashboard({ state, updateState, setView, openSetti
 
   return (
     <div className="flex h-full w-full gap-5">
-      {/* Conversation column — grows to fill whatever the panel rail leaves. */}
-      <div className="flex h-full min-w-0 flex-1 flex-col">
+      {/* Conversation column — grows to fill whatever the panel rail leaves.
+          Scrolls rather than compressing its children: without this, flexbox
+          crushes an expanded dock panel to zero height whenever the hero,
+          console and panel together exceed the viewport. */}
+      <div className="flex h-full min-w-0 flex-1 flex-col overflow-y-auto custom-scrollbar">
       {/* Hero — the orb IS the home state. It yields vertical space once a conversation is underway. */}
       <div className={`flex flex-col items-center text-center transition-all ${conversationStarted ? 'gap-1.5 pt-0' : 'gap-3 pt-6 sm:pt-10'}`}>
         <motion.div initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: 'spring', stiffness: 220, damping: 22 }}>
@@ -263,7 +266,7 @@ export default function JarvisDashboard({ state, updateState, setView, openSetti
             animate={{ opacity: 1, y: 0, height: 'auto' }}
             exit={{ opacity: 0, y: 12, height: 0 }}
             transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-            className="overflow-hidden"
+            className="shrink-0 overflow-hidden"
           >
             <div className="liquid-glass-panel mt-3 rounded-[1.5rem] p-4">
               <div className="mb-3 flex items-center justify-between">

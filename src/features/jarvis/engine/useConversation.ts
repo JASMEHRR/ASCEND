@@ -3,6 +3,7 @@ import { callJarvis } from './jarvisClient';
 import {
   deleteChat as deleteChatDoc,
   draftTitle,
+  migrateLegacyChat,
   newChatId,
   patchChat,
   saveChat,
@@ -108,6 +109,10 @@ export function useConversation(deps: ConversationDeps): Conversation {
     ownedRef.current = new Set();
     lastWriteRef.current = '';
     if (!uid) return;
+    // Pull the pre-threads transcript in as a real chat, once, so existing
+    // history doesn't silently disappear. The live subscription below picks
+    // the imported thread up on its own.
+    void migrateLegacyChat(uid);
     return subscribeChats(uid, setChats);
   }, [deps.uid]);
 
