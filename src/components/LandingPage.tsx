@@ -4,11 +4,18 @@
  * sign in — real benefit-focused copy plus a big animated product-tour
  * sequence, not just a bare sign-in card or a narrow, sparse pitch.
  *
+ * Every panel here uses the app's actual liquid-glass-panel/highlight
+ * classes (see index.css) instead of generic bordered boxes, so the pitch
+ * already looks and feels like the real product, not a template.
+ *
  * There's no real screen-recorded video and no real screenshots here: the
  * "walkthrough" is a set of detailed in-code animated mockups styled to
- * look like actual app screens (dashboard, Arena, Jarvis chat) — built
- * because there's no way to capture the live signed-in app from this
- * environment. It's the centerpiece of the page, not an afterthought.
+ * look like actual app screens — built because there's no way to capture
+ * the live signed-in app from this environment. It covers the actual
+ * breadth of the app: the dashboard, Jarvis conversation, Arena, Jarvis
+ * building a custom module live from a chat request, and the real
+ * integrations (Kite Connect, Gmail, Obsidian, web search) — not just the
+ * four headline features.
  */
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -28,6 +35,12 @@ import {
   BellRing,
   Layers,
   Users,
+  Wand2,
+  Mail,
+  LineChart,
+  Search,
+  NotebookText,
+  Plus,
 } from 'lucide-react';
 import JarvisOrb from '../features/jarvis/ui/JarvisOrb';
 
@@ -43,9 +56,24 @@ const FEATURES = [
     desc: 'An assistant that can see your whole day — ask it to plan your day, log things, or just check in on how you’re doing.',
   },
   {
+    icon: Wand2,
+    title: 'Jarvis builds you modules',
+    desc: 'Ask for a tracker, counter, checklist, or chart in plain English and Jarvis builds it into your dashboard on the spot — no settings menu required.',
+  },
+  {
     icon: Swords,
     title: 'Arena',
     desc: 'Turn habits into a shared puzzle with friends. Every completion earns tiles toward a picture your whole group builds together.',
+  },
+  {
+    icon: LineChart,
+    title: 'Live brokerage data',
+    desc: 'Connect Kite and Jarvis can see your real holdings and portfolio — ask "how am I doing" and get an actual answer, not a guess.',
+  },
+  {
+    icon: Mail,
+    title: 'Gmail & Obsidian, connected',
+    desc: 'Jarvis can read your inbox and write straight into your Obsidian vault — your existing tools stay in the loop instead of getting replaced.',
   },
   {
     icon: BookOpen,
@@ -86,7 +114,7 @@ const BENEFITS = [
 ];
 
 /** One frame of the animated walkthrough — a fake UI panel styled like the
- *  real app, not a screenshot. */
+ *  real app (liquid-glass everywhere), not a screenshot. */
 type TourFrame = {
   id: string;
   eyebrow: string;
@@ -115,7 +143,7 @@ const TOUR_FRAMES: TourFrame[] = [
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.08 * i }}
-              className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5"
+              className="liquid-glass-highlight rounded-xl px-3 py-2.5"
             >
               <p className="flex items-center gap-1 text-[8.5px] font-mono font-bold uppercase tracking-wider text-white/40">
                 <s.icon size={10} /> {s.label}
@@ -127,14 +155,9 @@ const TOUR_FRAMES: TourFrame[] = [
             </motion.div>
           ))}
         </div>
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.4 }}
-          className="space-y-1.5"
-        >
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }} className="space-y-1.5">
           {['Morning walk', 'Read 20 minutes', 'Drink water'].map((h, i) => (
-            <div key={h} className="flex items-center gap-2.5 rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2">
+            <div key={h} className="liquid-glass-panel flex items-center gap-2.5 rounded-lg px-3 py-2">
               <motion.span
                 initial={{ scale: 0.6, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
@@ -170,10 +193,49 @@ const TOUR_FRAMES: TourFrame[] = [
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.4 }}
-            className="max-w-[85%] rounded-xl border border-white/10 bg-white/[0.05] px-3.5 py-2.5 text-[11.5px] text-white/80"
+            className="liquid-glass-panel max-w-[85%] rounded-xl px-3.5 py-2.5 text-[11.5px] text-white/80"
           >
             You're at a 12-day streak with 1 habit left today. I'll remind you about the pitch deck at 3pm and log
             your water once you confirm.
+          </motion.div>
+        </div>
+      </div>
+    ),
+  },
+  {
+    id: 'build',
+    eyebrow: 'Build',
+    title: 'Ask for a module. Jarvis builds it.',
+    desc: 'No settings menu, no config screen — describe what you want to track and it appears on your dashboard, ready to use.',
+    render: () => (
+      <div className="flex w-full flex-col items-center gap-4">
+        <JarvisOrb state="thinking" size={56} />
+        <div className="w-full space-y-2">
+          <motion.div
+            initial={{ opacity: 0, x: 12 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="ml-auto max-w-[85%] rounded-xl border border-brand-400/20 bg-brand-500/15 px-3.5 py-2.5 text-[11.5px] text-white"
+          >
+            give me a counter for cold showers
+          </motion.div>
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.35 }}
+            className="liquid-glass-panel max-w-[85%] rounded-xl px-3.5 py-2.5 text-[11.5px] text-white/80"
+          >
+            Added "Cold showers" to My Modules.
+          </motion.div>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.75, type: 'spring', stiffness: 260 }}
+            className="liquid-glass-highlight mx-auto flex w-full max-w-[220px] items-center justify-between rounded-xl px-4 py-3"
+          >
+            <span className="flex items-center gap-2 text-[12px] font-bold text-white">
+              <Plus size={13} className="text-brand-400" /> Cold showers
+            </span>
+            <span className="text-lg font-extrabold text-brand-400">7</span>
           </motion.div>
         </div>
       </div>
@@ -189,8 +251,6 @@ const TOUR_FRAMES: TourFrame[] = [
         <div className="grid grid-cols-8 gap-1 overflow-hidden rounded-xl">
           {Array.from({ length: 32 }).map((_, i) => {
             const filled = i < 21;
-            // Per-tile shade variation so the filled area reads as a mosaic
-            // picture assembling itself, not one flat block of solid color.
             const shade = 55 + ((i * 37) % 30);
             return (
               <motion.div
@@ -199,9 +259,7 @@ const TOUR_FRAMES: TourFrame[] = [
                 animate={{ opacity: filled ? 1 : 0.12, scale: 1 }}
                 transition={{ delay: 0.015 * i }}
                 className="aspect-square"
-                style={{
-                  background: filled ? `rgba(52, 211, 153, ${shade / 100})` : 'rgba(255,255,255,0.06)',
-                }}
+                style={{ background: filled ? `rgba(52, 211, 153, ${shade / 100})` : 'rgba(255,255,255,0.06)' }}
               />
             );
           })}
@@ -210,11 +268,41 @@ const TOUR_FRAMES: TourFrame[] = [
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.6 }}
-          className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2.5"
+          className="liquid-glass-panel flex items-center justify-between rounded-xl px-3.5 py-2.5"
         >
           <span className="text-[11px] text-white/60">21 / 32 tiles</span>
           <span className="text-[11px] font-bold text-brand-400">4 players racing</span>
         </motion.div>
+      </div>
+    ),
+  },
+  {
+    id: 'connections',
+    eyebrow: 'Connected',
+    title: 'Your other tools, not replaced',
+    desc: 'Kite for real holdings, Gmail for what actually needs a reply, Obsidian for your notes, and live web search — all inside the same conversation.',
+    render: () => (
+      <div className="grid w-full grid-cols-2 gap-2.5">
+        {[
+          { icon: LineChart, label: 'Kite Connect', sub: 'Live holdings', tint: 'text-emerald-400' },
+          { icon: Mail, label: 'Gmail', sub: 'Inbox aware', tint: 'text-sky-400' },
+          { icon: NotebookText, label: 'Obsidian', sub: 'Vault synced', tint: 'text-violet-400' },
+          { icon: Search, label: 'Web search', sub: 'Live answers', tint: 'text-amber-400' },
+        ].map((c, i) => (
+          <motion.div
+            key={c.label}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.08 * i }}
+            className="liquid-glass-panel flex flex-col items-start gap-2 rounded-xl px-3.5 py-3"
+          >
+            <span className={`flex h-7 w-7 items-center justify-center rounded-full bg-white/[0.06] ${c.tint}`}>
+              <c.icon size={13} />
+            </span>
+            <span className="text-[11.5px] font-bold text-white">{c.label}</span>
+            <span className="text-[10px] text-white/40">{c.sub}</span>
+          </motion.div>
+        ))}
       </div>
     ),
   },
@@ -239,7 +327,7 @@ const TOUR_FRAMES: TourFrame[] = [
             initial={{ opacity: 0, x: -8 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.15 + 0.1 * i }}
-            className="flex items-center gap-2.5 rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2"
+            className="liquid-glass-panel flex items-center gap-2.5 rounded-lg px-3 py-2"
           >
             <span className="h-3.5 w-3.5 shrink-0 rounded-full border border-white/25" />
             <span className="text-[11.5px] text-white/65">{t}</span>
@@ -263,9 +351,10 @@ function AnimatedWalkthrough() {
 
   return (
     <div className="grid w-full grid-cols-1 items-center gap-8 lg:grid-cols-2 lg:gap-14">
-      {/* The mockup "screen" */}
+      {/* The mockup "screen" — the app's real liquid-glass panel, not a
+          generic bordered box, so the pitch already looks like the product. */}
       <div className="order-2 lg:order-1">
-        <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-[#05070c]/80 p-6 shadow-[0_40px_80px_rgba(0,0,0,0.5)] backdrop-blur-xl sm:p-8">
+        <div className="liquid-glass-panel relative overflow-hidden rounded-[2rem] p-6 shadow-[0_40px_80px_rgba(0,0,0,0.5)] sm:p-8">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(16,185,129,0.08),_transparent_60%)]" />
           <div className="relative flex min-h-[280px] items-center">
             <AnimatePresence mode="wait">
@@ -282,7 +371,7 @@ function AnimatedWalkthrough() {
             </AnimatePresence>
           </div>
         </div>
-        <div className="mt-4 flex items-center justify-center gap-2 lg:justify-start">
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-2 lg:justify-start">
           {TOUR_FRAMES.map((f, idx) => (
             <button
               key={f.id}
@@ -336,8 +425,9 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
         <p className="mt-5 text-[11px] font-mono font-black uppercase tracking-[0.32em] text-brand-400">Ascend Protocol</p>
         <h1 className="mt-3 max-w-4xl text-4xl font-extrabold tracking-tight sm:text-6xl">The AI-run life OS.</h1>
         <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-white/55 sm:text-[17px]">
-          Habits, goals, and an AI assistant that actually sees your whole day — plus a shared game
-          with friends that turns showing up into something you can see grow.
+          Habits, goals, and an AI assistant that actually sees your whole day, builds you new tools on
+          request, and connects to the accounts you already use — plus a shared game with friends that
+          turns showing up into something you can see grow.
         </p>
         <button
           onClick={onContinue}
@@ -346,18 +436,18 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
           Get started <ArrowRight size={15} />
         </button>
 
-        {/* A texture strip, not just white space — echoes the app's own
-            dashboard stat cards so the pitch already looks like the product. */}
+        {/* A texture strip in the app's own liquid-glass language, not just
+            white space or plain text. */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className="mt-12 flex flex-wrap items-center justify-center gap-x-10 gap-y-4 text-left"
+          className="liquid-glass-panel mt-12 flex flex-wrap items-center justify-center gap-x-10 gap-y-4 rounded-2xl px-8 py-5 text-left"
         >
           {[
-            { value: '6', label: 'modules in one app' },
+            { value: '9', label: 'connected modules' },
             { value: '1', label: 'AI that sees all of them' },
-            { value: '∞', label: 'friends you can race in Arena' },
+            { value: '∞', label: 'modules Jarvis can build you' },
           ].map((s) => (
             <div key={s.label} className="flex items-baseline gap-2">
               <span className="text-2xl font-extrabold text-brand-400">{s.value}</span>
@@ -393,7 +483,7 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
               initial={{ opacity: 0, y: 12 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: '-80px' }}
-              className="flex flex-col justify-between rounded-2xl border border-brand-400/20 bg-brand-500/[0.06] p-6 text-left sm:flex-row sm:items-start sm:gap-8 sm:p-8"
+              className="liquid-glass-highlight flex flex-col justify-between rounded-2xl p-6 text-left sm:flex-row sm:items-start sm:gap-8 sm:p-8"
             >
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-400/15 text-brand-300">
                 {(() => {
@@ -414,7 +504,7 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true, margin: '-80px' }}
                   transition={{ delay: (i + 1) * 0.08 }}
-                  className="flex flex-col justify-between rounded-2xl border border-white/8 bg-white/[0.02] p-6 text-left"
+                  className="liquid-glass-panel flex flex-col justify-between rounded-2xl p-6 text-left"
                 >
                   <div>
                     <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.06] text-white/60">
@@ -430,7 +520,8 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
         </div>
       </div>
 
-      {/* Feature grid — full width, 3-across on large screens */}
+      {/* Feature grid — full width, covers the real breadth: habits, Jarvis,
+          module building, Arena, real integrations, journal, sync, privacy. */}
       <div className="relative px-6 py-16 sm:py-20">
         <div className="mx-auto max-w-6xl">
           <div className="text-center">
@@ -444,8 +535,8 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
                 initial={{ opacity: 0, y: 12 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: '-80px' }}
-                transition={{ delay: (i % 3) * 0.08 }}
-                className="flex flex-col items-start gap-2.5 rounded-2xl border border-white/10 bg-white/[0.03] p-6 text-left"
+                transition={{ delay: (i % 3) * 0.06 }}
+                className="liquid-glass-panel flex flex-col items-start gap-2.5 rounded-2xl p-6 text-left"
               >
                 <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-500/10 text-brand-400">
                   <Icon size={16} />
