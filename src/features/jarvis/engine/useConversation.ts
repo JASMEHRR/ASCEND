@@ -92,6 +92,7 @@ export function useConversation(deps: ConversationDeps): Conversation {
   const thinkingRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const lastSyncedRef = useRef('');
+  const lastSyncedHistoryRef = useRef('');
   // Timestamp of the last message (either side). Used to detect a >5min gap
   // and archive the visible thread before starting the next one fresh.
   const lastActivityRef = useRef(Date.now());
@@ -152,6 +153,21 @@ export function useConversation(deps: ConversationDeps): Conversation {
     modelHistoryRef.current = seed;
     lastActivityRef.current = Date.now();
     lastSyncedRef.current = '';
+
+    const historyCacheKey = `ascend_jarvis_chat_history_${uid ?? 'guest'}`;
+    try {
+      const cachedHistory = localStorage.getItem(historyCacheKey);
+      if (cachedHistory) {
+        const parsed = JSON.parse(cachedHistory);
+        if (Array.isArray(parsed)) setChatHistory(parsed);
+      } else {
+        setChatHistory([]);
+      }
+    } catch {
+      setChatHistory([]);
+    }
+    lastSyncedHistoryRef.current = '';
+
     if (!uid) {
       // No account to wait on — the local cache IS the source of truth.
       readyForUidRef.current = uid;
@@ -159,7 +175,7 @@ export function useConversation(deps: ConversationDeps): Conversation {
     }
 
     const ref = doc(db, 'users', uid, 'jarvis', 'chat');
-    return onSnapshot(
+    const unsubChat = onSnapshot(
       ref,
       (snap) => {
         if (snap.metadata.hasPendingWrites) return;
@@ -181,6 +197,23 @@ export function useConversation(deps: ConversationDeps): Conversation {
         forceRecheck((n) => n + 1);
       },
     );
+
+    const historyRef = doc(db, 'users', uid, 'jarvis', 'chatHistory');
+    const unsubHistory = onSnapshot(
+      historyRef,
+      (snap) => {
+        const stored = snap.data()?.sessions;
+        if (!Array.isArray(stored)) return;
+        lastSyncedHistoryRef.current = JSON.stringify(stored);
+        setChatHistory(stored);
+      },
+      (err) => console.warn('[jarvis chat history] listener error:', err.message),
+    );
+
+    return () => {
+      unsubChat();
+      unsubHistory();
+    };
   }, [deps.uid]);
 
   useEffect(() => {
@@ -208,6 +241,32 @@ export function useConversation(deps: ConversationDeps): Conversation {
     }, 800);
     return () => clearTimeout(t);
   }, [messages, deps.uid]);
+
+  /** Persist archived sessions the same way the live chat is persisted, so
+   *  the Log panel's "past chats" survive a reload or a relogin instead of
+   *  only existing for the current page load. */
+  useEffect(() => {
+    const uid = deps.uid;
+    const historyCacheKey = `ascend_jarvis_chat_history_${uid ?? 'guest'}`;
+    try {
+      localStorage.setItem(historyCacheKey, JSON.stringify(chatHistory));
+    } catch {
+      /* ignore (private window / storage full) */
+    }
+    if (!uid) return;
+    if (readyForUidRef.current !== uid) return;
+    const payload = JSON.stringify(chatHistory);
+    if (payload === lastSyncedHistoryRef.current) return;
+    const t = setTimeout(async () => {
+      lastSyncedHistoryRef.current = payload;
+      try {
+        await setDoc(doc(db, 'users', uid, 'jarvis', 'chatHistory'), { sessions: chatHistory });
+      } catch (err) {
+        console.warn('[jarvis chat history] write failed:', (err as Error).message);
+      }
+    }, 800);
+    return () => clearTimeout(t);
+  }, [chatHistory, deps.uid]);
 
   const push = (msg: JarvisMessage) => {
     setMessages((prev) => [...prev, msg]);
