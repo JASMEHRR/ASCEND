@@ -462,7 +462,12 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
           instead of ending on a generic footer band. */}
       <div className="relative overflow-hidden border-t border-white/8 px-6 py-20 text-center sm:py-28">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_bottom,_rgba(16,185,129,0.10),_transparent_55%)]" />
-        <motion.div initial={{ opacity: 0, scale: 0.9 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }} className="relative">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          whileInView={{ opacity: 1, scale: 1 }}
+          viewport={{ once: true }}
+          className="relative mx-auto flex w-fit items-center justify-center"
+        >
           <JarvisOrb state="listening" size={64} />
         </motion.div>
         <p className="relative mt-6 text-2xl font-extrabold tracking-tight text-white sm:text-4xl">
