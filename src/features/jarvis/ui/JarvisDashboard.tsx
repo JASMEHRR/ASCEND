@@ -63,7 +63,7 @@ const ORB_LABEL: Record<OrbState, string> = {
 const SUGGESTIONS = ['Plan my day', 'How am I doing?', 'What should I focus on?'];
 
 /** The secondary panels — progressive disclosure, one expanded at a time. */
-type DockPanel = 'vitals' | 'focus' | 'rituals' | 'actions' | 'activity' | 'reminders';
+type DockPanel = 'vitals' | 'focus' | 'rituals' | 'actions' | 'chats' | 'reminders';
 
 const DOCK: {
   id: DockPanel;
@@ -76,23 +76,26 @@ const DOCK: {
   { id: 'rituals', label: 'Habits', brief: "Today's Arena habits.", icon: Repeat },
   { id: 'reminders', label: 'Reminders', brief: 'Scheduled nudges and alerts.', icon: Bell },
   { id: 'actions', label: 'Command Deck', brief: 'One-tap shortcuts into any module.', icon: Zap },
-  { id: 'activity', label: 'Log', brief: 'Past chats and everything Jarvis has done.', icon: ScrollText },
+  { id: 'chats', label: 'Chats', brief: 'Every conversation, kept separate.', icon: ScrollText },
 ];
 
 /**
  * The Jarvis home surface. Default state is deliberately minimal — the orb,
  * a greeting, and the console. Everything else (vitals, tasks, rituals, quick
- * actions, activity log) lives behind the collapsible dock at the bottom;
+ * actions, chat history) lives behind the collapsible dock at the bottom;
  * opening one panel closes the previous (progressive disclosure, whitespace
  * over density).
+ *
+ * The home screen is what you get whenever no chat is open (activeChatId is
+ * null) — the default on every load. Starting a message opens a new chat;
+ * past chats are separate threads reachable from the Chats panel.
  */
 export default function JarvisDashboard({ state, updateState, setView, openSettings }: Props) {
   const { user } = useAuth();
   const { prompt } = useDialog();
-  const { sendMessage, memory, messages, chatHistory } = useJarvis();
+  const { sendMessage, messages, chats, activeChatId, newChat, openChat, removeChat } = useJarvis();
   const orbState = useOrbState();
   const [openPanel, setOpenPanel] = useState<DockPanel | null>(null);
-  const [openSession, setOpenSession] = useState<string | null>(null);
   // The panel rail is a convenience, not a necessity — collapsing it gives the
   // conversation the full width. Remembered across reloads.
   const [railOpen, setRailOpen] = useState(() => readStore('ascend_panel_rail') !== 'closed');
@@ -112,7 +115,9 @@ export default function JarvisDashboard({ state, updateState, setView, openSetti
   const streak = effectiveStreak(state);
   const openTasks = state.tasks.filter((t) => !t.done).length;
   const name = (user?.email ?? 'there').split('@')[0];
-  const conversationStarted = messages.length > 1;
+  // A chat being open is what collapses the hero — not merely having sent a
+  // message. Closing a chat (or loading the app) returns to the home screen.
+  const conversationStarted = activeChatId !== null;
 
   // Off by default — Jarvis stays idle until spoken to, unless opted in here.
   const greetOnLogin = state.jarvisPrefs?.greetOnLogin === true;
@@ -234,29 +239,19 @@ export default function JarvisDashboard({ state, updateState, setView, openSetti
             ))}
           </div>
         )}
-        <JarvisConsole autoFocus />
-
-        {/* Recent-action chips — capped at 3; the rest roll into the Log panel. */}
-        {memory.recentActions.length > 0 && (
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {memory.recentActions.slice(0, 3).map((a, i) => (
-              <button
-                key={i}
-                onClick={() => setOpenPanel('activity')}
-                className="inline-flex max-w-[16rem] items-center gap-1.5 rounded-full border border-white/8 bg-white/[0.03] px-2.5 py-1 text-[10.5px] text-white/45 hover:text-white/80 transition-colors cursor-pointer"
-                title="Open the activity log"
-              >
-                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${a.ok ? 'bg-brand-400' : 'bg-red-400/70'}`} />
-                <span className="truncate">{a.summary}</span>
-              </button>
-            ))}
-            {memory.recentActions.length > 3 && (
-              <button onClick={() => setOpenPanel('activity')} className="text-[10.5px] text-white/30 hover:text-white/60 cursor-pointer">
-                +{memory.recentActions.length - 3} more
-              </button>
-            )}
-          </div>
+        {/* An open chat gets a way back to the home screen — the same place a
+            fresh load starts from. */}
+        {conversationStarted && (
+          <button
+            onClick={newChat}
+            className="mb-2 mr-auto flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[10.5px] text-white/45 transition-all hover:border-brand-400/40 hover:text-white cursor-pointer"
+          >
+            <Plus size={11} /> New chat
+          </button>
         )}
+        <JarvisConsole autoFocus />
+        {/* Activity logs are deliberately not surfaced here — they're written
+            server-side for support/debugging, not shown to the user. */}
       </div>
 
       {/* Expanded dock panel — one at a time, above the dock. */}
@@ -356,64 +351,51 @@ export default function JarvisDashboard({ state, updateState, setView, openSetti
                   </div>
                 )}
 
-                {openPanel === 'activity' && (
-                  <div className="space-y-4">
-                    {/* Past chat sessions — the visible thread clears after 5 min
-                        idle to keep the console short; the full conversation
-                        still lives here if you want to look back. */}
-                    {chatHistory.length > 0 && (
-                      <div>
-                        <p className="mb-1.5 text-[10px] font-mono font-bold uppercase tracking-widest text-white/40">Past chats</p>
-                        <ul className="space-y-1.5">
-                          {chatHistory.map((session) => {
-                            const open = openSession === session.id;
-                            const preview = session.messages.find((m) => m.role === 'user')?.content ?? session.messages[0]?.content ?? '';
-                            return (
-                              <li key={session.id} className="rounded-xl border border-white/8 bg-white/[0.02]">
-                                <button
-                                  onClick={() => setOpenSession(open ? null : session.id)}
-                                  className="flex w-full items-center gap-2 px-2.5 py-2 text-left cursor-pointer"
-                                >
-                                  <span className="min-w-0 flex-1 truncate text-[12px] text-white/65">{preview}</span>
-                                  <span className="shrink-0 font-mono text-[10px] text-white/25">
-                                    {new Date(session.endedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                  </span>
-                                </button>
-                                {open && (
-                                  <div className="max-h-48 space-y-1.5 overflow-y-auto custom-scrollbar border-t border-white/8 px-2.5 py-2">
-                                    {session.messages.map((m, i) => (
-                                      <p key={i} className={`text-[11.5px] leading-snug ${m.role === 'user' ? 'text-white/70' : 'text-white/45'}`}>
-                                        <span className="font-mono text-[9px] uppercase tracking-wider text-white/25">{m.role === 'user' ? 'You' : 'Jarvis'}</span>{' '}
-                                        {m.content}
-                                      </p>
-                                    ))}
-                                  </div>
-                                )}
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      </div>
+                {/* Every conversation as its own thread, newest first —
+                    activity logs live server-side and are never shown here. */}
+                {openPanel === 'chats' && (
+                  <div className="space-y-3">
+                    <button
+                      onClick={newChat}
+                      className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-brand-400/25 bg-brand-500/10 py-2 text-[11.5px] font-bold text-brand-300 transition-colors hover:bg-brand-500/20 cursor-pointer"
+                    >
+                      <Plus size={13} /> New chat
+                    </button>
+                    {chats.length === 0 ? (
+                      <p className="text-[13px] text-white/35">No chats yet. Say something to start your first one.</p>
+                    ) : (
+                      <ul className="space-y-1.5">
+                        {chats.map((c) => (
+                          <li
+                            key={c.id}
+                            className={`group flex items-center gap-2 rounded-xl border px-3 py-2 transition-colors ${
+                              c.id === activeChatId
+                                ? 'border-brand-400/40 bg-brand-500/10'
+                                : 'border-white/8 bg-white/[0.02] hover:border-white/20'
+                            }`}
+                          >
+                            <button onClick={() => openChat(c.id)} className="min-w-0 flex-1 text-left cursor-pointer">
+                              <span className="block truncate text-[12.5px] text-white/80">{c.title}</span>
+                              <span className="block font-mono text-[9.5px] text-white/30">
+                                {new Date(c.updatedAt).toLocaleString([], {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </span>
+                            </button>
+                            <button
+                              onClick={() => removeChat(c.id)}
+                              aria-label={`Delete ${c.title}`}
+                              className="shrink-0 rounded-full p-1.5 text-white/25 opacity-0 transition-all hover:bg-white/10 hover:text-red-400 group-hover:opacity-100 cursor-pointer"
+                            >
+                              <X size={12} />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
                     )}
-
-                    <div>
-                      {chatHistory.length > 0 && (
-                        <p className="mb-1.5 text-[10px] font-mono font-bold uppercase tracking-widest text-white/40">Actions</p>
-                      )}
-                      {memory.recentActions.length === 0 ? (
-                        <p className="text-[13px] text-white/35">No recorded actions yet this session.</p>
-                      ) : (
-                        <ul className="space-y-1.5">
-                          {memory.recentActions.map((a, i) => (
-                            <li key={i} className="flex items-center gap-2 text-[12px] text-white/60">
-                              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${a.ok ? 'bg-brand-400' : 'bg-red-400/70'}`} />
-                              <span className="truncate">{a.summary}</span>
-                              <span className="ml-auto shrink-0 font-mono text-[10px] text-white/25">{new Date(a.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
                   </div>
                 )}
               </div>

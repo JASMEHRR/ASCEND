@@ -12,6 +12,7 @@
  */
 import { Router, type Request, type Response } from 'express';
 import { generateChat, extractJson, GeminiError, type LlmMessage } from './llm';
+import { logEvent } from './server-log';
 
 export const jarvisRouter = Router();
 
@@ -128,7 +129,12 @@ jarvisRouter.post('/', async (req: Request, res: Response) => {
   } catch (err: unknown) {
     const status = err instanceof GeminiError ? err.status : 500;
     const message = err instanceof Error ? err.message : 'Jarvis request failed';
-    if (status >= 500) console.error('[jarvis]', err);
+    logEvent({
+      level: status >= 500 ? 'error' : 'warn',
+      scope: 'jarvis',
+      message,
+      meta: { status },
+    });
     res.status(status).json({ error: message });
   }
 });

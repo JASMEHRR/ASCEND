@@ -1,31 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { db } from '../../../lib/firebase';
 import { callJarvis } from './jarvisClient';
+import {
+  deleteChat as deleteChatDoc,
+  draftTitle,
+  newChatId,
+  patchChat,
+  saveChat,
+  subscribeChats,
+  type ChatThread,
+} from './chats';
 import type { ActionRecord, JarvisMessage, JarvisResponse, JarvisTool, StatusLine, ToolDeclaration, ToolResult } from '../types';
-
-/** Keep the persisted transcript from growing without bound. */
-const MAX_STORED_MESSAGES = 200;
 
 /** Below this self-reported confidence, a tool call is not executed. */
 const CONFIDENCE_THRESHOLD = 0.45;
-
-/**
- * After this much idle time, the *visible* thread resets to a clean slate on
- * the next message — the old exchange archives into chatHistory instead of
- * sitting there forever. Jarvis's own memory/context is untouched either way;
- * this only tidies up what's shown on screen.
- */
-const IDLE_RESET_MS = 5 * 60 * 1000;
-
-/** Cap on how many past sessions the Log panel keeps around. */
-const MAX_CHAT_HISTORY = 30;
-
-export interface ChatSession {
-  id: string;
-  endedAt: string;
-  messages: JarvisMessage[];
-}
 
 /**
  * The transcript sent to the model: role + clean content only. UI-only status
@@ -54,7 +41,7 @@ interface ConversationDeps {
   buildContext: () => Record<string, unknown>;
   recordAction: (a: ActionRecord) => void;
   speak: (text: string) => void;
-  /** Signed-in uid, for persisting the transcript. Null while signed out. */
+  /** Signed-in uid, for persisting chats. Null while signed out. */
   uid: string | null;
   /**
    * Whether a typed message should still get a spoken reply. Off by default:
@@ -73,8 +60,14 @@ export interface Conversation {
   /** Proactively push (and speak) an assistant line without an LLM round-trip. */
   greet: (text: string) => void;
   abort: () => void;
-  /** Past visible sessions, archived on idle-reset. Newest first. */
-  chatHistory: ChatSession[];
+  /** Every saved conversation, newest activity first. */
+  chats: ChatThread[];
+  /** null means "no chat open" — the dashboard's default home screen. */
+  activeChatId: string | null;
+  /** Drop back to the home screen without deleting anything. */
+  newChat: () => void;
+  openChat: (id: string) => void;
+  removeChat: (id: string) => void;
 }
 
 /**
@@ -82,228 +75,132 @@ export interface Conversation {
  * confidences) → validate + execute each above threshold → optionally summarize
  * the outcome. The LLM call retries once; tool side-effects never auto-retry
  * (idempotency). Failures degrade gracefully and are reported, not thrown away.
+ *
+ * Conversations are separate, persisted threads (see chats.ts) rather than one
+ * endless transcript — `activeChatId === null` is the home screen, and sending
+ * a message from there starts a brand new chat.
  */
 export function useConversation(deps: ConversationDeps): Conversation {
+  const [chats, setChats] = useState<ChatThread[]>([]);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [messages, setMessages] = useState<JarvisMessage[]>([GREETING]);
-  const [chatHistory, setChatHistory] = useState<ChatSession[]>([]);
   const [thinking, setThinking] = useState(false);
+
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
+  const activeChatIdRef = useRef(activeChatId);
+  activeChatIdRef.current = activeChatId;
+  const chatsRef = useRef(chats);
+  chatsRef.current = chats;
   const thinkingRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
-  const lastSyncedRef = useRef('');
-  const lastSyncedHistoryRef = useRef('');
-  // Timestamp of the last message (either side). Used to detect a >5min gap
-  // and archive the visible thread before starting the next one fresh.
-  const lastActivityRef = useRef(Date.now());
-  /**
-   * The durable conversation Jarvis actually reasons over — kept separate
-   * from the `messages` UI state so an idle-reset can clear what's rendered
-   * on screen without Jarvis losing context of what was discussed. Reset only
-   * on sign-in/out (see the load effect below), never on idle.
-   */
-  const modelHistoryRef = useRef<JarvisMessage[]>([]);
-  // 'unset' is distinct from both a real uid and null (signed out), so the
-  // very first render always runs the load-transcript effect once.
-  const loadedForUidRef = useRef<string | null | 'unset'>('unset');
-  /**
-   * Guards the write-effect against firing before Firestore's *first* snapshot
-   * for the current uid has actually arrived.
-   *
-   * Without this: on sign-in, `uid` flips to a real value one render before
-   * the async onSnapshot callback delivers the saved transcript. `messages`
-   * is still the stale (often just-the-greeting) local state at that moment,
-   * and the write-effect — which also depends on `deps.uid` — fires in that
-   * same pass and schedules an 800ms write of the stale value. Normally the
-   * follow-up render (once the snapshot lands) cancels that timer before it
-   * fires. But on a slow connection the round-trip can take longer than
-   * 800ms, so the stale write lands first and clobbers the real history —
-   * this was the actual cause of chat "vanishing" on relogin.
-   */
-  const readyForUidRef = useRef<string | null>(null);
-  // Mirrors readyForUidRef but as state, purely so the write-effect re-runs
-  // once readiness flips even when there's no stored data to load (a brand
-  // new account) — a ref flip alone doesn't trigger a re-render.
-  const [, forceRecheck] = useState(0);
+  /** Chat ids this session created/owns, so the write-effect never persists a
+   *  transcript into a chat it hasn't actually opened yet. */
+  const ownedRef = useRef<Set<string>>(new Set());
+  const lastWriteRef = useRef('');
 
-  /**
-   * Persist the transcript the same way Jarvis's memory already does:
-   * localStorage first for instant reload, then a debounced Firestore write
-   * per user so signing out and back in (or opening on another device) finds
-   * the conversation still there instead of resetting to the greeting.
-   */
+  // Live chat list. Switching users resets everything back to the home screen.
   useEffect(() => {
     const uid = deps.uid;
-    if (loadedForUidRef.current === uid) return;
-    loadedForUidRef.current = uid;
-    readyForUidRef.current = null;
-
-    const cacheKey = `ascend_jarvis_chat_${uid ?? 'guest'}`;
-    let seed: JarvisMessage[] = [GREETING];
-    try {
-      const cached = localStorage.getItem(cacheKey);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) seed = parsed;
-      }
-    } catch {
-      /* ignore */
-    }
-    setMessages(seed);
-    modelHistoryRef.current = seed;
-    lastActivityRef.current = Date.now();
-    lastSyncedRef.current = '';
-
-    const historyCacheKey = `ascend_jarvis_chat_history_${uid ?? 'guest'}`;
-    try {
-      const cachedHistory = localStorage.getItem(historyCacheKey);
-      if (cachedHistory) {
-        const parsed = JSON.parse(cachedHistory);
-        if (Array.isArray(parsed)) setChatHistory(parsed);
-      } else {
-        setChatHistory([]);
-      }
-    } catch {
-      setChatHistory([]);
-    }
-    lastSyncedHistoryRef.current = '';
-
-    if (!uid) {
-      // No account to wait on — the local cache IS the source of truth.
-      readyForUidRef.current = uid;
-      return;
-    }
-
-    const ref = doc(db, 'users', uid, 'jarvis', 'chat');
-    const unsubChat = onSnapshot(
-      ref,
-      (snap) => {
-        if (snap.metadata.hasPendingWrites) return;
-        const stored = snap.data()?.messages;
-        // Even an empty/missing doc counts as "checked" — a genuinely new
-        // account has nothing to load, and that's fine; it just shouldn't be
-        // confused with "haven't heard back yet". forceRecheck re-renders so
-        // the write-effect notices even when there's no data to setMessages.
-        readyForUidRef.current = uid;
-        forceRecheck((n) => n + 1);
-        if (!Array.isArray(stored) || stored.length === 0) return;
-        lastSyncedRef.current = JSON.stringify(stored);
-        setMessages(stored);
-        modelHistoryRef.current = stored;
-      },
-      (err) => {
-        console.warn('[jarvis chat] listener error:', err.message);
-        readyForUidRef.current = uid; // don't block writes forever on a denied/broken read
-        forceRecheck((n) => n + 1);
-      },
-    );
-
-    const historyRef = doc(db, 'users', uid, 'jarvis', 'chatHistory');
-    const unsubHistory = onSnapshot(
-      historyRef,
-      (snap) => {
-        const stored = snap.data()?.sessions;
-        if (!Array.isArray(stored)) return;
-        lastSyncedHistoryRef.current = JSON.stringify(stored);
-        setChatHistory(stored);
-      },
-      (err) => console.warn('[jarvis chat history] listener error:', err.message),
-    );
-
-    return () => {
-      unsubChat();
-      unsubHistory();
-    };
+    setChats([]);
+    setActiveChatId(null);
+    setMessages([GREETING]);
+    ownedRef.current = new Set();
+    lastWriteRef.current = '';
+    if (!uid) return;
+    return subscribeChats(uid, setChats);
   }, [deps.uid]);
 
+  /** Persist the open chat's transcript, debounced. */
   useEffect(() => {
     const uid = deps.uid;
-    const cacheKey = `ascend_jarvis_chat_${uid ?? 'guest'}`;
-    const trimmed = messages.slice(-MAX_STORED_MESSAGES);
-    try {
-      localStorage.setItem(cacheKey, JSON.stringify(trimmed));
-    } catch {
-      /* ignore (private window / storage full) */
-    }
-    if (!uid) return;
-    // Firestore's own first read for this uid hasn't come back yet — writing
-    // now risks overwriting real history with this render's stale/seed value.
-    if (readyForUidRef.current !== uid) return;
-    const payload = JSON.stringify(trimmed);
-    if (payload === lastSyncedRef.current) return;
-    const t = setTimeout(async () => {
-      lastSyncedRef.current = payload;
-      try {
-        await setDoc(doc(db, 'users', uid, 'jarvis', 'chat'), { messages: trimmed });
-      } catch (err) {
-        console.warn('[jarvis chat] write failed:', (err as Error).message);
-      }
-    }, 800);
+    const chatId = activeChatId;
+    if (!uid || !chatId) return;
+    if (!ownedRef.current.has(chatId)) return;
+    if (messages.length === 0) return;
+    const payload = JSON.stringify(messages);
+    if (payload === lastWriteRef.current) return;
+    const t = setTimeout(() => {
+      lastWriteRef.current = payload;
+      void patchChat(uid, chatId, { messages }).catch((err) =>
+        console.warn('[jarvis chats] write failed:', (err as Error).message),
+      );
+    }, 700);
     return () => clearTimeout(t);
-  }, [messages, deps.uid]);
+  }, [messages, activeChatId, deps.uid]);
 
-  /** Persist archived sessions the same way the live chat is persisted, so
-   *  the Log panel's "past chats" survive a reload or a relogin instead of
-   *  only existing for the current page load. */
-  useEffect(() => {
-    const uid = deps.uid;
-    const historyCacheKey = `ascend_jarvis_chat_history_${uid ?? 'guest'}`;
-    try {
-      localStorage.setItem(historyCacheKey, JSON.stringify(chatHistory));
-    } catch {
-      /* ignore (private window / storage full) */
-    }
-    if (!uid) return;
-    if (readyForUidRef.current !== uid) return;
-    const payload = JSON.stringify(chatHistory);
-    if (payload === lastSyncedHistoryRef.current) return;
-    const t = setTimeout(async () => {
-      lastSyncedHistoryRef.current = payload;
-      try {
-        await setDoc(doc(db, 'users', uid, 'jarvis', 'chatHistory'), { sessions: chatHistory });
-      } catch (err) {
-        console.warn('[jarvis chat history] write failed:', (err as Error).message);
-      }
-    }, 800);
-    return () => clearTimeout(t);
-  }, [chatHistory, deps.uid]);
-
-  const push = (msg: JarvisMessage) => {
-    setMessages((prev) => [...prev, msg]);
-    modelHistoryRef.current = [...modelHistoryRef.current, msg];
-  };
+  const push = (msg: JarvisMessage) => setMessages((prev) => [...prev, msg]);
 
   const abort = useCallback(() => abortRef.current?.abort(), []);
 
-  /**
-   * Called at the start of every new turn. If the visible thread has been
-   * quiet for IDLE_RESET_MS, archive what's currently on screen into
-   * chatHistory and clear it back to just the greeting. modelHistoryRef is
-   * deliberately left alone — Jarvis keeps reasoning with full context even
-   * though the screen looks fresh.
-   */
-  const archiveIfIdle = () => {
-    const now = Date.now();
-    const idleFor = now - lastActivityRef.current;
-    lastActivityRef.current = now;
-    if (idleFor < IDLE_RESET_MS) return;
-    const current = messagesRef.current;
-    // Nothing beyond the greeting to archive — skip the no-op session.
-    if (current.length <= 1) return;
-    setChatHistory((prev) =>
-      [{ id: `session_${now}`, endedAt: new Date(now).toISOString(), messages: current }, ...prev].slice(
-        0,
-        MAX_CHAT_HISTORY,
-      ),
-    );
+  /** Back to the home screen. The previous chat stays saved in the list. */
+  const newChat = useCallback(() => {
+    abortRef.current?.abort();
+    setActiveChatId(null);
     setMessages([GREETING]);
-    messagesRef.current = [GREETING];
-  };
+    lastWriteRef.current = '';
+  }, []);
+
+  const openChat = useCallback((id: string) => {
+    abortRef.current?.abort();
+    const found = chatsRef.current.find((c) => c.id === id);
+    if (!found) return;
+    ownedRef.current.add(id);
+    setActiveChatId(id);
+    const loaded = found.messages.length > 0 ? found.messages : [GREETING];
+    setMessages(loaded);
+    lastWriteRef.current = JSON.stringify(loaded);
+  }, []);
+
+  const removeChat = useCallback(
+    (id: string) => {
+      const uid = deps.uid;
+      if (!uid) return;
+      if (activeChatIdRef.current === id) {
+        setActiveChatId(null);
+        setMessages([GREETING]);
+        lastWriteRef.current = '';
+      }
+      ownedRef.current.delete(id);
+      void deleteChatDoc(uid, id).catch((err) =>
+        console.warn('[jarvis chats] delete failed:', (err as Error).message),
+      );
+    },
+    [deps.uid],
+  );
+
+  /**
+   * Ask the model for a short title once a chat has its first exchange, so the
+   * chat list reads like a list of topics rather than truncated first lines.
+   * Best-effort: the draft title stays if this fails.
+   */
+  const titleChat = useCallback(
+    async (uid: string, chatId: string, exchange: JarvisMessage[]) => {
+      try {
+        const res = await callJarvis(
+          [
+            ...toModelHistory(exchange),
+            {
+              role: 'user',
+              content:
+                'Give this conversation a title of at most 5 words. Reply with the title text only — no quotes, no punctuation at the end, no explanation.',
+            },
+          ],
+          {},
+          [],
+        );
+        const title = res.reply.trim().replace(/^["']|["']$/g, '').slice(0, 60);
+        if (title) await patchChat(uid, chatId, { title });
+      } catch {
+        /* keep the draft title */
+      }
+    },
+    [],
+  );
 
   const greet = useCallback(
     (text: string) => {
       if (!text.trim()) return;
-      archiveIfIdle();
       push({ role: 'assistant', content: text });
       deps.speak(text);
     },
@@ -314,7 +211,7 @@ export function useConversation(deps: ConversationDeps): Conversation {
     async (raw: string, origin: 'text' | 'voice' = 'text') => {
       const text = raw.trim();
       if (!text || thinkingRef.current) return;
-      archiveIfIdle();
+      const uid = deps.uid;
       // Voice always gets a spoken reply; typed only does if opted in.
       const shouldSpeak = origin === 'voice' || deps.speakOnText;
       const speak = (t: string) => shouldSpeak && deps.speak(t);
@@ -323,15 +220,30 @@ export function useConversation(deps: ConversationDeps): Conversation {
       const ctrl = new AbortController();
       abortRef.current = ctrl;
 
+      // Sending from the home screen starts a fresh chat.
+      let chatId = activeChatIdRef.current;
+      let isNew = false;
+      if (!chatId) {
+        chatId = newChatId();
+        isNew = true;
+        ownedRef.current.add(chatId);
+        activeChatIdRef.current = chatId;
+        setActiveChatId(chatId);
+        if (uid) {
+          const now = new Date().toISOString();
+          void saveChat(uid, {
+            id: chatId,
+            title: draftTitle(text),
+            createdAt: now,
+            updatedAt: now,
+            messages: [],
+          }).catch((err) => console.warn('[jarvis chats] create failed:', (err as Error).message));
+        }
+      }
+
       const userMsg = { role: 'user', content: text } as JarvisMessage;
-      const uiHistory = [...messagesRef.current, userMsg];
-      setMessages(uiHistory);
-      // The model's context keeps the full conversation regardless of what's
-      // visibly on screen — an idle-reset clears the display, not Jarvis's
-      // memory of what was discussed.
-      const fullHistory = [...modelHistoryRef.current, userMsg];
-      modelHistoryRef.current = fullHistory;
-      const history = toModelHistory(fullHistory);
+      const history = [...messagesRef.current, userMsg];
+      setMessages(history);
       thinkingRef.current = true;
       setThinking(true);
 
@@ -345,11 +257,12 @@ export function useConversation(deps: ConversationDeps): Conversation {
       }));
 
       try {
-        const plan = await callJarvis(history, context, decls, ctrl.signal);
+        const plan = await callJarvis(toModelHistory(history), context, decls, ctrl.signal);
 
         if (plan.needsClarification || plan.toolCalls.length === 0) {
           push({ role: 'assistant', content: plan.reply });
           speak(spokenOf(plan));
+          if (isNew && uid) void titleChat(uid, chatId, [userMsg, { role: 'assistant', content: plan.reply }]);
           return;
         }
 
@@ -396,7 +309,7 @@ export function useConversation(deps: ConversationDeps): Conversation {
             .map((e) => `${e.tool.name} → ${e.result.ok ? 'ok' : 'failed'}: ${e.result.message}${e.result.data !== undefined ? ` | data: ${JSON.stringify(e.result.data)}` : ''}`)
             .join('\n');
           const followHistory: JarvisMessage[] = [
-            ...history,
+            ...toModelHistory(history),
             { role: 'assistant', content: reply },
             { role: 'user', content: `[TOOL RESULTS]\n${note}\n\nReport the outcome to the user (answer their question with the data if they asked one).` },
           ];
@@ -419,6 +332,7 @@ export function useConversation(deps: ConversationDeps): Conversation {
 
         push({ role: 'assistant', content: reply, status });
         speak(spoken);
+        if (isNew && uid) void titleChat(uid, chatId, [userMsg, { role: 'assistant', content: reply }]);
       } catch (e) {
         if ((e as Error).name === 'AbortError') return;
         push({ role: 'assistant', content: `Connection issue: ${(e as Error).message}. Try again.` });
@@ -428,8 +342,8 @@ export function useConversation(deps: ConversationDeps): Conversation {
       }
     },
     // deps are all stable callbacks from their hooks
-    [deps],
+    [deps, titleChat],
   );
 
-  return { messages, thinking, sendMessage, greet, abort, chatHistory };
+  return { messages, thinking, sendMessage, greet, abort, chats, activeChatId, newChat, openChat, removeChat };
 }

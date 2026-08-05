@@ -145,6 +145,11 @@ service cloud.firestore {
       }
     }
 
+    // Server-side activity log (_logs). Written only by the Admin SDK from the
+    // API routes, which bypasses these rules entirely; the catch-all below
+    // means no browser client can read or write it, which is the point —
+    // logs are for support/debugging, never shown in the app. Grant a person
+    // temporary read access via Firebase IAM rather than by relaxing this.
     match /{document=**} {
       allow read, write: if false;
     }
