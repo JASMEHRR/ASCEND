@@ -184,6 +184,32 @@ export default function JarvisDashboard({ state, updateState, setView, openSetti
         </div>
       </div>
 
+      {/* Idle home: a real dashboard, not just an empty hero. Tapping a card
+          opens the matching panel for detail. Hidden once a conversation is
+          underway (and reappears if it idle-resets back to this state). */}
+      {!conversationStarted && (
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <StatCard icon={<Zap size={13} />} label="Discipline" value={`${score}`} sub="/100" tint="text-white" onClick={() => togglePanel('vitals')} />
+          <StatCard icon={<Flame size={13} />} label="Streak" value={`${streak}`} sub="days" tint="text-amber-400" onClick={() => togglePanel('vitals')} />
+          <StatCard
+            icon={<ListChecks size={13} />}
+            label="Tasks"
+            value={`${openTasks}`}
+            sub="open"
+            tint="text-brand-400"
+            onClick={() => togglePanel('focus')}
+          />
+          <StatCard
+            icon={<Repeat size={13} />}
+            label="Habits"
+            value={arenaProgress ? `${arenaProgress.done}/${arenaProgress.total}` : '—'}
+            sub="today"
+            tint="text-sky-400"
+            onClick={() => togglePanel('rituals')}
+          />
+        </div>
+      )}
+
       {/* A staged day plan interrupts the calm — it needs a decision. */}
       <div className="mt-3 empty:hidden">
         <PlanApprovalCard updateState={updateState} />
@@ -518,6 +544,38 @@ export default function JarvisDashboard({ state, updateState, setView, openSetti
         </div>
       </aside>
     </div>
+  );
+}
+
+/** A tappable stat card on the idle home screen — glanceable, opens the matching panel for detail. */
+function StatCard({
+  icon,
+  label,
+  value,
+  sub,
+  tint,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  sub: string;
+  tint: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="liquid-glass-panel flex flex-col items-start gap-1 rounded-2xl border border-white/8 px-3.5 py-3 text-left transition-all hover:border-white/20 hover:bg-white/[0.06] cursor-pointer"
+    >
+      <p className="flex items-center gap-1.5 text-[9.5px] font-mono font-bold uppercase tracking-widest text-white/40">
+        {icon} {label}
+      </p>
+      <p className={`text-xl font-extrabold ${tint}`}>
+        {value}
+        <span className="ml-1 text-[10.5px] font-normal text-white/35">{sub}</span>
+      </p>
+    </button>
   );
 }
 
