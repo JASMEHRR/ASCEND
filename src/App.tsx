@@ -20,6 +20,7 @@ import FlipClock from './components/FlipClock';
 import SettingsModal from './components/SettingsModal';
 import RewardModal from './components/RewardModal';
 import LoginScreen from './components/auth/LoginScreen';
+import LandingPage from './components/LandingPage';
 import Jarvis from './features/jarvis/Jarvis';
 import ObsidianRegistrar from './features/obsidian/ObsidianRegistrar';
 import RemindersRegistrar from './features/reminders/RemindersRegistrar';
@@ -127,6 +128,10 @@ export default function App() {
   const [rewardModalOpen, setRewardModalOpen] = useState(false);
   const [currentReward, setCurrentReward] = useState('');
   const [lastPointMilestone, setLastPointMilestone] = useState(0);
+  // A signed-out visitor sees the landing page first, then the sign-in card —
+  // once they've clicked through, skip straight to sign-in on future visits
+  // instead of showing the pitch every single time.
+  const [pastLanding, setPastLanding] = useState(() => readStore('ascend_seen_landing') === '1');
 
   // Re-render every minute so the auto atmosphere tracks the time of day.
   useEffect(() => {
@@ -175,6 +180,16 @@ export default function App() {
 
   // --- Auth / load gates (all hooks above run unconditionally) ---
   if (initializing) return <FullScreenLoader label="Connecting…" />;
+  if (!user && !pastLanding) {
+    return (
+      <LandingPage
+        onContinue={() => {
+          writeStore('ascend_seen_landing', '1');
+          setPastLanding(true);
+        }}
+      />
+    );
+  }
   if (!user) return <LoginScreen />;
   if (!state) return <FullScreenLoader label="Loading your protocol…" />;
 
