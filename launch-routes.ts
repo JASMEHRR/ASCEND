@@ -8,6 +8,7 @@
  */
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { generateStructured, GeminiError } from './llm';
+import { logEvent } from './server-log';
 
 export const launchRouter = Router();
 
@@ -262,5 +263,6 @@ launchRouter.use((err: unknown, _req: Request, res: Response, _next: NextFunctio
   const status = err instanceof GeminiError ? err.status : 500;
   const message = err instanceof Error ? err.message : 'Launch AI request failed';
   if (status >= 500) console.error('[launch]', err);
+  logEvent({ level: status >= 500 ? 'error' : 'warn', scope: 'launch', message, meta: { status } });
   res.status(status).json({ error: message });
 });

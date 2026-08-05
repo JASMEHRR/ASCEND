@@ -7,6 +7,7 @@
  * (never a crash). No secrets involved.
  */
 import { Router, type Request, type Response } from 'express';
+import { logEvent } from './server-log';
 
 export const stocksRouter = Router();
 
@@ -73,6 +74,7 @@ stocksRouter.get('/quotes', async (req: Request, res: Response) => {
     res.json({ quotes, failed });
   } catch (err) {
     console.error('[stocks]', err);
+    logEvent({ level: 'error', scope: 'stocks', message: (err as Error).message ?? 'quotes failed' });
     res.status(502).json({ error: 'Market data is unavailable right now (upstream error).' });
   }
 });
@@ -95,6 +97,7 @@ stocksRouter.get('/search', async (req: Request, res: Response) => {
     res.json({ matches });
   } catch (err) {
     console.error('[stocks:search]', err);
+    logEvent({ level: 'error', scope: 'stocks', message: (err as Error).message ?? 'search failed' });
     res.status(502).json({ error: 'Symbol search is unavailable right now (upstream error).' });
   }
 });

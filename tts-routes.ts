@@ -9,6 +9,7 @@
  * can latch onto browser SpeechSynthesis for the rest of the session.
  */
 import { Router, type Request, type Response } from 'express';
+import { logEvent } from './server-log';
 
 export const ttsRouter = Router();
 
@@ -46,6 +47,7 @@ ttsRouter.post('/', async (req: Request, res: Response) => {
       const quota =
         upstream.status === 401 || upstream.status === 429 || /quota_exceeded|character_limit/i.test(detail);
       if (!quota) console.error('[tts] upstream', upstream.status, detail);
+      logEvent({ level: quota ? 'warn' : 'error', scope: 'tts', message: 'upstream failed', meta: { status: upstream.status } });
       res
         .status(quota ? 429 : 502)
         .json({ error: quota ? 'ElevenLabs quota reached.' : 'TTS failed upstream.', code: quota ? 'quota' : 'upstream' });
@@ -58,6 +60,7 @@ ttsRouter.post('/', async (req: Request, res: Response) => {
     res.send(audio);
   } catch (err) {
     console.error('[tts]', err);
+    logEvent({ level: 'error', scope: 'tts', message: (err as Error).message ?? 'tts failed' });
     res.status(502).json({ error: 'TTS request failed.', code: 'upstream' });
   }
 });

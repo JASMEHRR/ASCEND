@@ -9,6 +9,7 @@
  * fallback (see llm.ts) — spending it on search would cannibalize resilience.
  */
 import { Router, type Request, type Response } from 'express';
+import { logEvent } from './server-log';
 
 export const searchRouter = Router();
 
@@ -37,6 +38,7 @@ searchRouter.get('/', async (req: Request, res: Response) => {
       const detail = (await upstream.text().catch(() => '')).slice(0, 300);
       const quota = upstream.status === 429 || upstream.status === 432 || /limit|quota/i.test(detail);
       if (!quota) console.error('[search] upstream', upstream.status, detail);
+      logEvent({ level: quota ? 'warn' : 'error', scope: 'search', message: 'upstream failed', meta: { status: upstream.status } });
       res
         .status(quota ? 429 : 502)
         .json({ error: quota ? 'Search quota exhausted for the month.' : 'Search failed upstream.', code: quota ? 'quota' : 'upstream' });
@@ -57,6 +59,7 @@ searchRouter.get('/', async (req: Request, res: Response) => {
     });
   } catch (err) {
     console.error('[search]', err);
+    logEvent({ level: 'error', scope: 'search', message: (err as Error).message ?? 'search failed' });
     res.status(502).json({ error: 'Search request failed.', code: 'upstream' });
   }
 });

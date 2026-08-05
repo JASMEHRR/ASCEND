@@ -19,6 +19,7 @@
  */
 import { Router, type Request, type Response } from 'express';
 import { createHash } from 'node:crypto';
+import { logEvent } from './server-log';
 
 export const kiteRouter = Router();
 
@@ -64,12 +65,14 @@ kiteRouter.get('/callback', async (req: Request, res: Response) => {
     const accessToken = data?.data?.access_token;
     if (!upstream.ok || !accessToken) {
       console.error('[kite] token exchange failed', upstream.status, data?.message ?? '');
+      logEvent({ level: 'error', scope: 'kite', message: 'token exchange failed', meta: { status: upstream.status } });
       res.redirect('/#kite_error=exchange_failed');
       return;
     }
     res.redirect(`/#kite_token=${encodeURIComponent(accessToken)}`);
   } catch (err) {
     console.error('[kite] callback', err);
+    logEvent({ level: 'error', scope: 'kite', message: (err as Error).message ?? 'callback failed' });
     res.redirect('/#kite_error=exchange_failed');
   }
 });
@@ -116,12 +119,14 @@ for (const [name, path] of Object.entries(DATA_PATHS)) {
       }
       if (!upstream.ok || data?.status !== 'success') {
         console.error('[kite]', name, upstream.status, data?.message ?? '');
+        logEvent({ level: 'error', scope: 'kite', message: `${name} upstream failed`, meta: { status: upstream.status } });
         res.status(502).json({ error: data?.message ?? 'Kite request failed.', code: 'upstream' });
         return;
       }
       res.json(data.data);
     } catch (err) {
       console.error('[kite]', name, err);
+      logEvent({ level: 'error', scope: 'kite', message: (err as Error).message ?? `${name} failed` });
       res.status(502).json({ error: 'Kite request failed.', code: 'upstream' });
     }
   });
