@@ -62,7 +62,7 @@ export default function JarvisPanel() {
       )}
 
       <div className="flex-1 min-h-0 px-4 pb-4 pt-1">
-        <JarvisConsole autoFocus />
+        <JarvisConsole autoFocus fill />
       </div>
     </motion.div>
   );

@@ -56,8 +56,13 @@ function Bubble({ message, animate, stopSignal }: { message: JarvisMessage; anim
  * The shared Jarvis conversation surface — message stream + composer. Reused by
  * the floating panel and, at full size, by the dashboard. Owns nothing but view
  * state; the engine lives in JarvisProvider.
+ *
+ * `fill`: the floating panel sits in a fixed-size box and wants the console to
+ * stretch and fill it (scrolling internally). The dashboard instead wants the
+ * console sized to its (now short, last-exchange-only) content so it doesn't
+ * grow to cover the page — that's the default.
  */
-export default function JarvisConsole({ autoFocus = false }: { autoFocus?: boolean }) {
+export default function JarvisConsole({ autoFocus = false, fill = false }: { autoFocus?: boolean; fill?: boolean }) {
   const { messages, thinking, sendMessage, abort, voice } = useJarvis();
   const [input, setInput] = useState('');
   const [stopSignal, setStopSignal] = useState(0);
@@ -94,8 +99,16 @@ export default function JarvisConsole({ autoFocus = false }: { autoFocus?: boole
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div ref={chatRef} className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-1 py-2 space-y-3">
+    <div className={`flex flex-col ${fill ? 'h-full min-h-0' : ''}`}>
+      {/* Dashboard (fill=false): capped height, sized to content, so the
+          console stays compact instead of growing to fill the page. Floating
+          panel (fill=true): stretches to fill its fixed-size box instead. */}
+      <div
+        ref={chatRef}
+        className={`overflow-y-auto custom-scrollbar px-1 py-2 space-y-3 empty:py-0 ${
+          fill ? 'flex-1 min-h-0' : 'max-h-[38vh]'
+        }`}
+      >
         {visibleMessages.map((m, i) => (
           <Bubble key={i} message={m} animate={i === visibleMessages.length - 1 && m.role === 'assistant'} stopSignal={stopSignal} />
         ))}

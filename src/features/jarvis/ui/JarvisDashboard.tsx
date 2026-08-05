@@ -189,8 +189,10 @@ export default function JarvisDashboard({ state, updateState, setView, openSetti
         <PlanApprovalCard updateState={updateState} />
       </div>
 
-      {/* Console — the one always-present surface besides the orb. */}
-      <div className="mt-4 flex min-h-0 flex-1 flex-col">
+      {/* Console — the one always-present surface besides the orb. Sized to
+          its (now-short, last-exchange-only) content rather than stretching
+          to fill the page, so it stays compact whether or not a chat is open. */}
+      <div className="mt-4 flex shrink-0 flex-col">
         {!conversationStarted && (
           <div className="mb-2 flex flex-wrap justify-center gap-2">
             {SUGGESTIONS.map((s) => (
@@ -204,9 +206,7 @@ export default function JarvisDashboard({ state, updateState, setView, openSetti
             ))}
           </div>
         )}
-        <div className="min-h-0 flex-1">
-          <JarvisConsole autoFocus />
-        </div>
+        <JarvisConsole autoFocus />
 
         {/* Recent-action chips — capped at 3; the rest roll into the Log panel. */}
         {memory.recentActions.length > 0 && (
