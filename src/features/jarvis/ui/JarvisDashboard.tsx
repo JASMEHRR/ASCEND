@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Sparkles,
@@ -144,6 +144,20 @@ export default function JarvisDashboard({ state, updateState, setView, openSetti
 
   const togglePanel = (id: DockPanel) => setOpenPanel((cur) => (cur === id ? null : id));
 
+  /**
+   * An expanded panel renders below the console, which on a short viewport is
+   * past the fold — so opening one looked like the button did nothing at all.
+   * Bring it into view once its open animation has had time to run.
+   */
+  const panelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!openPanel) return;
+    const t = setTimeout(() => {
+      panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 260);
+    return () => clearTimeout(t);
+  }, [openPanel]);
+
   return (
     <div className="flex h-full w-full gap-5">
       {/* Conversation column — grows to fill whatever the panel rail leaves.
@@ -261,6 +275,7 @@ export default function JarvisDashboard({ state, updateState, setView, openSetti
       <AnimatePresence mode="wait">
         {openPanel && (
           <motion.div
+            ref={panelRef}
             key={openPanel}
             initial={{ opacity: 0, y: 12, height: 0 }}
             animate={{ opacity: 1, y: 0, height: 'auto' }}
