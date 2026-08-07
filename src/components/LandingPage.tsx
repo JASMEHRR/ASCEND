@@ -41,6 +41,9 @@ import {
   Search,
   NotebookText,
   Plus,
+  ChevronLeft,
+  ChevronRight,
+  MousePointer2,
 } from 'lucide-react';
 import JarvisOrb from '../features/jarvis/ui/JarvisOrb';
 
@@ -338,57 +341,164 @@ const TOUR_FRAMES: TourFrame[] = [
   },
 ];
 
-const TOUR_INTERVAL_MS = 4200;
+const TOUR_INTERVAL_MS = 5000;
+
+/**
+ * A fake pointer drifting across the mockup and pressing things. It's what
+ * makes the panel read as a recorded product demo instead of a still image —
+ * remounted per frame (via key) so every slide replays its own little run.
+ */
+function CursorGhost({ frameId }: { frameId: string }) {
+  return (
+    <motion.div
+      key={frameId}
+      aria-hidden="true"
+      className="pointer-events-none absolute left-0 top-0 z-30"
+      initial={{ opacity: 0 }}
+      animate={{
+        x: ['12%', '48%', '38%', '66%', '66%'],
+        y: ['82%', '38%', '64%', '32%', '32%'],
+        opacity: [0, 1, 1, 1, 0],
+        scale: [1, 1, 0.82, 1, 1],
+      }}
+      transition={{ duration: TOUR_INTERVAL_MS / 1000, times: [0, 0.22, 0.5, 0.78, 1], ease: 'easeInOut' }}
+      style={{ left: 0, top: 0 }}
+    >
+      <span className="relative block">
+        {/* Click ripple, timed to the two "press" moments above. */}
+        <motion.span
+          className="absolute -left-2 -top-2 block h-9 w-9 rounded-full bg-brand-400/25"
+          initial={{ scale: 0, opacity: 0 }}
+          animate={{ scale: [0, 0, 1.4, 0, 1.4, 0], opacity: [0, 0, 0.7, 0, 0.7, 0] }}
+          transition={{ duration: TOUR_INTERVAL_MS / 1000, times: [0, 0.46, 0.54, 0.62, 0.82, 0.9] }}
+        />
+        <MousePointer2
+          size={17}
+          className="relative text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)]"
+          fill="white"
+          strokeWidth={1.5}
+        />
+      </span>
+    </motion.div>
+  );
+}
 
 function AnimatedWalkthrough() {
   const [i, setI] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => setI((n) => (n + 1) % TOUR_FRAMES.length), TOUR_INTERVAL_MS);
-    return () => clearInterval(t);
-  }, []);
+  // Auto-advance pauses while you're interacting, and any manual move resets
+  // the clock — an auto-play that fights your clicks is worse than none.
+  const [paused, setPaused] = useState(false);
 
+  useEffect(() => {
+    if (paused) return;
+    const t = setTimeout(() => setI((n) => (n + 1) % TOUR_FRAMES.length), TOUR_INTERVAL_MS);
+    return () => clearTimeout(t);
+  }, [i, paused]);
+
+  const go = (next: number) => setI((next + TOUR_FRAMES.length) % TOUR_FRAMES.length);
   const frame = TOUR_FRAMES[i];
 
   return (
-    <div className="grid w-full grid-cols-1 items-center gap-8 lg:grid-cols-2 lg:gap-14">
-      {/* The mockup "screen" — the app's real liquid-glass panel, not a
-          generic bordered box, so the pitch already looks like the product. */}
+    <div
+      className="grid w-full grid-cols-1 items-center gap-8 lg:grid-cols-2 lg:gap-14"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocusCapture={() => setPaused(true)}
+      onBlurCapture={() => setPaused(false)}
+    >
+      {/* The mockup "screen", sitting on its own ambient backdrop so it reads
+          as a lit object rather than a flat card on a flat page. */}
       <div className="order-2 lg:order-1">
-        <div className="liquid-glass-panel relative overflow-hidden rounded-[2rem] p-6 shadow-[0_40px_80px_rgba(0,0,0,0.5)] sm:p-8">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(16,185,129,0.08),_transparent_60%)]" />
-          <div className="relative flex min-h-[280px] items-center">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={frame.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.35 }}
-                className="w-full"
-              >
-                {frame.render()}
-              </motion.div>
-            </AnimatePresence>
+        <div className="relative">
+          {/* Backdrop: a soft aurora that breathes behind the glass. */}
+          <motion.div
+            aria-hidden="true"
+            className="pointer-events-none absolute -inset-10 -z-10 rounded-[3rem] blur-3xl"
+            style={{
+              background:
+                'radial-gradient(60% 55% at 30% 25%, rgba(16,185,129,0.28), transparent 70%), radial-gradient(55% 50% at 75% 75%, rgba(56,189,248,0.20), transparent 70%)',
+            }}
+            animate={{ opacity: [0.55, 0.9, 0.55], scale: [1, 1.05, 1] }}
+            transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut' }}
+          />
+
+          <div className="liquid-glass-highlight relative overflow-hidden rounded-[2rem] p-6 shadow-[0_40px_90px_-12px_rgba(0,0,0,0.75)] sm:p-8">
+            {/* Specular sheen across the top edge — the giveaway that a
+                surface is glass rather than just translucent. */}
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent" />
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(16,185,129,0.10),_transparent_60%)]" />
+
+            <div className="relative flex min-h-[280px] items-center">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={frame.id}
+                  initial={{ opacity: 0, y: 12, filter: 'blur(6px)' }}
+                  animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                  exit={{ opacity: 0, y: -12, filter: 'blur(6px)' }}
+                  transition={{ duration: 0.4, ease: 'easeOut' }}
+                  className="w-full"
+                >
+                  {frame.render()}
+                </motion.div>
+              </AnimatePresence>
+              {!paused && <CursorGhost frameId={frame.id} />}
+            </div>
           </div>
         </div>
-        <div className="mt-4 flex flex-wrap items-center justify-center gap-2 lg:justify-start">
-          {TOUR_FRAMES.map((f, idx) => (
-            <button
-              key={f.id}
-              onClick={() => setI(idx)}
-              aria-label={f.eyebrow}
-              className={`h-1.5 rounded-full transition-all cursor-pointer ${
-                idx === i ? 'w-7 bg-brand-400' : 'w-1.5 bg-white/15 hover:bg-white/30'
-              }`}
-            />
-          ))}
+
+        {/* Controls: real arrows and labelled dots, not just decoration. */}
+        <div className="mt-5 flex items-center justify-center gap-3 lg:justify-start">
+          <button
+            onClick={() => go(i - 1)}
+            aria-label="Previous"
+            className="liquid-glass-panel grid h-9 w-9 place-items-center rounded-full text-white/70 transition-all hover:text-white hover:scale-105 active:scale-95 cursor-pointer"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {TOUR_FRAMES.map((f, idx) => (
+              <button
+                key={f.id}
+                onClick={() => go(idx)}
+                aria-label={f.eyebrow}
+                aria-current={idx === i}
+                className={`relative h-2 overflow-hidden rounded-full transition-all cursor-pointer ${
+                  idx === i ? 'w-9 bg-white/15' : 'w-2 bg-white/15 hover:bg-white/35'
+                }`}
+              >
+                {idx === i && (
+                  // Fills over the dwell time, so you can see the next slide coming.
+                  <motion.span
+                    key={`${f.id}-${paused}`}
+                    className="absolute inset-y-0 left-0 block bg-brand-400"
+                    initial={{ width: paused ? '100%' : '0%' }}
+                    animate={{ width: '100%' }}
+                    transition={{ duration: paused ? 0 : TOUR_INTERVAL_MS / 1000, ease: 'linear' }}
+                  />
+                )}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => go(i + 1)}
+            aria-label="Next"
+            className="liquid-glass-panel grid h-9 w-9 place-items-center rounded-full text-white/70 transition-all hover:text-white hover:scale-105 active:scale-95 cursor-pointer"
+          >
+            <ChevronRight size={16} />
+          </button>
         </div>
       </div>
 
       {/* The description */}
       <div className="order-1 text-left lg:order-2">
         <AnimatePresence mode="wait">
-          <motion.div key={frame.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+          <motion.div
+            key={frame.id}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.35 }}
+          >
             <p className="text-[10px] font-mono font-black uppercase tracking-[0.28em] text-brand-400">{frame.eyebrow}</p>
             <h3 className="mt-2 text-2xl font-extrabold tracking-tight text-white sm:text-3xl">{frame.title}</h3>
             <p className="mt-3 max-w-md text-[14px] leading-relaxed text-white/55">{frame.desc}</p>
@@ -459,21 +569,39 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
 
       {/* Animated walkthrough — the centerpiece, full width */}
       <div className="relative mx-auto max-w-6xl px-6 py-16 sm:py-20">
-        <p className="mb-10 flex items-center justify-center gap-1.5 text-[10px] font-mono font-black uppercase tracking-[0.28em] text-white/40">
+        <motion.p
+          initial={{ opacity: 0, y: 10 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: '-60px' }}
+          className="mb-10 flex items-center justify-center gap-1.5 text-[10px] font-mono font-black uppercase tracking-[0.28em] text-white/40"
+        >
           <Sparkles size={11} className="text-brand-400" /> See it in motion
-        </p>
-        <AnimatedWalkthrough />
+        </motion.p>
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: '-80px' }}
+          transition={{ duration: 0.6, ease: 'easeOut' }}
+        >
+          <AnimatedWalkthrough />
+        </motion.div>
       </div>
 
       {/* Benefits — why it helps, not just what it does */}
       <div className="relative border-t border-white/8 bg-white/[0.015] px-6 py-16 sm:py-20">
         <div className="mx-auto max-w-6xl">
-          <div className="text-center">
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: '-60px' }}
+            transition={{ duration: 0.5 }}
+            className="text-center"
+          >
             <p className="text-[10px] font-mono font-black uppercase tracking-[0.28em] text-brand-400">Why it works</p>
             <h2 className="mt-2 text-2xl font-extrabold tracking-tight sm:text-4xl">
               Built to change how you actually show up
             </h2>
-          </div>
+          </motion.div>
           {/* The featured card sits alone on its own row, then the other two
               share a row below — a 2+1 split across one row leaves the
               third card orphaned with empty space beside it at sm widths. */}
@@ -524,10 +652,16 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
           module building, Arena, real integrations, journal, sync, privacy. */}
       <div className="relative px-6 py-16 sm:py-20">
         <div className="mx-auto max-w-6xl">
-          <div className="text-center">
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: '-60px' }}
+            transition={{ duration: 0.5 }}
+            className="text-center"
+          >
             <p className="text-[10px] font-mono font-black uppercase tracking-[0.28em] text-brand-400">Everything included</p>
             <h2 className="mt-2 text-2xl font-extrabold tracking-tight sm:text-4xl">One app, not six subscriptions</h2>
-          </div>
+          </motion.div>
           <div className="mt-12 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {FEATURES.map(({ icon: Icon, title, desc }, i) => (
               <motion.div
@@ -536,7 +670,8 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: '-80px' }}
                 transition={{ delay: (i % 3) * 0.06 }}
-                className="liquid-glass-panel flex flex-col items-start gap-2.5 rounded-2xl p-6 text-left"
+                whileHover={{ y: -4 }}
+                className="liquid-glass-panel flex flex-col items-start gap-2.5 rounded-2xl p-6 text-left transition-shadow hover:shadow-[0_20px_50px_-12px_rgba(16,185,129,0.25)]"
               >
                 <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-500/10 text-brand-400">
                   <Icon size={16} />
