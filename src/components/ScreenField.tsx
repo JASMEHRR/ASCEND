@@ -10,7 +10,11 @@
  * The dissolve is real pixel work, not a CSS filter: each card samples its own
  * image down to a coarse grid and redraws it as dots whose radius falls off
  * with the dissolve amount, so bright areas survive longest and the image
- * thins into the background rather than just fading.
+ * thins into the background rather than just fading. Cards more than
+ * CULL_RADIUS steps from the playhead unmount entirely instead of sitting
+ * around as faint ghosts — that's both what the reference actually looks
+ * like (a sparse field, not nine permanently-visible cards) and what keeps
+ * the number of live canvases small.
  */
 import { useEffect, useRef, useState } from 'react';
 import { motion, useMotionValueEvent, useScroll } from 'motion/react';
@@ -25,26 +29,53 @@ export interface FieldScreen {
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const clamp = (v: number, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, v));
 
-/**
- * Where each card rests when it is NOT the active one. Deterministic rather
- * than random so the field looks composed instead of noisy, and so it doesn't
- * reshuffle on every render.
- */
-const SCATTER = [
-  { x: -0.30, y: -0.30 },
-  { x: 0.32, y: -0.20 },
-  { x: -0.36, y: 0.24 },
-  { x: 0.28, y: 0.30 },
-  { x: -0.10, y: -0.38 },
-  { x: 0.40, y: 0.04 },
-  { x: -0.42, y: -0.02 },
-  { x: 0.12, y: 0.38 },
-  { x: -0.18, y: 0.12 },
-  { x: 0.20, y: -0.34 },
-];
+/** How many playhead-steps a card stays mounted for. Beyond this it's gone
+ *  entirely rather than sitting around as a faint ghost. */
+const CULL_RADIUS = 2.6;
 
-/** Grid pitch of the halftone, in CSS px. Smaller = finer dots, more work. */
-const GRID = 5;
+/**
+ * Position for a card `d` steps from the playhead, on a single continuous
+ * spiral arm rather than a flat scatter — this is what actually makes the
+ * field read as a spiral instead of a pile of cards: each step twists
+ * further around, swings out to a wider radius, and drops in the direction
+ * that reads as "coming down toward you" as the index advances. Upcoming
+ * cards (d > 0) sit up and back; passed cards (d < 0) sit down and forward,
+ * so scrolling forward feels like descending the spiral one turn at a time.
+ */
+function spiralAt(d: number) {
+  const angleDeg = d * -34;
+  const radius = 70 + Math.abs(d) * 150;
+  const rad = (angleDeg * Math.PI) / 180;
+  return {
+    x: Math.sin(rad) * radius,
+    y: -d * 150,
+    rotY: d * -22,
+    rotX: clamp(d * 6, -18, 18),
+  };
+}
+
+/** Where in the source screenshot the crop window sits — desktop screenshots
+ *  are wide, cards are closer to portrait, so this picks the top of the
+ *  frame (nav + hero, the part that actually reads at a glance) over the
+ *  footer whitespace. */
+const FOCUS_Y = 0.22;
+
+function coverRect(sw: number, sh: number, dw: number, dh: number, focusY: number) {
+  const srcAspect = sw / sh;
+  const dstAspect = dw / dh;
+  let cw: number;
+  let ch: number;
+  if (srcAspect > dstAspect) {
+    ch = sh;
+    cw = sh * dstAspect;
+  } else {
+    cw = sw;
+    ch = sw / dstAspect;
+  }
+  const sx = (sw - cw) / 2;
+  const sy = clamp((sh - ch) * focusY, 0, sh - ch);
+  return { sx, sy, sw: cw, sh: ch };
+}
 
 function DitherCanvas({ src, dissolve, w, h }: { src: string; dissolve: number; w: number; h: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -78,20 +109,27 @@ function DitherCanvas({ src, dissolve, w, h }: { src: string; dissolve: number; 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
 
-    // Fully formed: draw the real image, so the focused card stays sharp.
-    if (step <= 0.02) {
-      ctx.drawImage(img, 0, 0, w, h);
+    const { sx, sy, sw, sh } = coverRect(img.naturalWidth, img.naturalHeight, w, h, FOCUS_Y);
+
+    // Fully formed: draw the real (cropped) image. Holds for the first couple
+    // of quantised steps, not just the exact peak, so the focused card reads
+    // as genuinely sharp for a beat rather than a single-pixel-wide instant.
+    if (step <= 0.09) {
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
       return;
     }
 
-    const cols = Math.max(1, Math.ceil(w / GRID));
-    const rows = Math.max(1, Math.ceil(h / GRID));
+    // Grid pitch scales with the card so it reads as a bold halftone at any
+    // card size instead of turning to static on small cards.
+    const grid = clamp(w / 30, 9, 16);
+    const cols = Math.max(1, Math.ceil(w / grid));
+    const rows = Math.max(1, Math.ceil(h / grid));
     const off = document.createElement('canvas');
     off.width = cols;
     off.height = rows;
     const octx = off.getContext('2d', { willReadFrequently: true });
     if (!octx) return;
-    octx.drawImage(img, 0, 0, cols, rows);
+    octx.drawImage(img, sx, sy, sw, sh, 0, 0, cols, rows);
 
     let data: Uint8ClampedArray;
     try {
@@ -99,11 +137,11 @@ function DitherCanvas({ src, dissolve, w, h }: { src: string; dissolve: number; 
     } catch {
       // Tainted canvas (cross-origin image) — fall back to a plain fade.
       ctx.globalAlpha = 1 - step;
-      ctx.drawImage(img, 0, 0, w, h);
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
       return;
     }
 
-    const half = GRID / 2;
+    const half = grid / 2;
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
         const i = (y * cols + x) * 4;
@@ -113,18 +151,42 @@ function DitherCanvas({ src, dissolve, w, h }: { src: string; dissolve: number; 
         const lum = (r * 0.299 + g * 0.587 + b * 0.114) / 255;
         // Brighter cells hold on longer, so the image thins out of its
         // shadows first — that's what reads as "dissolving" rather than
-        // "fading".
-        const survive = lum - step * 1.15;
-        if (survive <= 0.02) continue;
-        ctx.fillStyle = `rgba(${r},${g},${b},${clamp(survive * 1.7)})`;
+        // "fading". Softer falloff than a straight subtract keeps mid-tones
+        // visible for longer, so a half-dissolved card still reads as an
+        // image rather than sparse noise.
+        const survive = clamp(1 - step * (1 - lum * 0.6));
+        if (survive <= 0.04) continue;
+        ctx.fillStyle = `rgba(${r},${g},${b},${clamp(survive * 1.5 + 0.1)})`;
         ctx.beginPath();
-        ctx.arc(x * GRID + half, y * GRID + half, half * 1.25 * clamp(survive * 1.5), 0, Math.PI * 2);
+        ctx.arc(x * grid + half, y * grid + half, half * 1.3 * clamp(0.5 + survive * 0.85), 0, Math.PI * 2);
         ctx.fill();
       }
     }
   }, [loaded, step, w, h]);
 
   return <canvas ref={canvasRef} style={{ width: w, height: h }} className="block rounded-[10px]" />;
+}
+
+/** Plain, readable fallback for small screens — a 3D field with rotation and
+ *  a canvas dissolve per card is a lot of motion to parse on a phone, and
+ *  scroll-jacking a tall section there is more annoying than impressive. */
+function MobileList({ screens }: { screens: FieldScreen[] }) {
+  return (
+    <div className="space-y-3 px-5 py-14">
+      {screens.map((s, i) => (
+        <div key={s.id} className="overflow-hidden rounded-2xl border border-white/8 bg-white/[0.02]">
+          <img src={s.src} alt={s.name} className="block aspect-[16/10] w-full object-cover object-top" loading="lazy" />
+          <div className="px-4 py-3">
+            <p className="font-mono text-[10px] font-black uppercase tracking-[0.2em] text-brand-400">
+              {String(i + 1).padStart(2, '0')} / {String(screens.length).padStart(2, '0')}
+            </p>
+            <p className="mt-1 text-[15px] font-extrabold text-white">{s.name}</p>
+            <p className="mt-1 text-[12.5px] leading-snug text-white/50">{s.desc}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function ScreenField({ screens }: { screens: FieldScreen[] }) {
@@ -149,25 +211,36 @@ export default function ScreenField({ screens }: { screens: FieldScreen[] }) {
   const pos = head * Math.max(0, n - 1);
   const activeIdx = Math.min(n - 1, Math.max(0, Math.round(pos)));
 
-  const cardW = narrow ? 260 : 430;
-  const cardH = Math.round(cardW * 0.5);
-  const spread = narrow ? 300 : 620;
+  if (narrow) {
+    return <MobileList screens={screens} />;
+  }
+
+  const cardW = 400;
+  const cardH = Math.round(cardW * 0.8);
 
   return (
-    <div ref={wrapRef} style={{ height: `${Math.max(2, n) * 90}vh` }} className="relative">
+    <div ref={wrapRef} style={{ height: `${Math.max(2, n) * 65}vh` }} className="relative">
       <div className="sticky top-0 h-dvh overflow-hidden bg-app">
         {/* The field */}
-        <div className="absolute inset-0" style={{ perspective: narrow ? 900 : 1500 }}>
+        <div className="absolute inset-0" style={{ perspective: 1600 }}>
           <div className="absolute left-1/2 top-1/2" style={{ transformStyle: 'preserve-3d' }}>
             {screens.map((s, i) => {
               const d = i - pos;
-              const focus = clamp(1 - Math.abs(d)); // 1 at the playhead
-              const sc = SCATTER[i % SCATTER.length];
-              const x = lerp(sc.x * spread, narrow ? 0 : -60, focus);
-              const y = lerp(sc.y * spread * 0.62, 0, focus);
-              const z = lerp(-620, 0, focus);
-              const scale = lerp(0.7, 1, focus);
+              const absD = Math.abs(d);
+              if (absD > CULL_RADIUS) return null;
+
+              const focus = clamp(1 - absD); // 1 at the playhead, 0 by one step away
+              const reach = clamp(1 - absD / CULL_RADIUS); // 1 at the playhead, 0 at the cull edge
+              const sp = spiralAt(d);
+              const x = lerp(sp.x, -70, focus);
+              const y = lerp(sp.y, 0, focus);
+              const z = lerp(-760, 0, focus);
+              const scale = lerp(0.62, 1, focus);
+              const rotY = lerp(sp.rotY, 0, focus);
+              const rotX = lerp(sp.rotX, 0, focus);
               const dissolve = clamp(1 - focus);
+              const opacity = clamp(reach ** 1.3);
+
               return (
                 <div
                   key={s.id}
@@ -176,8 +249,8 @@ export default function ScreenField({ screens }: { screens: FieldScreen[] }) {
                     width: cardW,
                     marginLeft: -cardW / 2,
                     marginTop: -cardH / 2,
-                    transform: `translate3d(${x}px, ${y}px, ${z}px) scale(${scale})`,
-                    opacity: clamp(0.12 + focus * 0.88),
+                    transform: `translate3d(${x}px, ${y}px, ${z}px) rotateY(${rotY}deg) rotateX(${rotX}deg) scale(${scale})`,
+                    opacity,
                     zIndex: Math.round(focus * 100),
                     transition: 'transform 220ms linear, opacity 220ms linear',
                   }}
@@ -211,7 +284,7 @@ export default function ScreenField({ screens }: { screens: FieldScreen[] }) {
                 >
                   {s.name}
                 </p>
-                {on && <span className="absolute inset-y-0 left-full block w-screen bg-white" />}
+                {on && <span className="absolute inset-y-0 left-full block w-[100vw] bg-white" />}
               </div>
             );
           })}
