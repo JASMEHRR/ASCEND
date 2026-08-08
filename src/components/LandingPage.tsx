@@ -17,7 +17,7 @@
  * integrations (Kite Connect, Gmail, Obsidian, web search) — not just the
  * four headline features.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Flame,
