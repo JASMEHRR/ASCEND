@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Mail, Lock, LogIn, Loader2, Flame, MessageCircle, Swords, RefreshCw } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -71,6 +71,18 @@ export default function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  // `body` is globally overflow-hidden for the signed-in app's fixed-height
+  // shell. This screen — orb, pitch, feature list and the form — is taller
+  // than a phone viewport, so without lifting that lock the sign-in button
+  // sits below the fold with no way to reach it. Restored on unmount.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'auto';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
   const run = async (action: () => Promise<unknown>) => {
     setBusy(true);
     setError(null);
@@ -101,7 +113,7 @@ export default function LoginScreen() {
   };
 
   return (
-    <div className="relative flex min-h-screen w-full items-center justify-center bg-app text-white p-4 overflow-hidden">
+    <div className="relative flex min-h-dvh w-full items-center justify-center bg-app text-white p-4 overflow-x-hidden">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(16,185,129,0.10),_transparent_55%)]" />
 
       <motion.div

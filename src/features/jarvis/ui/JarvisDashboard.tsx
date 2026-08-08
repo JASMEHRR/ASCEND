@@ -145,6 +145,22 @@ export default function JarvisDashboard({ state, updateState, setView, openSetti
   const togglePanel = (id: DockPanel) => setOpenPanel((cur) => (cur === id ? null : id));
 
   /**
+   * The orb draws into a fixed-size canvas, so its dimensions can't come from
+   * a CSS breakpoint the way everything else here does — at 148px it ate most
+   * of a phone screen. Track the viewport directly instead.
+   */
+  const [narrow, setNarrow] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 640px)').matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)');
+    const onChange = () => setNarrow(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  const orbSize = conversationStarted ? (narrow ? 62 : 88) : narrow ? 100 : 148;
+
+  /**
    * An expanded panel renders below the console, which on a short viewport is
    * past the fold — so opening one looked like the button did nothing at all.
    * Bring it into view once its open animation has had time to run.
@@ -166,9 +182,9 @@ export default function JarvisDashboard({ state, updateState, setView, openSetti
           console and panel together exceed the viewport. */}
       <div className="flex h-full min-w-0 flex-1 flex-col overflow-y-auto custom-scrollbar">
       {/* Hero — the orb IS the home state. It yields vertical space once a conversation is underway. */}
-      <div className={`flex flex-col items-center text-center transition-all ${conversationStarted ? 'gap-1.5 pt-0' : 'gap-3 pt-6 sm:pt-10'}`}>
+      <div className={`flex flex-col items-center text-center transition-all ${conversationStarted ? 'gap-1.5 pt-0' : 'gap-2 pt-2 sm:gap-3 sm:pt-10'}`}>
         <motion.div initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: 'spring', stiffness: 220, damping: 22 }}>
-          <JarvisOrb state={orbState} size={conversationStarted ? 88 : 148} />
+          <JarvisOrb state={orbState} size={orbSize} />
         </motion.div>
         <div>
           <p className="flex items-center justify-center gap-1.5 text-[10px] font-mono font-black uppercase tracking-[0.3em] text-brand-400">
@@ -177,10 +193,10 @@ export default function JarvisDashboard({ state, updateState, setView, openSetti
           </p>
           {!conversationStarted && (
             <>
-              <h2 className="mt-1.5 text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
+              <h2 className="mt-1.5 text-lg sm:text-3xl font-extrabold tracking-tight text-white">
                 {greeting()}, <span className="capitalize">{name}</span>.
               </h2>
-              <p className="mt-1 text-[13px] text-white/45">{briefing}</p>
+              <p className="mt-1 text-[12px] sm:text-[13px] text-white/45">{briefing}</p>
               <button
                 onClick={toggleGreet}
                 role="switch"

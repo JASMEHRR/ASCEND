@@ -57,7 +57,7 @@ const REWARDS_LIST = [
 
 function FullScreenLoader({ label }: { label: string }) {
   return (
-    <div className="flex h-screen w-full items-center justify-center bg-app text-white">
+    <div className="flex h-dvh w-full items-center justify-center bg-app text-white">
       <div className="flex flex-col items-center gap-4">
         <Loader2 className="h-9 w-9 animate-spin text-brand-500" />
         <p className="text-white/50 text-sm font-mono uppercase tracking-widest">{label}</p>
@@ -197,27 +197,35 @@ export default function App() {
   const mobileModules = features.navModules.filter((m) => m.mobile);
   const mobileMid = Math.ceil(mobileModules.length / 2);
 
+  // Shell sizing note: h-dvh rather than h-screen, because 100vh on mobile
+  // excludes the browser address bar — combined with overflow-hidden that put
+  // the bottom of the app off-screen with no way to reach it. The bottom
+  // padding clears the fixed mobile nav, which now hides at the same
+  // breakpoint the sidebar appears (md) instead of at sm, closing a gap where
+  // neither was visible.
   return (
-    <div className="relative flex flex-col h-screen w-full bg-app text-white/95 font-plus p-4 md:p-6 pb-20 sm:pb-6 gap-5 overflow-hidden selection:bg-brand-500/30 selection:text-white">
+    <div className="relative flex flex-col h-dvh w-full bg-app text-white/95 font-plus p-3 sm:p-4 md:p-6 pb-24 md:pb-6 gap-3 sm:gap-5 overflow-hidden selection:bg-brand-500/30 selection:text-white">
       <AtmosphereBackdrop currentAtmosphere={activeAtmosphere} />
       <CondensationEffect active={activeAtmosphere.condensationActive} />
       {/* Light mode lays a soft veil over the photographic atmosphere for contrast. */}
       <div aria-hidden="true" className="theme-veil pointer-events-none absolute inset-0" />
 
       {/* HEADER */}
-      <header className="relative flex flex-col md:flex-row justify-between items-center pb-2 px-2 z-10 gap-5 shrink-0 w-full mb-2">
-        <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)] whitespace-nowrap">
+      {/* On a phone the title and account chip share one row — stacking them
+          burned vertical space the dashboard needs more than the header does. */}
+      <header className="relative flex flex-row justify-between items-center pb-1 sm:pb-2 px-1 sm:px-2 z-10 gap-3 sm:gap-5 shrink-0 w-full mb-0 sm:mb-2">
+        <h1 className="text-xl sm:text-3xl md:text-4xl font-extrabold text-white tracking-tight drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)] whitespace-nowrap">
           Ascend Protocol
         </h1>
 
         {/* Header stays minimal — vitals live in the dashboard's Vitals panel. */}
-        <div className="flex gap-3 items-center w-full md:w-auto justify-end">
+        <div className="flex gap-3 items-center justify-end min-w-0">
           <HeaderAccount />
         </div>
       </header>
 
       {/* CORE */}
-      <div className="relative flex flex-1 flex-col sm:flex-row gap-5 min-h-0 z-10">
+      <div className="relative flex flex-1 flex-col md:flex-row gap-3 sm:gap-5 min-h-0 z-10">
         {/* SIDEBAR */}
         {/* Collapsed nav: an icon strip that keeps every module one click away. */}
         {!navOpen && (
@@ -361,7 +369,7 @@ export default function App() {
 
       {/* MOBILE BOTTOM NAV */}
       <nav
-        className="sm:hidden fixed bottom-3 left-4 right-4 bg-app/85 backdrop-blur-md border border-white/12 py-3 px-5 flex justify-between items-center z-50 rounded-[2.5rem] shadow-lg overflow-x-auto"
+        className="md:hidden fixed bottom-3 left-3 right-3 bg-app/85 backdrop-blur-md border border-white/12 py-2.5 px-3 sm:px-5 flex justify-between items-center z-50 rounded-[2.5rem] shadow-lg overflow-x-auto"
         aria-label="Primary"
       >
         {mobileModules.slice(0, mobileMid).map((mod) => (
