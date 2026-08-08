@@ -635,7 +635,12 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
   }, []);
 
   return (
-    <div className="relative min-h-dvh w-full overflow-x-hidden bg-app text-white">
+    // overflow-x-clip, NOT overflow-x-hidden: `hidden` turns this into a
+    // scroll container, which silently breaks position:sticky on every
+    // descendant — including the helix's sticky viewport, whose whole
+    // animation depends on it. `clip` stops horizontal overflow without
+    // creating a scroll container, so sticky keeps working.
+    <div className="relative min-h-dvh w-full overflow-x-clip bg-app text-white">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(16,185,129,0.10),_transparent_55%)]" />
 
       {/* Hero — full width, centered content */}
