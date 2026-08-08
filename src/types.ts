@@ -74,6 +74,13 @@ export interface OSState {
    */
   navOrder?: string[];
   navHidden?: string[];
+  /**
+   * Whether the first-run setup has been completed. Absent/false shows the
+   * setup wizard; Settings can reset it to run through the steps again.
+   */
+  setupComplete?: boolean;
+  /** What Jarvis calls you. Falls back to the email's local part when unset. */
+  displayName?: string;
   /** Per-user Jarvis behaviour preferences (persisted in users/{uid}). */
   jarvisPrefs?: {
     /** Jarvis greets proactively on login (default true). */

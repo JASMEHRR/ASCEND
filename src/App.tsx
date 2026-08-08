@@ -21,6 +21,7 @@ import SettingsModal from './components/SettingsModal';
 import RewardModal from './components/RewardModal';
 import LoginScreen from './components/auth/LoginScreen';
 import LandingPage from './components/LandingPage';
+import SetupWizard from './components/SetupWizard';
 import Jarvis from './features/jarvis/Jarvis';
 import ObsidianRegistrar from './features/obsidian/ObsidianRegistrar';
 import RemindersRegistrar from './features/reminders/RemindersRegistrar';
@@ -132,6 +133,9 @@ export default function App() {
   // once they've clicked through, skip straight to sign-in on future visits
   // instead of showing the pitch every single time.
   const [pastLanding, setPastLanding] = useState(() => readStore('ascend_seen_landing') === '1');
+  // Lets Settings re-open the wizard without clearing the saved setupComplete
+  // flag, so abandoning a re-run leaves the original choices intact.
+  const [setupOpen, setSetupOpen] = useState(false);
 
   // Re-render every minute so the auto atmosphere tracks the time of day.
   useEffect(() => {
@@ -196,6 +200,7 @@ export default function App() {
   const openTasks = state.tasks.filter((t) => !t.done).length;
   const mobileModules = features.navModules.filter((m) => m.mobile);
   const mobileMid = Math.ceil(mobileModules.length / 2);
+  const showSetup = setupOpen || !state.setupComplete;
 
   // Shell sizing note: h-dvh rather than h-screen, because 100vh on mobile
   // excludes the browser address bar — combined with overflow-hidden that put
@@ -387,6 +392,17 @@ export default function App() {
         ))}
       </nav>
 
+      {/* First run, or a deliberate re-run from Settings. Rendered above
+          everything so the choices are made before the app is used. */}
+      {showSetup && (
+        <SetupWizard
+          state={state}
+          updateState={updateState}
+          fallbackName={(user.email ?? 'there').split('@')[0]}
+          onDone={() => setSetupOpen(false)}
+        />
+      )}
+
       <SettingsModal
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
@@ -395,6 +411,10 @@ export default function App() {
         features={features}
         selectedAtmosphereMode={selectedAtmosphereMode}
         setSelectedAtmosphereMode={setSelectedAtmosphereMode}
+        onRerunSetup={() => {
+          setSettingsOpen(false);
+          setSetupOpen(true);
+        }}
       />
 
       <RewardModal isOpen={rewardModalOpen} onClose={() => setRewardModalOpen(false)} rewardContent={currentReward} />

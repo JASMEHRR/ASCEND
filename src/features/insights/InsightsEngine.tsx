@@ -99,7 +99,9 @@ export default function InsightsEngine({ state }: Deps) {
         /* private mode */
       }
       showRef.current({ kind: 'insight', title: 'Jarvis', message: next.message });
-      voiceRef.current.speak(next.message);
+      // The toast always shows; speaking it aloud is opt-in, since an insight
+      // arrives without the user having asked for anything.
+      voiceRef.current.speakUnprompted(next.message);
     };
 
     // First check shortly after login (after the greeting settles), then every 10 min.

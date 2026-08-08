@@ -57,8 +57,17 @@ export function JarvisProvider({ children }: { children: ReactNode }) {
       speak: voice.speak,
       uid: user?.uid ?? null,
       speakOnText: voice.speakOnText,
+      speakUnprompted: voice.speakUnprompted,
     }),
-    [registry.getTools, buildContext, memory.recordAction, voice.speak, user?.uid, voice.speakOnText],
+    [
+      registry.getTools,
+      buildContext,
+      memory.recordAction,
+      voice.speak,
+      user?.uid,
+      voice.speakOnText,
+      voice.speakUnprompted,
+    ],
   );
   const conversation = useConversation(convoDeps);
   sendRef.current = conversation.sendMessage;

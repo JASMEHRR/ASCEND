@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Settings2, Lock, Volume2, Blocks, Bot, Palette, Plug, LifeBuoy, GripVertical, Eye, EyeOff, RotateCcw, ChevronUp, ChevronDown } from 'lucide-react';
+import { X, Settings2, Lock, Volume2, Blocks, Bot, Palette, Plug, LifeBuoy, GripVertical, Eye, EyeOff, RotateCcw, ChevronUp, ChevronDown, ChevronRight } from 'lucide-react';
 import { OSState } from '../types';
 import SanctuaryBackgrounds from './SanctuaryBackgrounds';
 import { useDialog } from '../context/DialogContext';
@@ -20,6 +20,8 @@ interface Props {
   features: FeaturesApi;
   selectedAtmosphereMode: string;
   setSelectedAtmosphereMode: (mode: string) => void;
+  /** Re-opens the first-run setup wizard. */
+  onRerunSetup: () => void;
 }
 
 const COMING_SOON: FeatureModule[] = FEATURES.filter((f) => f.status === 'coming-soon');
@@ -51,7 +53,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 }
 
 /** Lightweight settings: modules, sanctuary atmosphere + reset today's progress. */
-export default function SettingsModal({ isOpen, onClose, state, updateState, features, selectedAtmosphereMode, setSelectedAtmosphereMode }: Props) {
+export default function SettingsModal({ isOpen, onClose, state, updateState, features, selectedAtmosphereMode, setSelectedAtmosphereMode, onRerunSetup }: Props) {
   const { confirm } = useDialog();
   const { voice } = useJarvis();
   const [tab, setTab] = useState<SettingsTab>('modules');
@@ -297,6 +299,24 @@ export default function SettingsModal({ isOpen, onClose, state, updateState, fea
               )}
             </div>
 
+            {/* The one people reach for most: stop Jarvis talking when you
+                didn't ask it anything. Notifications still appear on screen. */}
+            <button
+              onClick={voice.toggleSpeakProactive}
+              role="switch"
+              aria-checked={voice.speakProactive}
+              className="flex w-full items-center gap-3 px-3.5 py-2.5 rounded-2xl bg-white/[0.03] border border-white/8 text-left transition-colors hover:border-white/20 cursor-pointer"
+            >
+              <span className="flex-1 min-w-0">
+                <span className="block text-[12px] font-bold text-white/85 leading-tight">Speak up on its own</span>
+                <span className="block text-[10.5px] text-white/35">
+                  Reminders, insights and the login greeting read aloud. Off means Jarvis only speaks when you
+                  talk to it.
+                </span>
+              </span>
+              <ToggleTrack on={voice.speakProactive} />
+            </button>
+
             <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-white/[0.03] border border-white/8">
               <span className="flex-1 min-w-0">
                 <span className="block text-[12px] font-bold text-white/85 leading-tight">Insight hours</span>
@@ -420,6 +440,21 @@ export default function SettingsModal({ isOpen, onClose, state, updateState, fea
                 <span className="block text-[10.5px] text-white/35">Shows the wish count on the dashboard.</span>
               </span>
               <ToggleTrack on={showWishes} />
+            </button>
+
+            {/* Everything the wizard sets is editable individually elsewhere —
+                this is for people who'd rather be walked through it again. */}
+            <button
+              onClick={onRerunSetup}
+              className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl bg-white/[0.03] border border-white/8 hover:bg-white/[0.06] hover:border-white/15 transition-all cursor-pointer text-left"
+            >
+              <span className="flex-1 min-w-0">
+                <span className="block text-[12px] font-bold text-white/85 leading-tight">Run setup again</span>
+                <span className="block text-[10.5px] text-white/35">
+                  Revisit your name, voice, interruptions and modules.
+                </span>
+              </span>
+              <ChevronRight size={14} className="shrink-0 text-white/30" />
             </button>
           </section>
           )}

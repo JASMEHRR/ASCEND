@@ -114,7 +114,8 @@ export default function JarvisDashboard({ state, updateState, setView, openSetti
   const score = disciplineScore(state, arenaProgress);
   const streak = effectiveStreak(state);
   const openTasks = state.tasks.filter((t) => !t.done).length;
-  const name = (user?.email ?? 'there').split('@')[0];
+  // The name from setup wins; the email's local part is only the fallback.
+  const name = state.displayName?.trim() || (user?.email ?? 'there').split('@')[0];
   // A chat being open is what collapses the hero — not merely having sent a
   // message. Closing a chat (or loading the app) returns to the home screen.
   const conversationStarted = activeChatId !== null;

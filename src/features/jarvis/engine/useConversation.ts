@@ -51,6 +51,11 @@ interface ConversationDeps {
    * a bug, not a feature.
    */
   speakOnText: boolean;
+  /**
+   * Speaks only when unprompted speech is enabled. Used by greet(), which
+   * fires without the user having asked anything (login greeting, reminders).
+   */
+  speakUnprompted: (text: string) => void;
 }
 
 export interface Conversation {
@@ -207,7 +212,9 @@ export function useConversation(deps: ConversationDeps): Conversation {
     (text: string) => {
       if (!text.trim()) return;
       push({ role: 'assistant', content: text });
-      deps.speak(text);
+      // Unprompted by definition — the message still appears in the thread,
+      // it just stays silent unless the user opted into proactive speech.
+      deps.speakUnprompted(text);
     },
     [deps],
   );

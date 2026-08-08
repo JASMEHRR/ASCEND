@@ -46,7 +46,9 @@ export function buildAppContext({ state, launch, view, userEmail, disciplineScor
 
   return {
     page: VIEW_LABELS[view],
-    user: userEmail,
+    // The name chosen in setup wins over the email — this is what the backend
+    // persona addresses the user by, so it's the whole payoff of that step.
+    user: state.displayName?.trim() || userEmail,
     today: new Date().toDateString(),
     features: {
       enabled: enabledFeatures,

@@ -16,6 +16,13 @@ const MUTE_STORAGE_KEY = 'ascend_jarvis_muted';
 /** Whether a typed message also gets a spoken reply. Off by default — voice
  *  replies are for when you spoke to Jarvis, not when you typed to it. */
 const SPEAK_ON_TEXT_KEY = 'ascend_jarvis_speak_on_text';
+/**
+ * Whether Jarvis may speak when you didn't ask it anything — reminders,
+ * proactive insights, the greeting on login. Off by default: an assistant
+ * that talks at you unprompted is startling, and it's the setting people
+ * most often want off while they're working or around other people.
+ */
+const SPEAK_PROACTIVE_KEY = 'ascend_jarvis_speak_proactive';
 
 /**
  * ElevenLabs voices are pinned with this prefix in the same storage key as
@@ -368,6 +375,33 @@ export function useVoice({ onResult }: UseVoiceOptions) {
     });
   }, []);
 
+  // Off by default — see SPEAK_PROACTIVE_KEY.
+  const [speakProactive, setSpeakProactive] = useState(() => readStore(SPEAK_PROACTIVE_KEY) === '1');
+  const toggleSpeakProactive = useCallback(() => {
+    setSpeakProactive((v) => {
+      writeStore(SPEAK_PROACTIVE_KEY, v ? '0' : '1');
+      return !v;
+    });
+  }, []);
+  /** Explicit setter for the setup wizard, which sets rather than toggles. */
+  const setSpeakProactiveValue = useCallback((v: boolean) => {
+    writeStore(SPEAK_PROACTIVE_KEY, v ? '1' : '0');
+    setSpeakProactive(v);
+  }, []);
+
+  /**
+   * Speak only if unprompted speech is allowed. Everything that talks without
+   * the user having just asked something should go through this rather than
+   * calling speak() directly.
+   */
+  const speakUnprompted = useCallback(
+    (text: string) => {
+      if (!speakProactive) return;
+      speak(text);
+    },
+    [speakProactive, speak],
+  );
+
   useEffect(() => stopSpeaking, [stopSpeaking]);
 
   return {
@@ -382,6 +416,10 @@ export function useVoice({ onResult }: UseVoiceOptions) {
     setVoiceURI,
     speakOnText,
     toggleSpeakOnText,
+    speakProactive,
+    toggleSpeakProactive,
+    setSpeakProactiveValue,
+    speakUnprompted,
     start,
     stop,
     speak,
