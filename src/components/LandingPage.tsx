@@ -587,6 +587,61 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
         </motion.div>
       </div>
 
+      {/* Every screen laid out at once, each next to what it is. The carousel
+          above is the moving demo; this is the part you can actually read at
+          your own pace without waiting for a slide to come back around. */}
+      <div className="relative border-t border-white/8 px-6 py-16 sm:py-20">
+        <div className="mx-auto max-w-6xl">
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: '-60px' }}
+            transition={{ duration: 0.5 }}
+            className="text-center"
+          >
+            <p className="text-[10px] font-mono font-black uppercase tracking-[0.28em] text-brand-400">
+              Screen by screen
+            </p>
+            <h2 className="mt-2 text-2xl font-extrabold tracking-tight sm:text-4xl">
+              What you actually get
+            </h2>
+          </motion.div>
+
+          <div className="mt-14 space-y-16 sm:space-y-20">
+            {TOUR_FRAMES.map((frame, i) => (
+              <motion.div
+                key={frame.id}
+                initial={{ opacity: 0, y: 28 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: '-100px' }}
+                transition={{ duration: 0.55, ease: 'easeOut' }}
+                className="grid grid-cols-1 items-center gap-7 lg:grid-cols-2 lg:gap-14"
+              >
+                {/* Alternate sides so the eye zig-zags down the page instead
+                    of scanning one rigid column. */}
+                <div className={i % 2 === 1 ? 'lg:order-2' : ''}>
+                  <div className="liquid-glass-highlight relative overflow-hidden rounded-[1.75rem] p-5 shadow-[0_30px_70px_-16px_rgba(0,0,0,0.7)] sm:p-7">
+                    <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/35 to-transparent" />
+                    <span className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(16,185,129,0.09),_transparent_62%)]" />
+                    <div className="relative flex min-h-[220px] items-center">{frame.render()}</div>
+                  </div>
+                </div>
+
+                <div className={`text-left ${i % 2 === 1 ? 'lg:order-1' : ''}`}>
+                  <span className="inline-flex items-center gap-2 rounded-full border border-brand-400/25 bg-brand-500/10 px-3 py-1 text-[9.5px] font-mono font-black uppercase tracking-[0.2em] text-brand-300">
+                    {frame.eyebrow}
+                  </span>
+                  <h3 className="mt-3.5 text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
+                    {frame.title}
+                  </h3>
+                  <p className="mt-3 max-w-md text-[14px] leading-relaxed text-white/55">{frame.desc}</p>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </div>
+
       {/* Benefits — why it helps, not just what it does */}
       <div className="relative border-t border-white/8 bg-white/[0.015] px-6 py-16 sm:py-20">
         <div className="mx-auto max-w-6xl">
