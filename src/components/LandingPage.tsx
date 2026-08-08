@@ -124,6 +124,13 @@ type TourFrame = {
   title: string;
   desc: string;
   render: () => React.ReactNode;
+  /**
+   * A real capture of the running app, used by the screen-by-screen section.
+   * The carousel always uses render() — motion sells the product better than
+   * a still — while the showcase below prefers an actual screenshot where one
+   * exists, because that's the part people scroll to for proof it's real.
+   */
+  shot?: string;
 };
 
 const TOUR_FRAMES: TourFrame[] = [
@@ -132,6 +139,7 @@ const TOUR_FRAMES: TourFrame[] = [
     eyebrow: 'Home',
     title: 'One screen, your whole day',
     desc: 'Discipline score, streak, open tasks, and today’s habits — the numbers that matter, not a wall of settings.',
+    shot: '/screens/dashboard.jpg',
     render: () => (
       <div className="w-full space-y-3">
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -181,6 +189,7 @@ const TOUR_FRAMES: TourFrame[] = [
     eyebrow: 'Jarvis',
     title: 'An assistant that actually knows your day',
     desc: 'Not a generic chatbot — Jarvis can see your habits, tasks, and streak, and act on them when you ask.',
+    shot: '/screens/jarvis.jpg',
     render: () => (
       <div className="flex w-full flex-col items-center gap-4">
         <JarvisOrb state="thinking" size={72} />
@@ -249,6 +258,7 @@ const TOUR_FRAMES: TourFrame[] = [
     eyebrow: 'Arena',
     title: 'Habits, turned into a group game',
     desc: 'Every habit you complete adds a tile — solo, and to every group puzzle you’re racing in. The picture only finishes if everyone shows up.',
+    shot: '/screens/arena.jpg',
     render: () => (
       <div className="w-full space-y-3">
         <div className="grid grid-cols-8 gap-1 overflow-hidden rounded-xl">
@@ -620,11 +630,25 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
                 {/* Alternate sides so the eye zig-zags down the page instead
                     of scanning one rigid column. */}
                 <div className={i % 2 === 1 ? 'lg:order-2' : ''}>
-                  <div className="liquid-glass-highlight relative overflow-hidden rounded-[1.75rem] p-5 shadow-[0_30px_70px_-16px_rgba(0,0,0,0.7)] sm:p-7">
-                    <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/35 to-transparent" />
-                    <span className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(16,185,129,0.09),_transparent_62%)]" />
-                    <div className="relative flex min-h-[220px] items-center">{frame.render()}</div>
-                  </div>
+                  {frame.shot ? (
+                    // A real capture needs no inner padding — the app's own
+                    // chrome is the frame, so it goes edge to edge.
+                    <div className="liquid-glass-highlight relative overflow-hidden rounded-[1.75rem] p-1.5 shadow-[0_30px_70px_-16px_rgba(0,0,0,0.7)]">
+                      <span className="pointer-events-none absolute inset-x-0 top-0 z-10 h-px bg-gradient-to-r from-transparent via-white/35 to-transparent" />
+                      <img
+                        src={frame.shot}
+                        alt={`Ascend Protocol — ${frame.title}`}
+                        loading="lazy"
+                        className="block w-full rounded-[1.4rem]"
+                      />
+                    </div>
+                  ) : (
+                    <div className="liquid-glass-highlight relative overflow-hidden rounded-[1.75rem] p-5 shadow-[0_30px_70px_-16px_rgba(0,0,0,0.7)] sm:p-7">
+                      <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/35 to-transparent" />
+                      <span className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(16,185,129,0.09),_transparent_62%)]" />
+                      <div className="relative flex min-h-[220px] items-center">{frame.render()}</div>
+                    </div>
+                  )}
                 </div>
 
                 <div className={`text-left ${i % 2 === 1 ? 'lg:order-1' : ''}`}>
