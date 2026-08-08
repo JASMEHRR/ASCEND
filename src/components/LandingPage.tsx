@@ -17,8 +17,8 @@
  * integrations (Kite Connect, Gmail, Obsidian, web search) — not just the
  * four headline features.
  */
-import { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { useEffect, useRef, useState } from 'react';
+import { motion, AnimatePresence, useScroll, useTransform } from 'motion/react';
 import {
   Flame,
   MessageCircle,
@@ -354,6 +354,107 @@ const TOUR_FRAMES: TourFrame[] = [
 const TOUR_INTERVAL_MS = 5000;
 
 /**
+ * A 3D helix of screen cards that turns as you scroll past it.
+ *
+ * Cards sit on a vertical spiral — each one rotated a step further around a
+ * shared axis and lifted a little higher — so scrolling walks you up the
+ * staircase instead of paging through a flat list. The section is
+ * deliberately tall with a sticky viewport inside it: that's what converts
+ * scroll distance into rotation without hijacking the wheel.
+ *
+ * Back-facing cards are hidden via backface-visibility rather than being
+ * culled in JS, so their text never shows up mirrored.
+ */
+function HelixShowcase() {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const { scrollYProgress } = useScroll({ target: wrapRef, offset: ['start end', 'end start'] });
+
+  const count = TOUR_FRAMES.length;
+  const step = 360 / count;
+  // Just under two full turns across the section — enough to feel like a
+  // spiral, not so much that cards blur past.
+  const spin = useTransform(scrollYProgress, [0, 1], [0, -(step * count * 1.6)]);
+
+  const [narrow, setNarrow] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 900px)');
+    const on = () => setNarrow(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+
+  const radius = narrow ? 300 : 480;
+  const cardW = narrow ? 260 : 400;
+  const rise = narrow ? 30 : 44;
+
+  return (
+    <div ref={wrapRef} className="relative h-[260vh]">
+      <div className="sticky top-0 flex h-dvh flex-col items-center justify-center overflow-hidden">
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="relative z-10 mb-2 text-center"
+        >
+          <p className="text-[10px] font-mono font-black uppercase tracking-[0.28em] text-brand-400">
+            Screen by screen
+          </p>
+          <h2 className="mt-2 text-2xl font-extrabold tracking-tight sm:text-4xl">What you actually get</h2>
+          <p className="mt-2 text-[12px] text-white/35">Scroll to turn the stack</p>
+        </motion.div>
+
+        <div className="relative w-full flex-1" style={{ perspective: narrow ? 1000 : 1600 }}>
+          <motion.div
+            className="absolute left-1/2 top-1/2"
+            style={{ transformStyle: 'preserve-3d', rotateY: spin }}
+          >
+            {TOUR_FRAMES.map((frame, i) => (
+              <div
+                key={frame.id}
+                className="absolute"
+                style={{
+                  width: cardW,
+                  marginLeft: -cardW / 2,
+                  marginTop: -150,
+                  transformStyle: 'preserve-3d',
+                  backfaceVisibility: 'hidden',
+                  transform: `rotateY(${i * step}deg) translateZ(${radius}px) translateY(${
+                    (i - (count - 1) / 2) * rise
+                  }px)`,
+                }}
+              >
+                <div className="liquid-glass-highlight relative overflow-hidden rounded-[1.5rem] p-1.5 shadow-[0_30px_70px_-16px_rgba(0,0,0,0.8)]">
+                  <span className="pointer-events-none absolute inset-x-0 top-0 z-10 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent" />
+                  {frame.shot ? (
+                    <img
+                      src={frame.shot}
+                      alt={`Ascend Protocol — ${frame.title}`}
+                      loading="lazy"
+                      className="block w-full rounded-[1.2rem]"
+                    />
+                  ) : (
+                    <div className="flex min-h-[150px] items-center rounded-[1.2rem] p-4">{frame.render()}</div>
+                  )}
+                  <div className="px-3.5 pb-3 pt-3">
+                    <span className="text-[9px] font-mono font-black uppercase tracking-[0.2em] text-brand-400">
+                      {frame.eyebrow}
+                    </span>
+                    <p className="mt-1 text-[13.5px] font-bold leading-tight text-white">{frame.title}</p>
+                    <p className="mt-1.5 text-[11px] leading-snug text-white/50">{frame.desc}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </motion.div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * A fake pointer drifting across the mockup and pressing things. It's what
  * makes the panel read as a recorded product demo instead of a still image —
  * remounted per frame (via key) so every slide replays its own little run.
@@ -597,73 +698,10 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
         </motion.div>
       </div>
 
-      {/* Every screen laid out at once, each next to what it is. The carousel
-          above is the moving demo; this is the part you can actually read at
-          your own pace without waiting for a slide to come back around. */}
-      <div className="relative border-t border-white/8 px-6 py-16 sm:py-20">
-        <div className="mx-auto max-w-6xl">
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: '-60px' }}
-            transition={{ duration: 0.5 }}
-            className="text-center"
-          >
-            <p className="text-[10px] font-mono font-black uppercase tracking-[0.28em] text-brand-400">
-              Screen by screen
-            </p>
-            <h2 className="mt-2 text-2xl font-extrabold tracking-tight sm:text-4xl">
-              What you actually get
-            </h2>
-          </motion.div>
-
-          <div className="mt-14 space-y-16 sm:space-y-20">
-            {TOUR_FRAMES.map((frame, i) => (
-              <motion.div
-                key={frame.id}
-                initial={{ opacity: 0, y: 28 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: '-100px' }}
-                transition={{ duration: 0.55, ease: 'easeOut' }}
-                className="grid grid-cols-1 items-center gap-7 lg:grid-cols-2 lg:gap-14"
-              >
-                {/* Alternate sides so the eye zig-zags down the page instead
-                    of scanning one rigid column. */}
-                <div className={i % 2 === 1 ? 'lg:order-2' : ''}>
-                  {frame.shot ? (
-                    // A real capture needs no inner padding — the app's own
-                    // chrome is the frame, so it goes edge to edge.
-                    <div className="liquid-glass-highlight relative overflow-hidden rounded-[1.75rem] p-1.5 shadow-[0_30px_70px_-16px_rgba(0,0,0,0.7)]">
-                      <span className="pointer-events-none absolute inset-x-0 top-0 z-10 h-px bg-gradient-to-r from-transparent via-white/35 to-transparent" />
-                      <img
-                        src={frame.shot}
-                        alt={`Ascend Protocol — ${frame.title}`}
-                        loading="lazy"
-                        className="block w-full rounded-[1.4rem]"
-                      />
-                    </div>
-                  ) : (
-                    <div className="liquid-glass-highlight relative overflow-hidden rounded-[1.75rem] p-5 shadow-[0_30px_70px_-16px_rgba(0,0,0,0.7)] sm:p-7">
-                      <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/35 to-transparent" />
-                      <span className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(16,185,129,0.09),_transparent_62%)]" />
-                      <div className="relative flex min-h-[220px] items-center">{frame.render()}</div>
-                    </div>
-                  )}
-                </div>
-
-                <div className={`text-left ${i % 2 === 1 ? 'lg:order-1' : ''}`}>
-                  <span className="inline-flex items-center gap-2 rounded-full border border-brand-400/25 bg-brand-500/10 px-3 py-1 text-[9.5px] font-mono font-black uppercase tracking-[0.2em] text-brand-300">
-                    {frame.eyebrow}
-                  </span>
-                  <h3 className="mt-3.5 text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
-                    {frame.title}
-                  </h3>
-                  <p className="mt-3 max-w-md text-[14px] leading-relaxed text-white/55">{frame.desc}</p>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        </div>
+      {/* The screens as a scroll-driven 3D spiral, each card carrying its own
+          name and description. */}
+      <div className="relative border-t border-white/8">
+        <HelixShowcase />
       </div>
 
       {/* Benefits — why it helps, not just what it does */}
