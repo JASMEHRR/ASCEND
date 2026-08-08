@@ -18,7 +18,7 @@
  * four headline features.
  */
 import { useEffect, useRef, useState } from 'react';
-import { motion, AnimatePresence, useScroll, useTransform } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   Flame,
   MessageCircle,
@@ -46,6 +46,69 @@ import {
   MousePointer2,
 } from 'lucide-react';
 import JarvisOrb from '../features/jarvis/ui/JarvisOrb';
+import ScreenField, { type FieldScreen } from './ScreenField';
+
+/**
+ * Real captures of the running app, in the order the field walks through
+ * them. Deliberately starts on the dashboard (what you see every day) and
+ * ends on Connections (the "it plugs into my life" moment).
+ */
+const FIELD_SCREENS: FieldScreen[] = [
+  {
+    id: 'dashboard',
+    src: '/screens/field/dashboard.jpg',
+    name: 'Dashboard',
+    desc: 'Discipline, streak, open tasks and today’s habits — the whole day on one screen.',
+  },
+  {
+    id: 'jarvis',
+    src: '/screens/field/jarvis.jpg',
+    name: 'Jarvis',
+    desc: 'An assistant that can already see your day, and acts on it when you ask.',
+  },
+  {
+    id: 'habits',
+    src: '/screens/field/habits.jpg',
+    name: 'Habits',
+    desc: 'Your rituals, each one private or visible to the room as you choose.',
+  },
+  {
+    id: 'puzzle',
+    src: '/screens/field/puzzle.jpg',
+    name: 'Puzzle',
+    desc: 'Every habit you complete places a piece. The picture only finishes if you keep showing up.',
+  },
+  {
+    id: 'rooms',
+    src: '/screens/field/rooms.jpg',
+    name: 'Arena rooms',
+    desc: 'Start a room or join with a code. Everyone keeps their own habits; the room sees who showed up.',
+  },
+  {
+    id: 'modules',
+    src: '/screens/field/modules.jpg',
+    name: 'My Modules',
+    desc: 'Trackers, counters and charts you asked Jarvis for — built on request, no coding.',
+  },
+  {
+    id: 'settings-modules',
+    src: '/screens/field/settings-modules.jpg',
+    name: 'Modules',
+    desc: 'Turn any part of the app on or off. What you don’t use never appears.',
+  },
+  {
+    id: 'appearance',
+    src: '/screens/field/appearance.jpg',
+    name: 'Appearance',
+    desc: 'Glass, blur and the sanctuary atmosphere behind everything — including your own photos.',
+  },
+  {
+    id: 'connections',
+    src: '/screens/field/connections.jpg',
+    name: 'Connections',
+    desc: 'Google, Obsidian and Zerodha Kite. Read-only, and the access stays in your browser.',
+  },
+];
 
 const FEATURES = [
   {
@@ -354,107 +417,6 @@ const TOUR_FRAMES: TourFrame[] = [
 const TOUR_INTERVAL_MS = 5000;
 
 /**
- * A 3D helix of screen cards that turns as you scroll past it.
- *
- * Cards sit on a vertical spiral — each one rotated a step further around a
- * shared axis and lifted a little higher — so scrolling walks you up the
- * staircase instead of paging through a flat list. The section is
- * deliberately tall with a sticky viewport inside it: that's what converts
- * scroll distance into rotation without hijacking the wheel.
- *
- * Back-facing cards are hidden via backface-visibility rather than being
- * culled in JS, so their text never shows up mirrored.
- */
-function HelixShowcase() {
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const { scrollYProgress } = useScroll({ target: wrapRef, offset: ['start end', 'end start'] });
-
-  const count = TOUR_FRAMES.length;
-  const step = 360 / count;
-  // Just under two full turns across the section — enough to feel like a
-  // spiral, not so much that cards blur past.
-  const spin = useTransform(scrollYProgress, [0, 1], [0, -(step * count * 1.6)]);
-
-  const [narrow, setNarrow] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches,
-  );
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 900px)');
-    const on = () => setNarrow(mq.matches);
-    mq.addEventListener('change', on);
-    return () => mq.removeEventListener('change', on);
-  }, []);
-
-  const radius = narrow ? 300 : 480;
-  const cardW = narrow ? 260 : 400;
-  const rise = narrow ? 30 : 44;
-
-  return (
-    <div ref={wrapRef} className="relative h-[260vh]">
-      <div className="sticky top-0 flex h-dvh flex-col items-center justify-center overflow-hidden">
-        <motion.div
-          initial={{ opacity: 0, y: 14 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          className="relative z-10 mb-2 text-center"
-        >
-          <p className="text-[10px] font-mono font-black uppercase tracking-[0.28em] text-brand-400">
-            Screen by screen
-          </p>
-          <h2 className="mt-2 text-2xl font-extrabold tracking-tight sm:text-4xl">What you actually get</h2>
-          <p className="mt-2 text-[12px] text-white/35">Scroll to turn the stack</p>
-        </motion.div>
-
-        <div className="relative w-full flex-1" style={{ perspective: narrow ? 1000 : 1600 }}>
-          <motion.div
-            className="absolute left-1/2 top-1/2"
-            style={{ transformStyle: 'preserve-3d', rotateY: spin }}
-          >
-            {TOUR_FRAMES.map((frame, i) => (
-              <div
-                key={frame.id}
-                className="absolute"
-                style={{
-                  width: cardW,
-                  marginLeft: -cardW / 2,
-                  marginTop: -150,
-                  transformStyle: 'preserve-3d',
-                  backfaceVisibility: 'hidden',
-                  transform: `rotateY(${i * step}deg) translateZ(${radius}px) translateY(${
-                    (i - (count - 1) / 2) * rise
-                  }px)`,
-                }}
-              >
-                <div className="liquid-glass-highlight relative overflow-hidden rounded-[1.5rem] p-1.5 shadow-[0_30px_70px_-16px_rgba(0,0,0,0.8)]">
-                  <span className="pointer-events-none absolute inset-x-0 top-0 z-10 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent" />
-                  {frame.shot ? (
-                    <img
-                      src={frame.shot}
-                      alt={`Ascend Protocol — ${frame.title}`}
-                      loading="lazy"
-                      className="block w-full rounded-[1.2rem]"
-                    />
-                  ) : (
-                    <div className="flex min-h-[150px] items-center rounded-[1.2rem] p-4">{frame.render()}</div>
-                  )}
-                  <div className="px-3.5 pb-3 pt-3">
-                    <span className="text-[9px] font-mono font-black uppercase tracking-[0.2em] text-brand-400">
-                      {frame.eyebrow}
-                    </span>
-                    <p className="mt-1 text-[13.5px] font-bold leading-tight text-white">{frame.title}</p>
-                    <p className="mt-1.5 text-[11px] leading-snug text-white/50">{frame.desc}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </motion.div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
  * A fake pointer drifting across the mockup and pressing things. It's what
  * makes the panel read as a recorded product demo instead of a still image —
  * remounted per frame (via key) so every slide replays its own little run.
@@ -703,10 +665,11 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
         </motion.div>
       </div>
 
-      {/* The screens as a scroll-driven 3D spiral, each card carrying its own
-          name and description. */}
+      {/* The screens as a scroll-driven 3D field: cards scattered in depth,
+          the focused one crisp while the rest dissolve into halftone dots,
+          with a name index down the right edge. */}
       <div className="relative border-t border-white/8">
-        <HelixShowcase />
+        <ScreenField screens={FIELD_SCREENS} />
       </div>
 
       {/* Benefits — why it helps, not just what it does */}
