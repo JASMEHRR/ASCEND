@@ -80,15 +80,22 @@ export default function SetupWizard({ state, updateState, fallbackName, onDone }
   const next = () => (step === STEPS.length - 1 ? finish() : setStep((s) => s + 1));
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center overflow-y-auto bg-app/95 p-4 backdrop-blur-xl">
+    // Deliberately see-through: the atmosphere and the app behind stay
+    // visible, so setup reads as a layer over Ascend rather than a separate
+    // opaque screen bolted on in front of it.
+    <div className="fixed inset-0 z-[200] flex items-center justify-center overflow-y-auto bg-black/45 p-4 backdrop-blur-2xl">
       <motion.div
         initial={{ opacity: 0, y: 20, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ type: 'spring', stiffness: 240, damping: 26 }}
-        className="liquid-glass-panel my-auto w-full max-w-lg rounded-[2rem] p-6 sm:p-8"
+        className="liquid-glass-highlight relative my-auto w-full max-w-lg overflow-hidden rounded-[2rem] p-6 shadow-[0_40px_90px_-12px_rgba(0,0,0,0.75)] sm:p-8"
       >
+        {/* Specular top edge — the tell that a surface is glass rather than
+            merely translucent. */}
+        <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent" />
+        <span className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(16,185,129,0.10),_transparent_60%)]" />
         {/* Progress */}
-        <div className="mb-6 flex items-center gap-2">
+        <div className="relative mb-6 flex items-center gap-2">
           {STEPS.map((label, i) => (
             <div key={label} className="flex flex-1 flex-col gap-1.5">
               <span
@@ -112,7 +119,7 @@ export default function SetupWizard({ state, updateState, fallbackName, onDone }
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -12 }}
             transition={{ duration: 0.22 }}
-            className="min-h-[280px]"
+            className="relative min-h-[280px]"
           >
             {step === 0 && (
               <div className="flex flex-col items-center text-center">
@@ -278,7 +285,7 @@ export default function SetupWizard({ state, updateState, fallbackName, onDone }
         </AnimatePresence>
 
         {/* Nav */}
-        <div className="mt-6 flex items-center justify-between gap-3">
+        <div className="relative mt-6 flex items-center justify-between gap-3">
           <button
             onClick={() => setStep((s) => Math.max(0, s - 1))}
             disabled={step === 0}
