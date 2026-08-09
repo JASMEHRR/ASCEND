@@ -184,8 +184,14 @@ export default function App() {
 
   // --- Auth / load gates (all hooks above run unconditionally) ---
   if (initializing) return <FullScreenLoader label="Connecting…" />;
+  // Dev-only: the landing page normally renders for signed-out visitors only,
+  // so `?landing=1` is the way to look at it while signed in. Gated on DEV so
+  // the flag is stripped from production builds rather than shipping a public
+  // switch that puts the marketing page over a signed-in user's app.
   const forceLanding =
-    typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('landing');
+    import.meta.env.DEV &&
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).has('landing');
   if (forceLanding || (!user && !pastLanding)) {
     return (
       <LandingPage
