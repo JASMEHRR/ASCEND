@@ -164,6 +164,44 @@ ${JSON.stringify(opts.schema, null, 2)}`;
 
 // launch-routes.ts
 import { Router } from "express";
+
+// server-log.ts
+var COLLECTION = "_logs";
+var dbPromise = null;
+async function getDb() {
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (!raw) return null;
+  try {
+    const appPkg = "firebase-admin/app";
+    const firestorePkg = "firebase-admin/firestore";
+    const { getApps, initializeApp, cert } = await import(appPkg);
+    const { getFirestore } = await import(firestorePkg);
+    if (getApps().length === 0) {
+      initializeApp({ credential: cert(JSON.parse(raw)) });
+    }
+    return getFirestore();
+  } catch (err) {
+    console.warn("[server-log] admin init failed, falling back to console:", err.message);
+    return null;
+  }
+}
+function logEvent(entry) {
+  const line = `[${entry.scope}] ${entry.message}`;
+  if (entry.level === "error") console.error(line, entry.meta ?? "");
+  else if (entry.level === "warn") console.warn(line, entry.meta ?? "");
+  else console.log(line, entry.meta ?? "");
+  dbPromise ??= getDb();
+  void dbPromise.then((db) => {
+    if (!db) return;
+    return db.collection(COLLECTION).add({
+      ...entry,
+      meta: entry.meta ?? {},
+      at: (/* @__PURE__ */ new Date()).toISOString()
+    });
+  }).catch((err) => console.warn("[server-log] write failed:", err.message));
+}
+
+// launch-routes.ts
 var launchRouter = Router();
 var wrap = (fn) => (req, res, next) => fn(req, res).catch(next);
 var structuredGenerate = generateStructured;
@@ -398,13 +436,16 @@ launchRouter.use((err, _req, res, _next) => {
   const status = err instanceof GeminiError ? err.status : 500;
   const message = err instanceof Error ? err.message : "Launch AI request failed";
   if (status >= 500) console.error("[launch]", err);
+  logEvent({ level: status >= 500 ? "error" : "warn", scope: "launch", message, meta: { status } });
   res.status(status).json({ error: message });
 });
 
 // jarvis-routes.ts
 import { Router as Router2 } from "express";
 var jarvisRouter = Router2();
-var PERSONA = `You are JARVIS, the AI command core of Ascend Protocol \u2014 a personal life-management operating system. You are calm, sharp, lightly witty (Iron Man's JARVIS energy). Address the user as "sir" occasionally, never every message. Speak like an OS the user trusts, not a chatbot.
+function personaFor(userName) {
+  const address = userName ? `Address the user by name ("${userName}") occasionally, never every message.` : `You don't know the user's name yet \u2014 don't guess an honorific or a name; just speak to them directly.`;
+  return `You are JARVIS, the AI command core of Ascend Protocol \u2014 a personal life-management operating system. You are calm, sharp, lightly witty (Iron Man's JARVIS energy). ${address} Speak like an OS the user trusts, not a chatbot.
 
 You are ALSO a fully capable general-purpose assistant. When the user asks about anything unrelated to Ascend \u2014 general knowledge, explanations, advice, math, writing, current topics, casual conversation \u2014 answer it directly and completely, exactly as a top-tier AI assistant would. NEVER refuse, deflect, or say you can only help with app-related things. App awareness layers on top of general capability; it never limits it.
 
@@ -422,12 +463,14 @@ You control the app by calling TOOLS. Rules:
 Reply lengths:
 - "reply" is what is DISPLAYED. For confirmations of actions, keep it to a sentence or two. For informational or general-knowledge questions, give a genuinely useful, complete answer \u2014 markdown lists, tables, and code blocks are supported. Do not artificially truncate a real answer.
 - "speak" is the short spoken version (under ~40 words), read aloud via text-to-speech. Include it whenever "reply" is more than a couple of sentences; omit it when "reply" is already short.`;
+}
 function buildSystem(tools, context) {
   const toolLines = tools.map((t) => {
     const params = t.parameters && Object.keys(t.parameters).length ? Object.entries(t.parameters).map(([k, d]) => `${k} (${d})`).join(", ") : "none";
     return `- ${t.name}${t.module ? ` [${t.module}]` : ""}: ${t.description}. args: ${params}`;
   }).join("\n");
-  return `${PERSONA}
+  const userName = context && typeof context === "object" && "user" in context ? String(context.user ?? "").trim() || void 0 : void 0;
+  return `${personaFor(userName)}
 
 AVAILABLE TOOLS:
 ${toolLines || "(none)"}
@@ -460,19 +503,24 @@ jarvisRouter.post("/", async (req, res) => {
     try {
       const obj = JSON.parse(extractJson(raw));
       res.json({
-        reply: typeof obj.reply === "string" ? obj.reply : "Systems glitch, sir. Say that again?",
+        reply: typeof obj.reply === "string" ? obj.reply : "Systems glitch. Say that again?",
         speak: typeof obj.speak === "string" ? obj.speak : void 0,
         plan: typeof obj.plan === "string" ? obj.plan : void 0,
         toolCalls: Array.isArray(obj.toolCalls) ? obj.toolCalls : [],
         needsClarification: obj.needsClarification === true
       });
     } catch {
-      res.json({ reply: raw || "Systems glitch, sir. Say that again?", toolCalls: [] });
+      res.json({ reply: raw || "Systems glitch. Say that again?", toolCalls: [] });
     }
   } catch (err) {
     const status = err instanceof GeminiError ? err.status : 500;
     const message = err instanceof Error ? err.message : "Jarvis request failed";
-    if (status >= 500) console.error("[jarvis]", err);
+    logEvent({
+      level: status >= 500 ? "error" : "warn",
+      scope: "jarvis",
+      message,
+      meta: { status }
+    });
     res.status(status).json({ error: message });
   }
 });
@@ -488,6 +536,45 @@ var ALLOWED_MIME = /* @__PURE__ */ new Set([
   "audio/mpeg",
   "audio/wav"
 ]);
+var GROQ_TIMEOUT_MS = 2e4;
+async function transcribeWithGroq(audioBuf, mime, apiKey) {
+  const ext = mime.split("/")[1] || "webm";
+  const form = new FormData();
+  form.append("file", new Blob([audioBuf], { type: mime }), `audio.${ext}`);
+  form.append("model", "whisper-large-v3-turbo");
+  form.append("response_format", "json");
+  const res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: form,
+    signal: AbortSignal.timeout(GROQ_TIMEOUT_MS)
+  });
+  if (!res.ok) {
+    const detail = (await res.text().catch(() => "")).slice(0, 300);
+    throw new Error(`groq ${res.status}: ${detail}`);
+  }
+  const data = await res.json();
+  return (data.text ?? "").trim();
+}
+async function transcribeWithGemini(audioB64, mime) {
+  const ai = await getGemini();
+  const response = await ai.models.generateContent({
+    model: GEMINI_MODEL,
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { inlineData: { mimeType: mime, data: audioB64 } },
+          {
+            text: "Transcribe this audio verbatim. Output ONLY the spoken words as plain text \u2014 no labels, no quotes, no commentary. Preserve the language spoken (English/Hindi/Hinglish as heard). If the audio contains no speech, output an empty string."
+          }
+        ]
+      }
+    ],
+    config: { maxOutputTokens: 2048 }
+  });
+  return (response.text ?? "").trim();
+}
 transcribeRouter.post("/", async (req, res) => {
   try {
     const { audio, mimeType } = req.body ?? {};
@@ -500,27 +587,35 @@ transcribeRouter.post("/", async (req, res) => {
       res.status(400).json({ error: `Unsupported mimeType "${mime}".` });
       return;
     }
-    const ai = await getGemini();
-    const response = await ai.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { inlineData: { mimeType: mime, data: audio } },
-            {
-              text: "Transcribe this audio verbatim. Output ONLY the spoken words as plain text \u2014 no labels, no quotes, no commentary. Preserve the language spoken (English/Hindi/Hinglish as heard). If the audio contains no speech, output an empty string."
-            }
-          ]
-        }
-      ],
-      config: { maxOutputTokens: 2048 }
-    });
-    res.json({ text: (response.text ?? "").trim() });
+    const groqKey = process.env.GROQ_API_KEY;
+    if (groqKey) {
+      try {
+        const buf = Buffer.from(audio, "base64");
+        const text = await transcribeWithGroq(buf, mime, groqKey);
+        res.json({ text });
+        return;
+      } catch (err) {
+        console.warn("[transcribe] groq failed, falling back to gemini:", err.message);
+        logEvent({ level: "warn", scope: "transcribe", message: "groq failed, falling back to gemini" });
+      }
+    }
+    try {
+      const text = await transcribeWithGemini(audio, mime);
+      res.json({ text });
+    } catch (err) {
+      if (isQuotaError(err)) {
+        res.status(429).json({
+          error: "Speech-to-text has hit its limits on every provider for now, sir \u2014 try again shortly."
+        });
+        return;
+      }
+      throw err;
+    }
   } catch (err) {
     const status = err instanceof GeminiError ? err.status : 500;
     const message = err instanceof Error ? err.message : "Transcription failed";
     if (status >= 500) console.error("[transcribe]", err);
+    logEvent({ level: status >= 500 ? "error" : "warn", scope: "transcribe", message, meta: { status } });
     res.status(status).json({ error: message });
   }
 });
@@ -575,6 +670,7 @@ stocksRouter.get("/quotes", async (req, res) => {
     res.json({ quotes, failed });
   } catch (err) {
     console.error("[stocks]", err);
+    logEvent({ level: "error", scope: "stocks", message: err.message ?? "quotes failed" });
     res.status(502).json({ error: "Market data is unavailable right now (upstream error)." });
   }
 });
@@ -593,6 +689,7 @@ stocksRouter.get("/search", async (req, res) => {
     res.json({ matches });
   } catch (err) {
     console.error("[stocks:search]", err);
+    logEvent({ level: "error", scope: "stocks", message: err.message ?? "search failed" });
     res.status(502).json({ error: "Symbol search is unavailable right now (upstream error)." });
   }
 });
@@ -629,6 +726,7 @@ ttsRouter.post("/", async (req, res) => {
       const detail = (await upstream.text().catch(() => "")).slice(0, 300);
       const quota = upstream.status === 401 || upstream.status === 429 || /quota_exceeded|character_limit/i.test(detail);
       if (!quota) console.error("[tts] upstream", upstream.status, detail);
+      logEvent({ level: quota ? "warn" : "error", scope: "tts", message: "upstream failed", meta: { status: upstream.status } });
       res.status(quota ? 429 : 502).json({ error: quota ? "ElevenLabs quota reached." : "TTS failed upstream.", code: quota ? "quota" : "upstream" });
       return;
     }
@@ -638,6 +736,7 @@ ttsRouter.post("/", async (req, res) => {
     res.send(audio);
   } catch (err) {
     console.error("[tts]", err);
+    logEvent({ level: "error", scope: "tts", message: err.message ?? "tts failed" });
     res.status(502).json({ error: "TTS request failed.", code: "upstream" });
   }
 });
@@ -667,6 +766,7 @@ searchRouter.get("/", async (req, res) => {
       const detail = (await upstream.text().catch(() => "")).slice(0, 300);
       const quota = upstream.status === 429 || upstream.status === 432 || /limit|quota/i.test(detail);
       if (!quota) console.error("[search] upstream", upstream.status, detail);
+      logEvent({ level: quota ? "warn" : "error", scope: "search", message: "upstream failed", meta: { status: upstream.status } });
       res.status(quota ? 429 : 502).json({ error: quota ? "Search quota exhausted for the month." : "Search failed upstream.", code: quota ? "quota" : "upstream" });
       return;
     }
@@ -681,6 +781,7 @@ searchRouter.get("/", async (req, res) => {
     });
   } catch (err) {
     console.error("[search]", err);
+    logEvent({ level: "error", scope: "search", message: err.message ?? "search failed" });
     res.status(502).json({ error: "Search request failed.", code: "upstream" });
   }
 });
@@ -722,12 +823,14 @@ kiteRouter.get("/callback", async (req, res) => {
     const accessToken = data?.data?.access_token;
     if (!upstream.ok || !accessToken) {
       console.error("[kite] token exchange failed", upstream.status, data?.message ?? "");
+      logEvent({ level: "error", scope: "kite", message: "token exchange failed", meta: { status: upstream.status } });
       res.redirect("/#kite_error=exchange_failed");
       return;
     }
     res.redirect(`/#kite_token=${encodeURIComponent(accessToken)}`);
   } catch (err) {
     console.error("[kite] callback", err);
+    logEvent({ level: "error", scope: "kite", message: err.message ?? "callback failed" });
     res.redirect("/#kite_error=exchange_failed");
   }
 });
@@ -763,12 +866,14 @@ for (const [name, path] of Object.entries(DATA_PATHS)) {
       }
       if (!upstream.ok || data?.status !== "success") {
         console.error("[kite]", name, upstream.status, data?.message ?? "");
+        logEvent({ level: "error", scope: "kite", message: `${name} upstream failed`, meta: { status: upstream.status } });
         res.status(502).json({ error: data?.message ?? "Kite request failed.", code: "upstream" });
         return;
       }
       res.json(data.data);
     } catch (err) {
       console.error("[kite]", name, err);
+      logEvent({ level: "error", scope: "kite", message: err.message ?? `${name} failed` });
       res.status(502).json({ error: "Kite request failed.", code: "upstream" });
     }
   });
