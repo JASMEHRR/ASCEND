@@ -23,17 +23,24 @@ const isProd = process.env.NODE_ENV === 'production';
     const distIndex = path.join(distDir, 'index.html');
     app.use(express.static(distDir));
     app.get('*', (_req, res) => res.sendFile(distIndex));
+
+    app.listen(port, () => {
+      console.log(`\n  ➜  Ascend Protocol running at http://localhost:${port}\n`);
+    });
   } else {
     // Serve the client through Vite in middleware mode (single-port dev).
+    // The HTTP server must exist before Vite starts so its HMR websocket can
+    // attach to it — otherwise HMR silently fails to connect and the client
+    // never recovers from a stale/cold module graph.
+    const httpServer = app.listen(port, () => {
+      console.log(`\n  ➜  Ascend Protocol running at http://localhost:${port}\n`);
+    });
+
     const { createServer } = await import('vite');
     const vite = await createServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: { server: httpServer } },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   }
-
-  app.listen(port, () => {
-    console.log(`\n  ➜  Ascend Protocol running at http://localhost:${port}\n`);
-  });
 })();
