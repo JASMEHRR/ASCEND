@@ -184,7 +184,9 @@ export default function App() {
 
   // --- Auth / load gates (all hooks above run unconditionally) ---
   if (initializing) return <FullScreenLoader label="Connecting…" />;
-  if (!user && !pastLanding) {
+  const forceLanding =
+    typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('landing');
+  if (forceLanding || (!user && !pastLanding)) {
     return (
       <LandingPage
         onContinue={() => {
