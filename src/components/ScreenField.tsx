@@ -34,7 +34,7 @@
  *    state, and it changes on integer boundaries so re-renders are rare.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import { motion } from 'motion/react';
 import { useScroll } from 'motion/react';
 import { X } from 'lucide-react';
 
@@ -455,13 +455,18 @@ export default function ScreenField({ screens }: { screens: FieldScreen[] }) {
 
   const active = screens[activeIdx];
 
-  const overlay = (
-    <AnimatePresence>
-      {openIdx !== null && (
+  // Deliberately a plain conditional rather than AnimatePresence. With
+  // AnimatePresence the exit animation ran but the node was never removed,
+  // leaving an invisible inset-0 pointer-events:auto layer at z-2000 that
+  // swallowed every click on the page once the overlay had been closed a
+  // single time. A missing fade-out is a far cheaper loss than a dead page,
+  // so the overlay animates in and unmounts immediately on close.
+  const overlay =
+    openIdx === null ? null : (
+      <>
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
           onClick={() => setOpenIdx(null)}
           className="bg-app/95 fixed inset-0 z-[2000] flex cursor-zoom-out flex-col items-center justify-center gap-5 p-6 sm:p-10"
@@ -470,7 +475,6 @@ export default function ScreenField({ screens }: { screens: FieldScreen[] }) {
             key={screens[openIdx].id}
             initial={{ scale: 0.94, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.96, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 260, damping: 28 }}
             src={screens[openIdx].src}
             alt={screens[openIdx].name}
@@ -490,9 +494,8 @@ export default function ScreenField({ screens }: { screens: FieldScreen[] }) {
             <X size={17} />
           </button>
         </motion.div>
-      )}
-    </AnimatePresence>
-  );
+      </>
+    );
 
   if (narrow) {
     return (
