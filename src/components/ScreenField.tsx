@@ -29,7 +29,8 @@
  * which changes on integer boundaries, goes through state.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { motion, useScroll } from 'motion/react';
+import { AnimatePresence, motion, useScroll } from 'motion/react';
+import { X } from 'lucide-react';
 
 export interface FieldScreen {
   id: string;
@@ -42,16 +43,18 @@ const clamp = (v: number, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, v));
 
 /** Degrees of revolution per card. Across the visible span this carries the
  *  field through roughly a full turn, which is what reads as "spiral". */
-const ANGLE_STEP = 52;
+const ANGLE_STEP = 80;
 /** Radius of the cylinder the cards are wrapped onto, in px. */
-const HELIX_RADIUS = 540;
+const HELIX_RADIUS = 430;
 /** Vertical drop per card — the "descending" half of a descending helix.
  *  Wide enough that consecutive turns clear each other instead of stacking
  *  into one another; cards running off the top and bottom of frame is the
  *  reference's look, not a fault. */
-const Y_STEP = 265;
-/** How many index-steps a card stays mounted for. */
-const CULL_RADIUS = 3.2;
+const Y_STEP = 150;
+/** How many index-steps a card stays mounted for. Wide enough that roughly
+ *  two turns of the helix are on screen at once — one turn alone reads as a
+ *  single arc of cards rather than a spiral you can see climbing. */
+const CULL_RADIUS = 5.5;
 /** Total arc the cylindrical bow spans across one card, in radians. Sets how
  *  hard the card's top and bottom edges curve away at its left/right sides. */
 const BOW_ARC = 0.9;
@@ -305,6 +308,9 @@ export default function ScreenField({ screens }: { screens: FieldScreen[] }) {
   // the next scroll event, which on a stationary page is never.
   const applyRef = useRef<((p: number) => void) | null>(null);
   const [activeIdx, setActiveIdx] = useState(0);
+  /** Card opened to full size. The helix keeps its scroll position underneath,
+   *  so closing returns you exactly where you were. */
+  const [openIdx, setOpenIdx] = useState<number | null>(null);
 
   const [narrow, setNarrow] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches,
@@ -319,10 +325,10 @@ export default function ScreenField({ screens }: { screens: FieldScreen[] }) {
   // Cards are sized off the viewport so the hero holds roughly the same share
   // of the screen the reference gives it (~36% wide) at any window size.
   const [cardW, setCardW] = useState(() =>
-    typeof window === 'undefined' ? 580 : clamp(window.innerWidth * 0.38, 360, 620),
+    typeof window === 'undefined' ? 580 : clamp(window.innerWidth * 0.29, 300, 470),
   );
   useEffect(() => {
-    const on = () => setCardW(clamp(window.innerWidth * 0.38, 360, 620));
+    const on = () => setCardW(clamp(window.innerWidth * 0.29, 300, 470));
     on();
     window.addEventListener('resize', on);
     return () => window.removeEventListener('resize', on);
@@ -369,6 +375,10 @@ export default function ScreenField({ screens }: { screens: FieldScreen[] }) {
         // by dissolving rather than by quietly going transparent.
         el.style.opacity = String(clamp((CULL_RADIUS - absD) / 0.5));
         el.style.zIndex = String(Math.round(focus * 100));
+        // Only the card at the playhead keeps its colour; everything else
+        // desaturates, so the hero is unambiguous even where two cards are
+        // similarly crisp.
+        el.style.filter = `grayscale(${(1 - focus).toFixed(2)})`;
 
         // Hold the hero fully crisp for a half-step either side of the
         // playhead before the dissolve starts, then spread the rest across
@@ -418,7 +428,14 @@ export default function ScreenField({ screens }: { screens: FieldScreen[] }) {
                   willChange: 'transform, opacity',
                 }}
               >
-                <DitherCanvas src={s.src} w={cardW} h={cardH} index={i} onReady={registerDraw} />
+                <button
+                  type="button"
+                  onClick={() => setOpenIdx(i)}
+                  aria-label={`Open ${s.name} full size`}
+                  className="block cursor-pointer"
+                >
+                  <DitherCanvas src={s.src} w={cardW} h={cardH} index={i} onReady={registerDraw} />
+                </button>
               </div>
             ))}
           </div>
@@ -459,7 +476,47 @@ export default function ScreenField({ screens }: { screens: FieldScreen[] }) {
             {screens[activeIdx]?.name}
           </p>
           <p className="mt-1.5 text-[12px] leading-snug text-white/50">{screens[activeIdx]?.desc}</p>
+          <p className="mt-2 text-[11px] text-white/30">Click a screen to open it full size</p>
         </motion.div>
+
+        {/* Full view. The halftone is what a card looks like at a distance;
+            this is the same screenshot undithered, which is the only place a
+            visitor can actually read the UI. */}
+        <AnimatePresence>
+          {openIdx !== null && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={() => setOpenIdx(null)}
+              className="absolute inset-0 z-[60] flex cursor-zoom-out flex-col items-center justify-center gap-4 bg-black/85 p-6 backdrop-blur-xl sm:p-10"
+            >
+              <motion.img
+                key={screens[openIdx].id}
+                initial={{ scale: 0.94, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.96, opacity: 0 }}
+                transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+                src={screens[openIdx].src}
+                alt={screens[openIdx].name}
+                className="max-h-[72vh] w-auto max-w-full rounded-xl shadow-[0_40px_100px_-20px_rgba(0,0,0,0.9)]"
+              />
+              <div className="max-w-lg text-center">
+                <p className="text-lg font-extrabold tracking-tight text-white">{screens[openIdx].name}</p>
+                <p className="mt-1 text-[12.5px] leading-snug text-white/55">{screens[openIdx].desc}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOpenIdx(null)}
+                aria-label="Close"
+                className="absolute right-5 top-5 grid h-9 w-9 place-items-center rounded-full border border-white/15 bg-white/[0.06] text-white/70 transition-colors hover:text-white cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
