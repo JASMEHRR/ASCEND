@@ -32,6 +32,19 @@ function syncPayload(s: OSState) {
     jarvisPrefs: s.jarvisPrefs ?? null,
     finance: s.finance ?? null,
     journal: s.journal ?? null,
+    // Everything below was in OSState but absent from this payload, so it
+    // never reached Firestore and only survived via the localStorage cache —
+    // meaning it silently reset on any second device or cleared browser.
+    // `?? null` rather than leaving undefined: Firestore rejects undefined
+    // values outright, and null reads back as "absent" in the merge below.
+    setupComplete: s.setupComplete ?? false,
+    displayName: s.displayName ?? null,
+    atmosphereMode: s.atmosphereMode ?? null,
+    customBackgrounds: s.customBackgrounds ?? null,
+    glassOpacity: s.glassOpacity ?? null,
+    glassBlur: s.glassBlur ?? null,
+    navOrder: s.navOrder ?? null,
+    navHidden: s.navHidden ?? null,
     // users/{uid}/dailyStates/{today}
     water: s.water,
     rituals: s.rituals,
@@ -115,6 +128,16 @@ export function useCloudSync(uid: string | null): CloudSync {
           jarvisPrefs: latestUser.jarvisPrefs ?? base.jarvisPrefs,
           finance: latestUser.finance ?? base.finance,
           journal: latestUser.journal ?? base.journal,
+          // null (written for "unset") falls through to the local value, so a
+          // fresh account never clobbers settings already made on this device.
+          setupComplete: latestUser.setupComplete ?? base.setupComplete,
+          displayName: latestUser.displayName ?? base.displayName,
+          atmosphereMode: latestUser.atmosphereMode ?? base.atmosphereMode,
+          customBackgrounds: latestUser.customBackgrounds ?? base.customBackgrounds,
+          glassOpacity: latestUser.glassOpacity ?? base.glassOpacity,
+          glassBlur: latestUser.glassBlur ?? base.glassBlur,
+          navOrder: latestUser.navOrder ?? base.navOrder,
+          navHidden: latestUser.navHidden ?? base.navHidden,
           water: latestDaily.water ?? base.water,
           rituals: latestDaily.rituals ?? base.rituals,
           weight: latestDaily.weight ?? base.weight,
@@ -173,7 +196,28 @@ export function useCloudSync(uid: string | null): CloudSync {
       try {
         await setDoc(
           doc(db, 'users', uid),
-          { tasks: p.tasks, ideas: p.ideas, visionBoard: p.visionBoard, points: p.points, wishes: p.wishes, showWishes: p.showWishes, streak: p.streak, streakDate: p.streakDate, features: p.features, jarvisPrefs: p.jarvisPrefs, finance: p.finance, journal: p.journal },
+          {
+            tasks: p.tasks,
+            ideas: p.ideas,
+            visionBoard: p.visionBoard,
+            points: p.points,
+            wishes: p.wishes,
+            showWishes: p.showWishes,
+            streak: p.streak,
+            streakDate: p.streakDate,
+            features: p.features,
+            jarvisPrefs: p.jarvisPrefs,
+            finance: p.finance,
+            journal: p.journal,
+            setupComplete: p.setupComplete,
+            displayName: p.displayName,
+            atmosphereMode: p.atmosphereMode,
+            customBackgrounds: p.customBackgrounds,
+            glassOpacity: p.glassOpacity,
+            glassBlur: p.glassBlur,
+            navOrder: p.navOrder,
+            navHidden: p.navHidden,
+          },
           { merge: true },
         );
         await setDoc(

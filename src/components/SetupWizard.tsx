@@ -13,7 +13,7 @@
  * different answers about speaking out loud. Name and modules are per-account
  * and sync through OSState.
  */
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowLeft, ArrowRight, Check, Volume2, VolumeX, Play, Sparkles } from 'lucide-react';
 import type { OSState } from '../types';
@@ -78,6 +78,28 @@ export default function SetupWizard({ state, updateState, fallbackName, onDone }
   };
 
   const next = () => (step === STEPS.length - 1 ? finish() : setStep((s) => s + 1));
+
+  /**
+   * Leave without changing anything, but stop asking.
+   *
+   * This exists because the wizard shows for anyone without `setupComplete`,
+   * which includes every account that predates it — so without an escape it
+   * would trap existing users behind four steps of settings they'd already
+   * chosen, with no way through to the app.
+   */
+  const skip = useCallback(() => {
+    updateState((s) => ({ ...s, setupComplete: true }));
+    onDone();
+  }, [updateState, onDone]);
+
+  // Escape is the reflex for "get me out of this modal".
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') skip();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [skip]);
 
   return (
     // Deliberately see-through: the atmosphere and the app behind stay
@@ -292,6 +314,12 @@ export default function SetupWizard({ state, updateState, fallbackName, onDone }
             className="flex items-center gap-1.5 rounded-full px-3 py-2 text-[12px] text-white/45 transition-colors hover:text-white disabled:opacity-0 cursor-pointer"
           >
             <ArrowLeft size={14} /> Back
+          </button>
+          <button
+            onClick={skip}
+            className="rounded-full px-3 py-2 text-[12px] text-white/35 transition-colors hover:text-white/70 cursor-pointer"
+          >
+            Skip for now
           </button>
           <button
             onClick={next}
