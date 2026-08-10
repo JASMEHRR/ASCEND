@@ -1,35 +1,28 @@
 /**
  * The pre-login landing page. Shown to a signed-out visitor before the
  * LoginScreen so they know what Ascend actually is before being asked to
- * sign in — real benefit-focused copy plus a big animated product-tour
- * sequence, not just a bare sign-in card or a narrow, sparse pitch.
+ * sign in — real benefit-focused copy and real screenshots, not a bare
+ * sign-in card or a narrow, sparse pitch.
  *
  * Every panel here uses the app's actual liquid-glass-panel/highlight
  * classes (see index.css) instead of generic bordered boxes, so the pitch
  * already looks and feels like the real product, not a template.
  *
- * There's no real screen-recorded video and no real screenshots here: the
- * "walkthrough" is a set of detailed in-code animated mockups styled to
- * look like actual app screens — built because there's no way to capture
- * the live signed-in app from this environment. It covers the actual
- * breadth of the app: the dashboard, Jarvis conversation, Arena, Jarvis
- * building a custom module live from a chat request, and the real
- * integrations (Kite Connect, Gmail, Obsidian, web search) — not just the
- * four headline features.
+ * The product is shown twice, and only with real captures: once in the hero,
+ * where the dashboard sits under the CTA cropped by the fold so a visitor
+ * sees the app inside the first screen, and once in the scroll-driven screen
+ * field below. An earlier version also carried a coded animated-mockup
+ * carousel above the field. It was cut because it did the same job as the
+ * field with fake screens, and the real captures win that comparison.
  */
-import { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { useEffect } from 'react';
+import { motion } from 'motion/react';
 import {
   Flame,
   MessageCircle,
   Swords,
   RefreshCw,
-  Target,
-  Sparkles,
   ArrowRight,
-  Check,
-  Droplets,
-  Zap,
   BookOpen,
   ShieldCheck,
   BellRing,
@@ -38,12 +31,6 @@ import {
   Wand2,
   Mail,
   LineChart,
-  Search,
-  NotebookText,
-  Plus,
-  ChevronLeft,
-  ChevronRight,
-  MousePointer2,
 } from 'lucide-react';
 import JarvisOrb from '../features/jarvis/ui/JarvisOrb';
 import ScreenField, { type FieldScreen } from './ScreenField';
@@ -179,413 +166,6 @@ const BENEFITS = [
   },
 ];
 
-/** One frame of the animated walkthrough — a fake UI panel styled like the
- *  real app (liquid-glass everywhere), not a screenshot. */
-type TourFrame = {
-  id: string;
-  eyebrow: string;
-  title: string;
-  desc: string;
-  render: () => React.ReactNode;
-  /**
-   * A real capture of the running app, used by the screen-by-screen section.
-   * The carousel always uses render() — motion sells the product better than
-   * a still — while the showcase below prefers an actual screenshot where one
-   * exists, because that's the part people scroll to for proof it's real.
-   */
-  shot?: string;
-};
-
-const TOUR_FRAMES: TourFrame[] = [
-  {
-    id: 'dashboard',
-    eyebrow: 'Home',
-    title: 'One screen, your whole day',
-    desc: 'Discipline score, streak, open tasks, and today’s habits — the numbers that matter, not a wall of settings.',
-    shot: '/screens/dashboard.jpg',
-    render: () => (
-      <div className="w-full space-y-3">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {[
-            { icon: Zap, label: 'Discipline', value: '78', sub: '/100', tint: 'text-white' },
-            { icon: Flame, label: 'Streak', value: '12', sub: 'days', tint: 'text-amber-400' },
-            { icon: Sparkles, label: 'Tasks', value: '3', sub: 'open', tint: 'text-brand-400' },
-            { icon: Droplets, label: 'Habits', value: '5/6', sub: 'today', tint: 'text-sky-400' },
-          ].map((s, i) => (
-            <motion.div
-              key={s.label}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.08 * i }}
-              className="liquid-glass-highlight rounded-xl px-3 py-2.5"
-            >
-              <p className="flex items-center gap-1 text-[8.5px] font-mono font-bold uppercase tracking-wider text-white/40">
-                <s.icon size={10} /> {s.label}
-              </p>
-              <p className={`mt-1 text-lg font-extrabold ${s.tint}`}>
-                {s.value}
-                <span className="ml-0.5 text-[9px] font-normal text-white/35">{s.sub}</span>
-              </p>
-            </motion.div>
-          ))}
-        </div>
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }} className="space-y-1.5">
-          {['Morning walk', 'Read 20 minutes', 'Drink water'].map((h, i) => (
-            <div key={h} className="liquid-glass-panel flex items-center gap-2.5 rounded-lg px-3 py-2">
-              <motion.span
-                initial={{ scale: 0.6, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ delay: 0.5 + 0.15 * i, type: 'spring', stiffness: 300 }}
-                className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-brand-400 text-black"
-              >
-                <Check size={10} strokeWidth={4} />
-              </motion.span>
-              <span className="text-[11.5px] text-white/70 line-through decoration-white/40">{h}</span>
-            </div>
-          ))}
-        </motion.div>
-      </div>
-    ),
-  },
-  {
-    id: 'jarvis',
-    eyebrow: 'Jarvis',
-    title: 'An assistant that actually knows your day',
-    desc: 'Not a generic chatbot — Jarvis can see your habits, tasks, and streak, and act on them when you ask.',
-    shot: '/screens/jarvis.jpg',
-    render: () => (
-      <div className="flex w-full flex-col items-center gap-4">
-        <JarvisOrb state="thinking" size={72} />
-        <div className="w-full space-y-2">
-          <motion.div
-            initial={{ opacity: 0, x: 12 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="ml-auto max-w-[80%] rounded-xl border border-brand-400/20 bg-brand-500/15 px-3.5 py-2.5 text-[11.5px] text-white"
-          >
-            plan my day
-          </motion.div>
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-            className="liquid-glass-panel max-w-[85%] rounded-xl px-3.5 py-2.5 text-[11.5px] text-white/80"
-          >
-            You're at a 12-day streak with 1 habit left today. I'll remind you about the pitch deck at 3pm and log
-            your water once you confirm.
-          </motion.div>
-        </div>
-      </div>
-    ),
-  },
-  {
-    id: 'build',
-    eyebrow: 'Build',
-    title: 'Ask for a module. Jarvis builds it.',
-    desc: 'No settings menu, no config screen — describe what you want to track and it appears on your dashboard, ready to use.',
-    render: () => (
-      <div className="flex w-full flex-col items-center gap-4">
-        <JarvisOrb state="thinking" size={56} />
-        <div className="w-full space-y-2">
-          <motion.div
-            initial={{ opacity: 0, x: 12 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="ml-auto max-w-[85%] rounded-xl border border-brand-400/20 bg-brand-500/15 px-3.5 py-2.5 text-[11.5px] text-white"
-          >
-            give me a counter for cold showers
-          </motion.div>
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.35 }}
-            className="liquid-glass-panel max-w-[85%] rounded-xl px-3.5 py-2.5 text-[11.5px] text-white/80"
-          >
-            Added "Cold showers" to My Modules.
-          </motion.div>
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.75, type: 'spring', stiffness: 260 }}
-            className="liquid-glass-highlight mx-auto flex w-full max-w-[220px] items-center justify-between rounded-xl px-4 py-3"
-          >
-            <span className="flex items-center gap-2 text-[12px] font-bold text-white">
-              <Plus size={13} className="text-brand-400" /> Cold showers
-            </span>
-            <span className="text-lg font-extrabold text-brand-400">7</span>
-          </motion.div>
-        </div>
-      </div>
-    ),
-  },
-  {
-    id: 'arena',
-    eyebrow: 'Arena',
-    title: 'Habits, turned into a group game',
-    desc: 'Every habit you complete adds a tile — solo, and to every group puzzle you’re racing in. The picture only finishes if everyone shows up.',
-    shot: '/screens/arena.jpg',
-    render: () => (
-      <div className="w-full space-y-3">
-        {/* Plain divs, not 32 motion components. Two reasons: an entry
-            animation that stalls leaves the whole panel looking blank (the
-            tiles were being found frozen at their initial opacity:0), and 32
-            simultaneous animation instances per frame is a lot of main-thread
-            work for a decorative grid. Visibility must not depend on an
-            animation ever completing. */}
-        <div className="grid grid-cols-8 gap-1 overflow-hidden rounded-xl">
-          {Array.from({ length: 32 }).map((_, i) => {
-            const filled = i < 21;
-            const shade = 55 + ((i * 37) % 30);
-            return (
-              <div
-                key={i}
-                className="aspect-square"
-                style={{
-                  background: filled ? `rgba(52, 211, 153, ${shade / 100})` : 'rgba(255,255,255,0.06)',
-                  opacity: filled ? 1 : 0.35,
-                }}
-              />
-            );
-          })}
-        </div>
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.6 }}
-          className="liquid-glass-panel flex items-center justify-between rounded-xl px-3.5 py-2.5"
-        >
-          <span className="text-[11px] text-white/60">21 / 32 tiles</span>
-          <span className="text-[11px] font-bold text-brand-400">4 players racing</span>
-        </motion.div>
-      </div>
-    ),
-  },
-  {
-    id: 'connections',
-    eyebrow: 'Connected',
-    title: 'Your other tools, not replaced',
-    desc: 'Kite for real holdings, Gmail for what actually needs a reply, Obsidian for your notes, and live web search — all inside the same conversation.',
-    render: () => (
-      <div className="grid w-full grid-cols-2 gap-2.5">
-        {[
-          { icon: LineChart, label: 'Kite Connect', sub: 'Live holdings', tint: 'text-emerald-400' },
-          { icon: Mail, label: 'Gmail', sub: 'Inbox aware', tint: 'text-sky-400' },
-          { icon: NotebookText, label: 'Obsidian', sub: 'Vault synced', tint: 'text-violet-400' },
-          { icon: Search, label: 'Web search', sub: 'Live answers', tint: 'text-amber-400' },
-        ].map((c, i) => (
-          <motion.div
-            key={c.label}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.08 * i }}
-            className="liquid-glass-panel flex flex-col items-start gap-2 rounded-xl px-3.5 py-3"
-          >
-            <span className={`flex h-7 w-7 items-center justify-center rounded-full bg-white/[0.06] ${c.tint}`}>
-              <c.icon size={13} />
-            </span>
-            <span className="text-[11.5px] font-bold text-white">{c.label}</span>
-            <span className="text-[10px] text-white/40">{c.sub}</span>
-          </motion.div>
-        ))}
-      </div>
-    ),
-  },
-  {
-    id: 'focus',
-    eyebrow: 'Focus',
-    title: 'One thing at a time',
-    desc: 'A single focus for the day, plus the open tasks around it — not a to-do list you’re afraid to open.',
-    render: () => (
-      <div className="w-full space-y-2.5">
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex items-center gap-3 rounded-xl border border-brand-400/25 bg-brand-500/10 px-3.5 py-3"
-        >
-          <Target size={16} className="shrink-0 text-brand-400" />
-          <span className="text-[13px] font-bold text-white">Ship the pitch deck</span>
-        </motion.div>
-        {['Call the bank', 'Reply to Sam'].map((t, i) => (
-          <motion.div
-            key={t}
-            initial={{ opacity: 0, x: -8 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.15 + 0.1 * i }}
-            className="liquid-glass-panel flex items-center gap-2.5 rounded-lg px-3 py-2"
-          >
-            <span className="h-3.5 w-3.5 shrink-0 rounded-full border border-white/25" />
-            <span className="text-[11.5px] text-white/65">{t}</span>
-          </motion.div>
-        ))}
-      </div>
-    ),
-  },
-];
-
-const TOUR_INTERVAL_MS = 5000;
-
-/**
- * A fake pointer drifting across the mockup and pressing things. It's what
- * makes the panel read as a recorded product demo instead of a still image —
- * remounted per frame (via key) so every slide replays its own little run.
- */
-function CursorGhost({ frameId }: { frameId: string }) {
-  return (
-    <motion.div
-      key={frameId}
-      aria-hidden="true"
-      className="pointer-events-none absolute left-0 top-0 z-30"
-      initial={{ opacity: 0 }}
-      animate={{
-        x: ['12%', '48%', '38%', '66%', '66%'],
-        y: ['82%', '38%', '64%', '32%', '32%'],
-        opacity: [0, 1, 1, 1, 0],
-        scale: [1, 1, 0.82, 1, 1],
-      }}
-      transition={{ duration: TOUR_INTERVAL_MS / 1000, times: [0, 0.22, 0.5, 0.78, 1], ease: 'easeInOut' }}
-      style={{ left: 0, top: 0 }}
-    >
-      <span className="relative block">
-        {/* Click ripple, timed to the two "press" moments above. */}
-        <motion.span
-          className="absolute -left-2 -top-2 block h-9 w-9 rounded-full bg-brand-400/25"
-          initial={{ scale: 0, opacity: 0 }}
-          animate={{ scale: [0, 0, 1.4, 0, 1.4, 0], opacity: [0, 0, 0.7, 0, 0.7, 0] }}
-          transition={{ duration: TOUR_INTERVAL_MS / 1000, times: [0, 0.46, 0.54, 0.62, 0.82, 0.9] }}
-        />
-        <MousePointer2
-          size={17}
-          className="relative text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)]"
-          fill="white"
-          strokeWidth={1.5}
-        />
-      </span>
-    </motion.div>
-  );
-}
-
-function AnimatedWalkthrough() {
-  const [i, setI] = useState(0);
-  // Auto-advance pauses while you're interacting, and any manual move resets
-  // the clock — an auto-play that fights your clicks is worse than none.
-  const [paused, setPaused] = useState(false);
-
-  useEffect(() => {
-    if (paused) return;
-    const t = setTimeout(() => setI((n) => (n + 1) % TOUR_FRAMES.length), TOUR_INTERVAL_MS);
-    return () => clearTimeout(t);
-  }, [i, paused]);
-
-  const go = (next: number) => setI((next + TOUR_FRAMES.length) % TOUR_FRAMES.length);
-  const frame = TOUR_FRAMES[i];
-
-  return (
-    <div
-      className="grid w-full grid-cols-1 items-center gap-8 lg:grid-cols-2 lg:gap-14"
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-    >
-      {/* The mockup "screen", sitting on its own ambient backdrop so it reads
-          as a lit object rather than a flat card on a flat page. */}
-      <div className="order-2 lg:order-1">
-        <div className="relative">
-          {/* Backdrop: a soft aurora that breathes behind the glass. */}
-          <motion.div
-            aria-hidden="true"
-            className="pointer-events-none absolute -inset-10 -z-10 rounded-[3rem] blur-3xl"
-            style={{
-              background:
-                'radial-gradient(60% 55% at 30% 25%, rgba(16,185,129,0.28), transparent 70%), radial-gradient(55% 50% at 75% 75%, rgba(56,189,248,0.20), transparent 70%)',
-            }}
-            animate={{ opacity: [0.55, 0.9, 0.55], scale: [1, 1.05, 1] }}
-            transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut' }}
-          />
-
-          <div className="liquid-glass-highlight relative overflow-hidden rounded-[2rem] p-6 shadow-[0_40px_90px_-12px_rgba(0,0,0,0.75)] sm:p-8">
-            {/* Specular sheen across the top edge — the giveaway that a
-                surface is glass rather than just translucent. */}
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent" />
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(16,185,129,0.10),_transparent_60%)]" />
-
-            <div className="relative flex min-h-[280px] items-center">
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={frame.id}
-                  initial={{ opacity: 0, y: 12, filter: 'blur(6px)' }}
-                  animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-                  exit={{ opacity: 0, y: -12, filter: 'blur(6px)' }}
-                  transition={{ duration: 0.4, ease: 'easeOut' }}
-                  className="w-full"
-                >
-                  {frame.render()}
-                </motion.div>
-              </AnimatePresence>
-              {!paused && <CursorGhost frameId={frame.id} />}
-            </div>
-          </div>
-        </div>
-
-        {/* Controls: real arrows and labelled dots, not just decoration. */}
-        <div className="mt-5 flex items-center justify-center gap-3 lg:justify-start">
-          <button
-            onClick={() => go(i - 1)}
-            aria-label="Previous"
-            className="liquid-glass-panel grid h-9 w-9 place-items-center rounded-full text-white/70 transition-all hover:text-white hover:scale-105 active:scale-95 cursor-pointer"
-          >
-            <ChevronLeft size={16} />
-          </button>
-          <div className="flex flex-wrap items-center gap-2">
-            {TOUR_FRAMES.map((f, idx) => (
-              <button
-                key={f.id}
-                onClick={() => go(idx)}
-                aria-label={f.eyebrow}
-                aria-current={idx === i}
-                className={`relative h-2 overflow-hidden rounded-full transition-all cursor-pointer ${
-                  idx === i ? 'w-9 bg-white/15' : 'w-2 bg-white/15 hover:bg-white/35'
-                }`}
-              >
-                {idx === i && (
-                  // Fills over the dwell time, so you can see the next slide coming.
-                  <motion.span
-                    key={`${f.id}-${paused}`}
-                    className="absolute inset-y-0 left-0 block bg-brand-400"
-                    initial={{ width: paused ? '100%' : '0%' }}
-                    animate={{ width: '100%' }}
-                    transition={{ duration: paused ? 0 : TOUR_INTERVAL_MS / 1000, ease: 'linear' }}
-                  />
-                )}
-              </button>
-            ))}
-          </div>
-          <button
-            onClick={() => go(i + 1)}
-            aria-label="Next"
-            className="liquid-glass-panel grid h-9 w-9 place-items-center rounded-full text-white/70 transition-all hover:text-white hover:scale-105 active:scale-95 cursor-pointer"
-          >
-            <ChevronRight size={16} />
-          </button>
-        </div>
-      </div>
-
-      {/* The description */}
-      <div className="order-1 text-left lg:order-2">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={frame.id}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.35 }}
-          >
-            <p className="text-[10px] font-mono font-black uppercase tracking-[0.28em] text-brand-400">{frame.eyebrow}</p>
-            <h3 className="mt-2 text-2xl font-extrabold tracking-tight text-white sm:text-3xl">{frame.title}</h3>
-            <p className="mt-3 max-w-md text-[14px] leading-relaxed text-white/55">{frame.desc}</p>
-          </motion.div>
-        </AnimatePresence>
-      </div>
-    </div>
-  );
-}
-
 export default function LandingPage({ onContinue }: { onContinue: () => void }) {
   // The signed-in app shell is a fixed-height layout, so `body` is globally
   // locked to overflow-hidden — an overflow-y-auto wrapper alone can't
@@ -609,10 +189,13 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
     <div className="relative min-h-dvh w-full overflow-x-clip bg-app text-white">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(16,185,129,0.10),_transparent_55%)]" />
 
-      {/* Hero — full width, centered content */}
-      <div className="relative flex flex-col items-center px-6 py-16 text-center sm:py-24">
+      {/* Hero — full width, centered content, ending on a real screenshot
+          that the fold cuts through. Padding is deliberately tighter than a
+          typical hero: the screenshot has to start above the fold to do its
+          job, and every pixel spent above it pushes it under. */}
+      <div className="relative flex flex-col items-center px-6 pt-12 text-center sm:pt-16">
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ type: 'spring', stiffness: 220, damping: 24 }}>
-          <JarvisOrb state="idle" size={96} />
+          <JarvisOrb state="idle" size={88} />
         </motion.div>
         <p className="mt-5 text-[11px] font-mono font-black uppercase tracking-[0.32em] text-brand-400">Ascend Protocol</p>
         <h1 className="mt-3 max-w-4xl text-4xl font-extrabold tracking-tight sm:text-6xl">The AI-run life OS.</h1>
@@ -621,63 +204,77 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
           request, and connects to the accounts you already use — plus a shared game with friends that
           turns showing up into something you can see grow.
         </p>
-        <button
-          onClick={onContinue}
-          className="mt-8 flex items-center gap-2 rounded-full bg-brand-500 px-7 py-3.5 text-sm font-bold uppercase tracking-wider text-black transition-all hover:bg-brand-400 cursor-pointer"
-        >
-          Get started <ArrowRight size={15} />
-        </button>
 
-        {/* A texture strip in the app's own liquid-glass language, not just
-            white space or plain text. */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="liquid-glass-panel mt-12 flex flex-wrap items-center justify-center gap-x-10 gap-y-4 rounded-2xl px-8 py-5 text-left"
-        >
-          {[
-            { value: '9', label: 'connected modules' },
-            { value: '1', label: 'AI that sees all of them' },
-            { value: '∞', label: 'modules Jarvis can build you' },
-          ].map((s) => (
-            <div key={s.label} className="flex items-baseline gap-2">
-              <span className="text-2xl font-extrabold text-brand-400">{s.value}</span>
-              <span className="text-[12px] text-white/45">{s.label}</span>
-            </div>
-          ))}
-        </motion.div>
+        <div className="mt-7 flex flex-col items-center gap-6 sm:flex-row sm:gap-8">
+          <button
+            onClick={onContinue}
+            className="flex shrink-0 items-center gap-2 rounded-full bg-brand-500 px-7 py-3.5 text-sm font-bold uppercase tracking-wider text-black transition-all hover:bg-brand-400 cursor-pointer"
+          >
+            Get started <ArrowRight size={15} />
+          </button>
+
+          {/* The stat strip sits beside the CTA rather than under it. As its
+              own full-width band it cost about 90px of vertical space, which
+              is most of what the screenshot below needs to clear the fold. */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="liquid-glass-panel flex flex-wrap items-center justify-center gap-x-7 gap-y-3 rounded-2xl px-6 py-3.5 text-left"
+          >
+            {[
+              { value: '9', label: 'connected modules' },
+              { value: '1', label: 'AI that sees all of them' },
+              { value: '∞', label: 'modules Jarvis can build you' },
+            ].map((s) => (
+              <div key={s.label} className="flex items-baseline gap-2">
+                <span className="text-xl font-extrabold text-brand-400">{s.value}</span>
+                <span className="text-[11.5px] text-white/45">{s.label}</span>
+              </div>
+            ))}
+          </motion.div>
+        </div>
+
+        {/* The product, inside the first screen. Tilted back a few degrees so
+            it reads as an object standing in the page rather than a flat
+            banner, and deliberately given no bottom padding and no bottom
+            corner radius: the fold slices it, which is what makes it an
+            invitation to scroll instead of a finished picture. */}
+        <div className="relative mt-12 w-full max-w-5xl" style={{ perspective: 1600 }}>
+          {/* Ambient glow, the same trick the rest of the page uses to stop a
+              panel reading as a card pasted onto flat black. */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -inset-x-16 -top-16 bottom-0 -z-10 rounded-[4rem] blur-3xl"
+            style={{
+              background: 'radial-gradient(55% 60% at 50% 30%, rgba(16,185,129,0.22), transparent 70%)',
+            }}
+          />
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.35, duration: 0.7, ease: 'easeOut' }}
+            className="liquid-glass-highlight overflow-hidden rounded-t-[1.75rem] p-2 shadow-[0_-10px_120px_-20px_rgba(16,185,129,0.3),0_40px_90px_-20px_rgba(0,0,0,0.8)] sm:p-3"
+            style={{ transform: 'rotateX(7deg)', transformOrigin: 'top center' }}
+          >
+            <img
+              src="/screens/field/dashboard.jpg"
+              alt="The Ascend dashboard: discipline score, streak, today’s tasks and habits on one screen."
+              width={1280}
+              height={720}
+              className="block w-full rounded-t-[1.15rem]"
+            />
+          </motion.div>
+        </div>
       </div>
 
-      {/* Animated walkthrough — the centerpiece, full width */}
-      <div className="relative mx-auto max-w-6xl px-6 py-16 sm:py-20">
-        <motion.p
-          initial={{ opacity: 0, y: 10 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: '-60px' }}
-          className="mb-10 flex items-center justify-center gap-1.5 text-[10px] font-mono font-black uppercase tracking-[0.28em] text-white/40"
-        >
-          <Sparkles size={11} className="text-brand-400" /> See it in motion
-        </motion.p>
-        <motion.div
-          initial={{ opacity: 0, y: 24 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: '-80px' }}
-          transition={{ duration: 0.6, ease: 'easeOut' }}
-        >
-          <AnimatedWalkthrough />
-        </motion.div>
-      </div>
-
-      {/* The screens as a scroll-driven 3D field: cards scattered in depth,
-          the focused one crisp while the rest dissolve into halftone dots,
-          with a name index down the right edge. */}
-      <div className="relative border-t border-white/8">
-        <ScreenField screens={FIELD_SCREENS} />
-      </div>
+      {/* The screens as a scroll-driven 3D field: cards riding a helix in
+          depth, the focused one crisp while the rest dissolve into halftone
+          dots, with the name index down the left edge. */}
+      <ScreenField screens={FIELD_SCREENS} />
 
       {/* Benefits — why it helps, not just what it does */}
-      <div className="relative border-t border-white/8 bg-white/[0.015] px-6 py-16 sm:py-20">
+      <div className="relative border-t border-white/8 bg-white/[0.015] px-6 py-16 sm:py-24">
         <div className="mx-auto max-w-6xl">
           <motion.div
             initial={{ opacity: 0, y: 16 }}
@@ -739,7 +336,7 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
 
       {/* Feature grid — full width, covers the real breadth: habits, Jarvis,
           module building, Arena, real integrations, journal, sync, privacy. */}
-      <div className="relative px-6 py-16 sm:py-20">
+      <div className="relative px-6 py-16 sm:py-24">
         <div className="mx-auto max-w-6xl">
           <motion.div
             initial={{ opacity: 0, y: 16 }}

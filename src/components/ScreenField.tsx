@@ -54,8 +54,10 @@ const ANGLE_STEP = 80;
  *  turns of the helix are on screen at once. */
 const CULL_RADIUS = 5.5;
 /** Cards never dissolve past this, so a mounted card always keeps a readable
- *  rectangular silhouette instead of thinning into nothing. */
-const MAX_DISSOLVE = 0.86;
+ *  rectangular silhouette instead of thinning into nothing. Held well under 1
+ *  because the point of the field is that these are recognisably the app; a
+ *  card dissolved past legibility is just texture and earns nothing. */
+const MAX_DISSOLVE = 0.72;
 /** Index-steps either side of the playhead over which the hero stays fully
  *  crisp before the dissolve begins. Deliberately under half a step: at 0.5
  *  the two cards flanking a midpoint would both be fully crisp and read as
@@ -88,12 +90,19 @@ function helixMetrics() {
   const vw = typeof window === 'undefined' ? 1440 : window.innerWidth;
   const vh = typeof window === 'undefined' ? 900 : window.innerHeight;
   return {
-    radius: clamp(vw * 0.3, 300, 720),
-    // Tall drop per card. A small step stacks consecutive turns on top of each
-    // other and the helix reads as one squashed cluster; this is what makes it
-    // climb through the full height of the viewport instead.
-    yStep: clamp(vh * 0.5, 300, 580),
-    cardW: clamp(vw * 0.42, 360, 760),
+    // Orbit radius and drop are both deliberately under half the viewport.
+    // Wider than this and the neighbouring cards fly out past the edges,
+    // which is what left the frame reading as one card floating in black.
+    radius: clamp(vw * 0.26, 280, 620),
+    // Drop per card. A small step stacks consecutive turns on top of each
+    // other and the helix reads as one squashed cluster; a large one pushes
+    // the neighbours off the top and bottom and empties the frame. This is
+    // the value where roughly two turns are on screen and touching.
+    yStep: clamp(vh * 0.44, 270, 520),
+    // Just under half the viewport. The caption columns claim the outer
+    // ~34vw and ~32vw, so anything much past this starts running under the
+    // screen name on the left.
+    cardW: clamp(vw * 0.48, 380, 820),
   };
 }
 
@@ -169,9 +178,11 @@ function DitherCanvas({
 
       const fit = containRect(img.naturalWidth, img.naturalHeight, w, h);
 
-      // Halftone pitch in CSS px. Coarse enough to read as bold dots rather
-      // than static once the card is dissolving.
-      const grid = clamp(w / 62, 7, 11);
+      // Halftone pitch in CSS px. There's a real trade here: coarse dots read
+      // as a deliberate print effect, but our sources are dense UI, and past
+      // roughly 10px the layout of the screen stops being recoverable and the
+      // card reads as grey static instead of a recognisable app.
+      const grid = clamp(w / 88, 6, 9.5);
       const cols = Math.max(1, Math.ceil(w / grid));
       const rows = Math.max(1, Math.ceil(h / grid));
 
@@ -234,7 +245,7 @@ function DitherCanvas({
               const lum = Math.sqrt((r * 0.299 + g * 0.587 + b * 0.114) / 255);
               // Bright cells outlive dark ones, so the image empties out of
               // its shadows first — that reads as dissolving, not fading.
-              const survive = lum - step * 0.8;
+              const survive = lum - step * 0.62;
               if (survive <= 0.015) continue;
               // Dots stay fully opaque and lift toward white as the card
               // recedes, so a receding card reads as a bright halftone slab
@@ -410,7 +421,14 @@ export default function ScreenField({ screens }: { screens: FieldScreen[] }) {
         // Only the card at the playhead keeps its colour.
         el.style.filter = `grayscale(${clamp((1 - focus) * 1.15).toFixed(2)})`;
 
-        const t = clamp((absD - CRISP_HOLD) / (CULL_RADIUS - CRISP_HOLD));
+        // Square-rooted, not linear. Linearly ramping the dissolve across the
+        // whole cull radius leaves the card one step out at only ~14% — near
+        // enough to crisp that it competes with the hero for the eye, which
+        // is exactly the "two subjects, no subject" failure. The sqrt puts
+        // most of the dissolve into the first step or two and then flattens,
+        // so the neighbour clearly recedes while distant cards still keep a
+        // readable silhouette rather than all bottoming out at MAX_DISSOLVE.
+        const t = Math.sqrt(clamp((absD - CRISP_HOLD) / (CULL_RADIUS - CRISP_HOLD)));
         drawRefs.current[i]?.(t * MAX_DISSOLVE);
       }
     };
@@ -538,6 +556,15 @@ export default function ScreenField({ screens }: { screens: FieldScreen[] }) {
             ))}
           </div>
         </div>
+
+        {/* Bottom fade. The helix is still mid-orbit when the sticky viewport
+            ends, so without this the section boundary slices a half-dissolved
+            card clean in half and the handover to the next section reads as a
+            rendering glitch rather than an ending. */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-40 h-32 bg-gradient-to-b from-transparent to-app"
+        />
 
         {/* Split caption. Name centre-left, description centre-right, framing
             the helix rather than sitting under it. Pointer-events off so the
