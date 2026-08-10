@@ -324,18 +324,24 @@ const TOUR_FRAMES: TourFrame[] = [
     shot: '/screens/arena.jpg',
     render: () => (
       <div className="w-full space-y-3">
+        {/* Plain divs, not 32 motion components. Two reasons: an entry
+            animation that stalls leaves the whole panel looking blank (the
+            tiles were being found frozen at their initial opacity:0), and 32
+            simultaneous animation instances per frame is a lot of main-thread
+            work for a decorative grid. Visibility must not depend on an
+            animation ever completing. */}
         <div className="grid grid-cols-8 gap-1 overflow-hidden rounded-xl">
           {Array.from({ length: 32 }).map((_, i) => {
             const filled = i < 21;
             const shade = 55 + ((i * 37) % 30);
             return (
-              <motion.div
+              <div
                 key={i}
-                initial={{ opacity: 0, scale: 0.5 }}
-                animate={{ opacity: filled ? 1 : 0.12, scale: 1 }}
-                transition={{ delay: 0.015 * i }}
                 className="aspect-square"
-                style={{ background: filled ? `rgba(52, 211, 153, ${shade / 100})` : 'rgba(255,255,255,0.06)' }}
+                style={{
+                  background: filled ? `rgba(52, 211, 153, ${shade / 100})` : 'rgba(255,255,255,0.06)',
+                  opacity: filled ? 1 : 0.35,
+                }}
               />
             );
           })}
@@ -476,8 +482,6 @@ function AnimatedWalkthrough() {
       className="grid w-full grid-cols-1 items-center gap-8 lg:grid-cols-2 lg:gap-14"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
-      onFocusCapture={() => setPaused(true)}
-      onBlurCapture={() => setPaused(false)}
     >
       {/* The mockup "screen", sitting on its own ambient backdrop so it reads
           as a lit object rather than a flat card on a flat page. */}
