@@ -268,6 +268,27 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
         </div>
       </div>
 
+      {/* Threshold into the screen field. Without it the hero's crisp
+          dashboard runs straight into the field's halftone dots and the
+          handover reads as a rendering artifact rather than a new section.
+          Deliberately lighter than the section headers further down — an
+          eyebrow and one line, no body copy — because the spiral is the
+          showcase and every pixel spent here pushes its start down the page.
+          The border-t doubles as the ledge the hero screenshot sits on. */}
+      <div className="relative border-t border-white/8 px-6 pb-10 pt-14 text-center sm:pb-14 sm:pt-20">
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: '-60px' }}
+          transition={{ duration: 0.5 }}
+        >
+          <p className="text-[10px] font-mono font-black uppercase tracking-[0.28em] text-brand-400">Every screen</p>
+          <h2 className="mt-2 text-xl font-extrabold tracking-tight sm:text-3xl">
+            Scroll through the app, screen by screen
+          </h2>
+        </motion.div>
+      </div>
+
       {/* The screens as a scroll-driven 3D field: cards riding a helix in
           depth, the focused one crisp while the rest dissolve into halftone
           dots, with the name index down the left edge. */}
