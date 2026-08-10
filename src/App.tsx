@@ -5,7 +5,7 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Sliders, LogOut, Loader2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
-import { readStore, writeStore } from './lib/storage';
+import { readStore, removeStore, writeStore } from './lib/storage';
 import { useAuth } from './context/AuthContext';
 import { useDialog } from './context/DialogContext';
 import { useCloudSync } from './hooks/useCloudSync';
@@ -82,6 +82,11 @@ function HeaderAccount() {
 
   const handleSignOut = async () => {
     if (await confirm({ title: 'Sign out?', message: 'You can sign back in anytime.', confirmLabel: 'Sign out', danger: true })) {
+      // Signing out is someone saying "I'm leaving", so the next visit should
+      // start at the pitch again rather than dropping straight onto a sign-in
+      // form. Without this the landing page is unreachable forever after the
+      // first "Get started" click, on that browser.
+      removeStore('ascend_seen_landing');
       await logout();
     }
   };
