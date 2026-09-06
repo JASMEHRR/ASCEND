@@ -16,6 +16,7 @@
 import {
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -79,8 +80,22 @@ export async function deleteHabit(uid: string, habitId: string): Promise<void> {
   await deleteDoc(doc(db, habitsPath(uid), habitId));
 }
 
+/**
+ * Firestore rejects `undefined` as a field value outright, so clearing an
+ * optional field (a counter habit losing its target, say) has to be sent as
+ * the deleteField() sentinel instead. Callers say what they mean —
+ * `{ target: undefined }` for "no longer has one" — and the translation
+ * happens here, where every habit update already routes through, rather than
+ * at each call site where the next one added would forget it.
+ */
+function withFieldDeletes(fields: Partial<Habit>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(fields).map(([key, value]) => [key, value === undefined ? deleteField() : value]),
+  );
+}
+
 export async function updateHabit(uid: string, habitId: string, fields: Partial<Habit>): Promise<void> {
-  await updateDoc(doc(db, habitsPath(uid), habitId), fields as Record<string, unknown>);
+  await updateDoc(doc(db, habitsPath(uid), habitId), withFieldDeletes(fields));
 }
 
 /**

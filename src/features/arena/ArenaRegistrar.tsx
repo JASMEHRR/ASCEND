@@ -24,12 +24,12 @@ export default function ArenaRegistrar() {
     () =>
       registerContext('arena', () => {
         const a = ref.current;
-        if (!a?.room) return { arena: { inRoom: false } };
+        if (!a) return { arena: { inRoom: false } };
         const done = a.habits.filter((h) => isDone(h, a.entries, a.today)).length;
         return {
           arena: {
-            inRoom: true,
-            room: a.room.name,
+            inRoom: !!a.room,
+            ...(a.room ? { room: a.room.name } : {}),
             habits: a.habits.map((h) => h.label),
             doneToday: done,
             totalHabits: a.habits.length,
@@ -58,7 +58,11 @@ export default function ArenaRegistrar() {
         validate: (a) => (String(a.label ?? '').trim() ? null : 'habit name is required'),
         execute: async (a) => {
           const s = ref.current;
-          if (!s?.room) return { ok: false, message: 'no Arena room yet — create or join one first' };
+          // No room check: habits live under the user, not the room, and the
+          // first-run setup screen routes through this tool before anyone has
+          // joined anything. Requiring a room here made a brand-new board
+          // impossible to fill in by the very path the UI leads you down.
+          if (!s) return { ok: false, message: 'Arena is not ready yet' };
           const target = Math.max(1, Math.round(Number(a.target) || 1));
           await s.addHabit({
             label: String(a.label).trim(),
@@ -100,13 +104,14 @@ export default function ArenaRegistrar() {
         followUp: true,
         execute: () => {
           const s = ref.current;
-          if (!s?.room) return { ok: true, message: 'not in an Arena room yet', data: { inRoom: false } };
+          if (!s) return { ok: false, message: 'Arena is not ready yet' };
+          if (s.habits.length === 0) return { ok: true, message: 'no habits set up yet', data: { habits: 0 } };
           const done = s.habits.filter((h) => isDone(h, s.entries, s.today)).length;
           return {
             ok: true,
             message: `${done}/${s.habits.length} habits done today`,
             data: {
-              room: s.room.name,
+              ...(s.room ? { room: s.room.name } : {}),
               doneToday: `${done}/${s.habits.length}`,
               piecesToday: s.todayTiles,
               piecesThisWeek: s.earnedThisWeek,
