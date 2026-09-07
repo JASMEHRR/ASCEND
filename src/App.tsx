@@ -222,7 +222,7 @@ export default function App() {
   // breakpoint the sidebar appears (md) instead of at sm, closing a gap where
   // neither was visible.
   return (
-    <div className="relative flex flex-col h-dvh w-full bg-app text-white/95 font-plus p-3 sm:p-4 md:p-6 pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-6 gap-3 sm:gap-5 overflow-hidden selection:bg-brand-500/30 selection:text-white">
+    <div className="relative flex flex-col h-dvh w-full bg-app text-white/95 font-plus p-3 sm:p-4 md:p-6 pb-[calc(4.5rem+max(0.75rem,env(safe-area-inset-bottom)))] md:pb-6 gap-3 sm:gap-5 overflow-hidden selection:bg-brand-500/30 selection:text-white">
       <AtmosphereBackdrop currentAtmosphere={activeAtmosphere} />
       <CondensationEffect active={activeAtmosphere.condensationActive} />
       {/* Light mode lays a soft veil over the photographic atmosphere for contrast. */}
@@ -392,7 +392,7 @@ export default function App() {
           sitting above it. The buttons share the width instead (flex-1), so
           there is nothing left to scroll. */}
       <nav
-        className="md:hidden fixed bottom-[calc(0.75rem+env(safe-area-inset-bottom))] left-3 right-3 bg-app/85 backdrop-blur-md border border-white/12 py-2.5 px-2 sm:px-5 flex justify-between items-center z-50 rounded-[2.5rem] shadow-lg"
+        className="md:hidden fixed bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-3 right-3 bg-app/85 backdrop-blur-md border border-white/12 py-2 px-2 sm:px-5 flex justify-between items-center z-50 rounded-[2.5rem] shadow-lg"
         aria-label="Primary"
       >
         {mobileModules.slice(0, mobileMid).map((mod) => (
@@ -401,9 +401,9 @@ export default function App() {
         <button
           onClick={() => setSettingsOpen(true)}
           aria-label="Settings"
-          className="w-14 h-14 shrink-0 mx-1.5 rounded-full flex items-center justify-center border transition-all glass-shimmer cursor-pointer -translate-y-5 shadow-lg bg-white/[0.08] hover:bg-white/[0.15] text-white border-white/20 pb-0.5"
+          className="w-12 h-12 shrink-0 mx-1.5 rounded-full flex items-center justify-center border transition-all glass-shimmer cursor-pointer -translate-y-3 shadow-lg bg-white/[0.08] hover:bg-white/[0.15] text-white border-white/20 pb-0.5"
         >
-          <Sliders size={22} className="text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
+          <Sliders size={20} className="text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
         </button>
         {mobileModules.slice(mobileMid).map((mod) => (
           <MobileNavButton key={mod.id} module={mod} current={view} onSelect={setView} badge={badgeFor(mod.id, state.ideas.length, openTasks)} />
