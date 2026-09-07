@@ -222,7 +222,7 @@ export default function App() {
   // breakpoint the sidebar appears (md) instead of at sm, closing a gap where
   // neither was visible.
   return (
-    <div className="relative flex flex-col h-dvh w-full bg-app text-white/95 font-plus p-3 sm:p-4 md:p-6 pb-24 md:pb-6 gap-3 sm:gap-5 overflow-hidden selection:bg-brand-500/30 selection:text-white">
+    <div className="relative flex flex-col h-dvh w-full bg-app text-white/95 font-plus p-3 sm:p-4 md:p-6 pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-6 gap-3 sm:gap-5 overflow-hidden selection:bg-brand-500/30 selection:text-white">
       <AtmosphereBackdrop currentAtmosphere={activeAtmosphere} />
       <CondensationEffect active={activeAtmosphere.condensationActive} />
       {/* Light mode lays a soft veil over the photographic atmosphere for contrast. */}
@@ -386,8 +386,13 @@ export default function App() {
       </div>
 
       {/* MOBILE BOTTOM NAV */}
+      {/* No overflow on this pill, on purpose: `overflow-x-auto` makes
+          overflow-y compute to `auto` too, which turned the bar into a scroll
+          box and sheared 10px off the raised Settings button and every badge
+          sitting above it. The buttons share the width instead (flex-1), so
+          there is nothing left to scroll. */}
       <nav
-        className="md:hidden fixed bottom-3 left-3 right-3 bg-app/85 backdrop-blur-md border border-white/12 py-2.5 px-3 sm:px-5 flex justify-between items-center z-50 rounded-[2.5rem] shadow-lg overflow-x-auto"
+        className="md:hidden fixed bottom-[calc(0.75rem+env(safe-area-inset-bottom))] left-3 right-3 bg-app/85 backdrop-blur-md border border-white/12 py-2.5 px-2 sm:px-5 flex justify-between items-center z-50 rounded-[2.5rem] shadow-lg"
         aria-label="Primary"
       >
         {mobileModules.slice(0, mobileMid).map((mod) => (
@@ -396,7 +401,7 @@ export default function App() {
         <button
           onClick={() => setSettingsOpen(true)}
           aria-label="Settings"
-          className="w-14 h-14 shrink-0 mx-2 rounded-full flex items-center justify-center border transition-all glass-shimmer cursor-pointer -translate-y-5 shadow-lg bg-white/[0.08] hover:bg-white/[0.15] text-white border-white/20 pb-0.5"
+          className="w-14 h-14 shrink-0 mx-1.5 rounded-full flex items-center justify-center border transition-all glass-shimmer cursor-pointer -translate-y-5 shadow-lg bg-white/[0.08] hover:bg-white/[0.15] text-white border-white/20 pb-0.5"
         >
           <Sliders size={22} className="text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
         </button>
@@ -473,7 +478,7 @@ function MobileNavButton({
       onClick={() => onSelect(module.id as View)}
       aria-label={module.label}
       aria-current={active ? 'page' : undefined}
-      className={`relative flex flex-col items-center gap-1.5 p-2 rounded-xl transition-all ${
+      className={`relative flex min-w-0 flex-1 flex-col items-center gap-1.5 p-1.5 sm:p-2 rounded-xl transition-all ${
         active ? 'text-white bg-white/10' : 'text-white/40'
       }`}
     >

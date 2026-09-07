@@ -130,7 +130,7 @@ export default function JarvisConsole({ autoFocus = false, fill = false }: { aut
         <button
           onClick={() => (voice.listening ? voice.stop() : voice.start())}
           disabled={!voice.inputSupported}
-          className={`p-3 rounded-full border transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
+          className={`shrink-0 p-3 rounded-full border transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
             voice.listening ? 'bg-red-500/25 border-red-400/40 text-red-300' : 'bg-white/[0.06] border-white/10 text-white/70 hover:bg-white/10'
           }`}
           aria-label={voice.listening ? 'Stop listening' : 'Speak to JARVIS'}
@@ -184,14 +184,14 @@ export default function JarvisConsole({ autoFocus = false, fill = false }: { aut
           onKeyDown={(e) => e.key === 'Enter' && submit()}
           placeholder={voice.listening ? 'Listening…' : 'Ask Jarvis, or give it a command…'}
           aria-label="Message JARVIS"
-          className="flex-1 bg-white/[0.06] border border-white/10 rounded-full px-4 py-2.5 text-[13px] text-white placeholder-white/30 outline-none focus:border-brand-400/40"
+          className="min-w-0 flex-1 bg-white/[0.06] border border-white/10 rounded-full px-4 py-2.5 text-[13px] text-white placeholder-white/30 outline-none focus:border-brand-400/40"
         />
         {busy ? (
-          <button onClick={interrupt} className="p-3 rounded-full bg-red-500/25 border border-red-400/40 text-red-300 hover:bg-red-500/35 transition-colors cursor-pointer" aria-label="Stop" title="Stop">
+          <button onClick={interrupt} className="shrink-0 p-3 rounded-full bg-red-500/25 border border-red-400/40 text-red-300 hover:bg-red-500/35 transition-colors cursor-pointer" aria-label="Stop" title="Stop">
             <Square size={15} className="fill-current" />
           </button>
         ) : (
-          <button onClick={submit} disabled={!input.trim()} className="p-3 rounded-full bg-brand-500/25 border border-brand-400/30 text-brand-300 disabled:opacity-30 hover:bg-brand-500/35 transition-colors cursor-pointer" aria-label="Send">
+          <button onClick={submit} disabled={!input.trim()} className="shrink-0 p-3 rounded-full bg-brand-500/25 border border-brand-400/30 text-brand-300 disabled:opacity-30 hover:bg-brand-500/35 transition-colors cursor-pointer" aria-label="Send">
             <Send size={16} />
           </button>
         )}
