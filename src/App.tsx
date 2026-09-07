@@ -395,9 +395,15 @@ export default function App() {
         className="md:hidden fixed bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-3 right-3 bg-app/85 backdrop-blur-md border border-white/12 py-2 px-2 sm:px-5 flex justify-between items-center z-50 rounded-[2.5rem] shadow-lg"
         aria-label="Primary"
       >
-        {mobileModules.slice(0, mobileMid).map((mod) => (
-          <MobileNavButton key={mod.id} module={mod} current={view} onSelect={setView} badge={badgeFor(mod.id, state.ideas.length, openTasks)} />
-        ))}
+        {/* Each side is its own equal-width half, so the raised Settings disc
+            lands on the bar's true centre. Letting all seven buttons share one
+            flex row instead gave the left side four shares against the right's
+            three and pushed the disc ~20px off centre. */}
+        <div className="flex min-w-0 flex-1 items-center">
+          {mobileModules.slice(0, mobileMid).map((mod) => (
+            <MobileNavButton key={mod.id} module={mod} current={view} onSelect={setView} badge={badgeFor(mod.id, state.ideas.length, openTasks)} />
+          ))}
+        </div>
         <button
           onClick={() => setSettingsOpen(true)}
           aria-label="Settings"
@@ -405,9 +411,11 @@ export default function App() {
         >
           <Sliders size={20} className="text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
         </button>
-        {mobileModules.slice(mobileMid).map((mod) => (
-          <MobileNavButton key={mod.id} module={mod} current={view} onSelect={setView} badge={badgeFor(mod.id, state.ideas.length, openTasks)} />
-        ))}
+        <div className="flex min-w-0 flex-1 items-center">
+          {mobileModules.slice(mobileMid).map((mod) => (
+            <MobileNavButton key={mod.id} module={mod} current={view} onSelect={setView} badge={badgeFor(mod.id, state.ideas.length, openTasks)} />
+          ))}
+        </div>
       </nav>
 
       {/* First run, or a deliberate re-run from Settings. Rendered above
