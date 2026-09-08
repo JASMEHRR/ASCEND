@@ -145,6 +145,11 @@ export const FEATURES: FeatureModule[] = [
     description: 'Text or voice journaling that syncs to your Obsidian vault.',
     icon: NotebookPen,
     nav: true,
+    // Eight mobile modules, not seven: the bar splits its icons either side of
+    // the raised Settings disc, and an odd count leaves one side heavier and
+    // the disc off centre. Journal was already nav-visible but unreachable on
+    // a phone, so promoting it squares the bar and adds a surface at once.
+    mobile: true,
     defaultEnabled: true,
     status: 'active',
   },

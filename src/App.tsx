@@ -486,7 +486,7 @@ function MobileNavButton({
       onClick={() => onSelect(module.id as View)}
       aria-label={module.label}
       aria-current={active ? 'page' : undefined}
-      className={`relative flex min-w-0 flex-1 flex-col items-center gap-1.5 p-1.5 sm:p-2 rounded-xl transition-all ${
+      className={`relative flex min-w-0 flex-1 flex-col items-center gap-1.5 p-1 sm:p-2 rounded-xl transition-all ${
         active ? 'text-white bg-white/10' : 'text-white/40'
       }`}
     >
