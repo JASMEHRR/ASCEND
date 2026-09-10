@@ -7,9 +7,17 @@
  */
 import type { GoogleGenAI } from '@google/genai';
 
-export const GEMINI_MODEL = 'gemini-2.5-flash';
-/** Fallback when the primary model's (tiny) free-tier daily quota is exhausted. */
-export const GEMINI_FALLBACK_MODEL = 'gemini-2.5-flash-lite';
+// Both 2.5 models now 404 with "no longer available to new users", which had
+// quietly killed the whole Gemini tier: once Groq and NIM were exhausted there
+// was nothing left to fall back to. Verified against the live API — 3.6-flash
+// answers, and there is no 3.6 lite tier to demote to.
+export const GEMINI_MODEL = 'gemini-3.6-flash';
+/**
+ * Fallback when the primary model's (tiny) free-tier daily quota is exhausted.
+ * The lite tier is gone, so this is the rolling alias rather than a cheaper
+ * model: it mostly buys a retry that survives the next model rename.
+ */
+export const GEMINI_FALLBACK_MODEL = 'gemini-flash-latest';
 
 /** Does this upstream error mean "quota/rate exhausted for this model"? */
 export function isQuotaError(err: unknown): boolean {
