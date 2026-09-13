@@ -95,6 +95,56 @@ RESPONSE FORMAT — return ONLY a raw JSON object, no markdown fences:
 "toolCalls" MUST be an empty array when no tool is needed.`;
 }
 
+export interface JarvisReply {
+  reply: string;
+  speak?: string;
+  plan?: string;
+  toolCalls: { tool: string; args?: Record<string, unknown>; confidence?: number }[];
+  needsClarification: boolean;
+}
+
+/**
+ * The actual turn: history + context + tools in, a reply out. Pulled out of
+ * the HTTP handler so the Telegram webhook (telegram-routes.ts) can run the
+ * exact same completion Ascend's web/desktop clients get — one prompt, one
+ * model chain, one JSON contract, regardless of which surface is asking.
+ */
+export async function runJarvisTurn(
+  history: ChatMessage[],
+  context: unknown,
+  tools: ToolDecl[],
+): Promise<JarvisReply> {
+  const toolDecls: ToolDecl[] = Array.isArray(tools) ? tools.slice(0, 100) : [];
+  const messages: LlmMessage[] = history.slice(-24).map((m) => ({
+    role: m.role === 'user' ? 'user' : 'assistant',
+    content: String(m.content ?? ''),
+  }));
+
+  // generateChat runs the NIM → flash → flash-lite chain and only throws a
+  // clear 429 once every provider is exhausted — Jarvis staying responsive
+  // matters more than which model answered.
+  const raw = await generateChat({
+    system: buildSystem(toolDecls, context),
+    messages,
+    json: true,
+    maxTokens: 4096,
+  });
+
+  // Pass the model's JSON through; the client fully validates/normalizes it.
+  try {
+    const obj = JSON.parse(extractJson(raw));
+    return {
+      reply: typeof obj.reply === 'string' ? obj.reply : 'Systems glitch. Say that again?',
+      speak: typeof obj.speak === 'string' ? obj.speak : undefined,
+      plan: typeof obj.plan === 'string' ? obj.plan : undefined,
+      toolCalls: Array.isArray(obj.toolCalls) ? obj.toolCalls : [],
+      needsClarification: obj.needsClarification === true,
+    };
+  } catch {
+    return { reply: raw || 'Systems glitch. Say that again?', toolCalls: [], needsClarification: false };
+  }
+}
+
 jarvisRouter.post('/', async (req: Request, res: Response) => {
   try {
     const { history, context, tools } = req.body ?? {};
@@ -102,36 +152,7 @@ jarvisRouter.post('/', async (req: Request, res: Response) => {
       res.status(400).json({ error: '`history` must be an array of messages.' });
       return;
     }
-
-    const toolDecls: ToolDecl[] = Array.isArray(tools) ? tools.slice(0, 100) : [];
-    const messages: LlmMessage[] = (history as ChatMessage[]).slice(-24).map((m) => ({
-      role: m.role === 'user' ? 'user' : 'assistant',
-      content: String(m.content ?? ''),
-    }));
-
-    // generateChat runs the NIM → flash → flash-lite chain and only throws a
-    // clear 429 once every provider is exhausted — Jarvis staying responsive
-    // matters more than which model answered.
-    const raw = await generateChat({
-      system: buildSystem(toolDecls, context),
-      messages,
-      json: true,
-      maxTokens: 4096,
-    });
-
-    // Pass the model's JSON through; the client fully validates/normalizes it.
-    try {
-      const obj = JSON.parse(extractJson(raw));
-      res.json({
-        reply: typeof obj.reply === 'string' ? obj.reply : 'Systems glitch. Say that again?',
-        speak: typeof obj.speak === 'string' ? obj.speak : undefined,
-        plan: typeof obj.plan === 'string' ? obj.plan : undefined,
-        toolCalls: Array.isArray(obj.toolCalls) ? obj.toolCalls : [],
-        needsClarification: obj.needsClarification === true,
-      });
-    } catch {
-      res.json({ reply: raw || 'Systems glitch. Say that again?', toolCalls: [] });
-    }
+    res.json(await runJarvisTurn(history as ChatMessage[], context, tools));
   } catch (err: unknown) {
     const status = err instanceof GeminiError ? err.status : 500;
     const message = err instanceof Error ? err.message : 'Jarvis request failed';

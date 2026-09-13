@@ -488,6 +488,31 @@ RESPONSE FORMAT \u2014 return ONLY a raw JSON object, no markdown fences:
 {"reply":"<displayed answer \u2014 complete for questions, brief for actions>","speak":"<optional short spoken version, under ~40 words>","plan":"<optional one-line plan when several tools run>","toolCalls":[{"tool":"<name>","args":{...},"confidence":0.0}],"needsClarification":false}
 "toolCalls" MUST be an empty array when no tool is needed.`;
 }
+async function runJarvisTurn(history, context, tools) {
+  const toolDecls = Array.isArray(tools) ? tools.slice(0, 100) : [];
+  const messages = history.slice(-24).map((m) => ({
+    role: m.role === "user" ? "user" : "assistant",
+    content: String(m.content ?? "")
+  }));
+  const raw = await generateChat({
+    system: buildSystem(toolDecls, context),
+    messages,
+    json: true,
+    maxTokens: 4096
+  });
+  try {
+    const obj = JSON.parse(extractJson(raw));
+    return {
+      reply: typeof obj.reply === "string" ? obj.reply : "Systems glitch. Say that again?",
+      speak: typeof obj.speak === "string" ? obj.speak : void 0,
+      plan: typeof obj.plan === "string" ? obj.plan : void 0,
+      toolCalls: Array.isArray(obj.toolCalls) ? obj.toolCalls : [],
+      needsClarification: obj.needsClarification === true
+    };
+  } catch {
+    return { reply: raw || "Systems glitch. Say that again?", toolCalls: [], needsClarification: false };
+  }
+}
 jarvisRouter.post("/", async (req, res) => {
   try {
     const { history, context, tools } = req.body ?? {};
@@ -495,29 +520,7 @@ jarvisRouter.post("/", async (req, res) => {
       res.status(400).json({ error: "`history` must be an array of messages." });
       return;
     }
-    const toolDecls = Array.isArray(tools) ? tools.slice(0, 100) : [];
-    const messages = history.slice(-24).map((m) => ({
-      role: m.role === "user" ? "user" : "assistant",
-      content: String(m.content ?? "")
-    }));
-    const raw = await generateChat({
-      system: buildSystem(toolDecls, context),
-      messages,
-      json: true,
-      maxTokens: 4096
-    });
-    try {
-      const obj = JSON.parse(extractJson(raw));
-      res.json({
-        reply: typeof obj.reply === "string" ? obj.reply : "Systems glitch. Say that again?",
-        speak: typeof obj.speak === "string" ? obj.speak : void 0,
-        plan: typeof obj.plan === "string" ? obj.plan : void 0,
-        toolCalls: Array.isArray(obj.toolCalls) ? obj.toolCalls : [],
-        needsClarification: obj.needsClarification === true
-      });
-    } catch {
-      res.json({ reply: raw || "Systems glitch. Say that again?", toolCalls: [] });
-    }
+    res.json(await runJarvisTurn(history, context, tools));
   } catch (err) {
     const status = err instanceof GeminiError ? err.status : 500;
     const message = err instanceof Error ? err.message : "Jarvis request failed";
@@ -885,6 +888,191 @@ for (const [name, path] of Object.entries(DATA_PATHS)) {
   });
 }
 
+// telegram-routes.ts
+import { Router as Router8 } from "express";
+
+// admin-db.ts
+var dbPromise2 = null;
+async function initAdminDb() {
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (!raw) return null;
+  try {
+    const appPkg = "firebase-admin/app";
+    const firestorePkg = "firebase-admin/firestore";
+    const { getApps, initializeApp, cert } = await import(appPkg);
+    const { getFirestore } = await import(firestorePkg);
+    if (getApps().length === 0) {
+      initializeApp({ credential: cert(JSON.parse(raw)) });
+    }
+    return getFirestore();
+  } catch (err) {
+    console.warn("[admin-db] init failed:", err.message);
+    return null;
+  }
+}
+function getAdminDb() {
+  dbPromise2 ??= initAdminDb();
+  return dbPromise2;
+}
+
+// src/features/arena/logic/dates.ts
+function todayStr(d = /* @__PURE__ */ new Date()) {
+  const tz = d.getTimezoneOffset() * 6e4;
+  return new Date(d.getTime() - tz).toISOString().slice(0, 10);
+}
+function weekKey(day = todayStr()) {
+  const d = /* @__PURE__ */ new Date(day + "T00:00:00");
+  const dayNum = (d.getDay() + 6) % 7;
+  d.setDate(d.getDate() - dayNum + 3);
+  const isoYear = d.getFullYear();
+  const firstThursday = new Date(isoYear, 0, 4);
+  const firstDayNum = (firstThursday.getDay() + 6) % 7;
+  firstThursday.setDate(firstThursday.getDate() - firstDayNum + 3);
+  const week = 1 + Math.round((d.getTime() - firstThursday.getTime()) / (7 * 864e5));
+  return `${isoYear}-W${String(week).padStart(2, "0")}`;
+}
+
+// src/features/arena/logic/tiles.ts
+function isHabitActiveOn(habit, day) {
+  if (day < habit.startsAt.slice(0, 10)) return false;
+  if (habit.expiresAt && day >= habit.expiresAt.slice(0, 10)) return false;
+  if (habit.removedAt) {
+    const removalWeek = weekKey(habit.removedAt.slice(0, 10));
+    if (weekKey(day) > removalWeek) return false;
+  }
+  return true;
+}
+function activeHabits(habits, day) {
+  return habits.filter((h) => isHabitActiveOn(h, day));
+}
+function isDone(habit, entries, day) {
+  const e = entries.find((x) => x.habitId === habit.id && x.day === day);
+  if (!e) return false;
+  const target = habit.target && habit.target > 0 ? habit.target : 1;
+  return e.value >= target;
+}
+function tilesEarnedOn(habits, entries, day) {
+  return activeHabits(habits, day).reduce((n, h) => {
+    const entry = entries.find((x) => x.habitId === h.id && x.day === day);
+    if (h.kind === "good") return n + (isDone(h, entries, day) ? 1 : 0);
+    if (!entry) return n;
+    const avoided = entry.value === 0;
+    const earns = h.badMode === "reward_avoid" || h.badMode === "both";
+    return n + (avoided && earns ? 1 : 0);
+  }, 0);
+}
+
+// telegram-context.ts
+async function buildTelegramContext(uid) {
+  const db = await getAdminDb();
+  if (!db) return { arena: null, pendingReminders: [] };
+  const today = todayStr();
+  let arena = null;
+  try {
+    const [habitsSnap, daySnap] = await Promise.all([
+      db.collection(`users/${uid}/arenaHabits`).get(),
+      db.doc(`users/${uid}/arenaDays/${today}`).get()
+    ]);
+    const habits = habitsSnap.docs.map(
+      (d) => ({ id: d.id, playerId: uid, ...d.data() })
+    );
+    const values = (daySnap.exists ? daySnap.data()?.values : {}) ?? {};
+    const entries = Object.entries(values).map(([habitId, value]) => ({
+      id: `${today}_${habitId}`,
+      habitId,
+      playerId: uid,
+      day: today,
+      value,
+      at: ""
+    }));
+    const active = activeHabits(habits, today);
+    arena = {
+      habits: active.map((h) => h.label),
+      doneToday: active.filter((h) => isDone(h, entries, today)).length,
+      totalHabits: active.length,
+      piecesToday: tilesEarnedOn(habits, entries, today)
+    };
+  } catch (err) {
+    console.warn("[telegram-context] arena fetch failed:", err.message);
+  }
+  let pendingReminders = [];
+  try {
+    const remindersSnap = await db.collection(`users/${uid}/reminders`).get();
+    pendingReminders = remindersSnap.docs.map((d) => d.data()).filter((r) => !r.done).map((r) => ({ text: String(r.text ?? ""), dueAt: String(r.dueAt ?? "") }));
+  } catch (err) {
+    console.warn("[telegram-context] reminders fetch failed:", err.message);
+  }
+  return { arena, pendingReminders };
+}
+
+// telegram-routes.ts
+var telegramRouter = Router8();
+var TELEGRAM_API = "https://api.telegram.org";
+var MAX_HISTORY = 20;
+async function sendTelegramMessage(token, chatId, text) {
+  const body = (text || "(no reply)").slice(0, 4096);
+  const res = await fetch(`${TELEGRAM_API}/bot${token}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, text: body }),
+    signal: AbortSignal.timeout(1e4)
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`Telegram sendMessage failed: ${res.status} ${detail.slice(0, 200)}`);
+  }
+}
+telegramRouter.post("/webhook", async (req, res) => {
+  try {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    const expectedChatId = Number(process.env.TELEGRAM_CHAT_ID);
+    const uid = process.env.ASCEND_UID;
+    if (!token || !expectedChatId || !uid) {
+      logEvent({ level: "warn", scope: "telegram", message: "webhook hit but not configured" });
+      res.status(503).json({ error: "Telegram integration is not configured." });
+      return;
+    }
+    const secretHeader = req.header("X-Telegram-Bot-Api-Secret-Token");
+    if (secretHeader !== process.env.TELEGRAM_WEBHOOK_SECRET) {
+      res.status(401).end();
+      return;
+    }
+    const update = req.body;
+    const chatId = update.message?.chat?.id;
+    const text = update.message?.text;
+    if (chatId !== expectedChatId) {
+      res.status(200).end();
+      return;
+    }
+    if (!text) {
+      await sendTelegramMessage(token, chatId, "I can only read text messages right now.");
+      res.status(200).end();
+      return;
+    }
+    const db = await getAdminDb();
+    const threadRef = db?.doc(`users/${uid}/telegramThread/main`);
+    const threadSnap = await threadRef?.get();
+    const priorHistory = threadSnap?.exists ? threadSnap.data()?.messages : [];
+    const history = [...priorHistory ?? [], { role: "user", content: text }];
+    const appContext = await buildTelegramContext(uid);
+    const turn = await runJarvisTurn(
+      history,
+      { now: (/* @__PURE__ */ new Date()).toString(), surface: "Telegram (phone, text-only, read-only for now)", ...appContext },
+      []
+    );
+    await sendTelegramMessage(token, chatId, turn.reply);
+    if (threadRef) {
+      const updated = [...history, { role: "assistant", content: turn.reply }].slice(-MAX_HISTORY);
+      await threadRef.set?.({ messages: updated, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
+    }
+    res.status(200).end();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Telegram webhook failed";
+    logEvent({ level: "error", scope: "telegram", message });
+    res.status(200).end();
+  }
+});
+
 // server.ts
 dotenv.config({ override: true });
 var app = express2();
@@ -897,6 +1085,7 @@ app.use("/api/stocks", stocksRouter);
 app.use("/api/tts", ttsRouter);
 app.use("/api/search", searchRouter);
 app.use("/api/kite", kiteRouter);
+app.use("/api/telegram", telegramRouter);
 var PHYSIO_SYSTEM_PROMPT = `You are Alex, a highly knowledgeable personal AI physiotherapist assistant specialising in spinal rehab, posture correction, gait mechanics, sports recovery, and mobility training.
 
 Your role is to help the user safely manage and improve these conditions:

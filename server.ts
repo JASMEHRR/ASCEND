@@ -20,6 +20,7 @@ import { stocksRouter } from "./stocks-routes";
 import { ttsRouter } from "./tts-routes";
 import { searchRouter } from "./search-routes";
 import { kiteRouter } from "./kite-routes";
+import { telegramRouter } from "./telegram-routes";
 
 dotenv.config({ override: true });
 
@@ -42,6 +43,9 @@ app.use("/api/tts", ttsRouter);
 app.use("/api/search", searchRouter);
 // Zerodha Kite Connect — read-only portfolio (login, token exchange, proxies).
 app.use("/api/kite", kiteRouter);
+// Two-way texting with Jarvis over Telegram — no browser/Electron session
+// involved; the webhook builds its own context via the Admin SDK.
+app.use("/api/telegram", telegramRouter);
 
 // The AI physiotherapist's persona and safety rules. Personalise the
 // conditions / trek details below as the user's situation changes.

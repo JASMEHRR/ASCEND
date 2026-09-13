@@ -1,0 +1,136 @@
+/**
+ * Telegram — two-way texting with Jarvis from a phone, no browser tab or
+ * Electron app involved. The bot token stays server-side (same rule as
+ * every other secret in this app); the client never touches Telegram's API
+ * directly.
+ *
+ * Setup (all one-time, done once by whoever owns this deployment):
+ *   1. Message @BotFather on Telegram, /newbot, get a token ->
+ *      TELEGRAM_BOT_TOKEN.
+ *   2. Message your new bot once from your own account, then visit
+ *      https://api.telegram.org/bot<token>/getUpdates and read
+ *      result[0].message.chat.id -> TELEGRAM_CHAT_ID. Only this chat id is
+ *      ever answered; every other chat is silently ignored — this app is
+ *      single-user by design, matching the rest of Ascend.
+ *   3. Pick any random string -> TELEGRAM_WEBHOOK_SECRET.
+ *   4. Set FIREBASE_SERVICE_ACCOUNT if it isn't already (see admin-db.ts) —
+ *      required for this route specifically, since there's no client session
+ *      to read Firestore from.
+ *   5. Set ASCEND_UID to your own Firebase Auth uid (Firebase console ->
+ *      Authentication -> Users -> your row's "User UID" column).
+ *   6. Register the webhook once, after deploying:
+ *      curl "https://api.telegram.org/bot<token>/setWebhook?url=https://<your-domain>/api/telegram/webhook&secret_token=<TELEGRAM_WEBHOOK_SECRET>"
+ *
+ * v1 scope: read-only. Jarvis answers from Arena/reminders context the same
+ * way the web/desktop apps do, but cannot yet add a habit or set a reminder
+ * from here — toolCalls come back from the model like anywhere else, but
+ * nothing executes them, since that needs a Firestore-writing client and
+ * this route has none. Wiring specific write tools through admin-db.ts is a
+ * clear, bounded follow-up, not attempted here.
+ */
+import { Router, type Request, type Response } from 'express';
+import { getAdminDb } from './admin-db';
+import { buildTelegramContext } from './telegram-context';
+import { runJarvisTurn } from './jarvis-routes';
+import { logEvent } from './server-log';
+
+export const telegramRouter = Router();
+
+const TELEGRAM_API = 'https://api.telegram.org';
+const MAX_HISTORY = 20; // messages kept, not turns — matches jarvis-routes' own history.slice(-24)
+
+interface TelegramUpdate {
+  message?: {
+    chat?: { id?: number };
+    text?: string;
+  };
+}
+
+async function sendTelegramMessage(token: string, chatId: number, text: string): Promise<void> {
+  // Telegram rejects empty text and hard-caps at 4096 chars per message.
+  const body = (text || '(no reply)').slice(0, 4096);
+  const res = await fetch(`${TELEGRAM_API}/bot${token}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, text: body }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(`Telegram sendMessage failed: ${res.status} ${detail.slice(0, 200)}`);
+  }
+}
+
+telegramRouter.post('/webhook', async (req: Request, res: Response) => {
+  // Ack Telegram immediately in every branch below — it isn't waiting on our
+  // outbound sendMessage call, only on this response, and a slow/failed ack
+  // makes Telegram retry the same update.
+  try {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    const expectedChatId = Number(process.env.TELEGRAM_CHAT_ID);
+    const uid = process.env.ASCEND_UID;
+    if (!token || !expectedChatId || !uid) {
+      logEvent({ level: 'warn', scope: 'telegram', message: 'webhook hit but not configured' });
+      res.status(503).json({ error: 'Telegram integration is not configured.' });
+      return;
+    }
+
+    // Telegram echoes this header back on every webhook call once set via
+    // setWebhook's secret_token — the only thing standing between "anyone
+    // who finds this URL" and a real reply from Jarvis.
+    const secretHeader = req.header('X-Telegram-Bot-Api-Secret-Token');
+    if (secretHeader !== process.env.TELEGRAM_WEBHOOK_SECRET) {
+      res.status(401).end();
+      return;
+    }
+
+    const update = req.body as TelegramUpdate;
+    const chatId = update.message?.chat?.id;
+    const text = update.message?.text;
+
+    // Ack and silently drop anything not from the one authorized chat —
+    // this app is single-user, and a stranger finding the bot should get
+    // nothing back, not an error that confirms the bot exists.
+    if (chatId !== expectedChatId) {
+      res.status(200).end();
+      return;
+    }
+    if (!text) {
+      await sendTelegramMessage(token, chatId, "I can only read text messages right now.");
+      res.status(200).end();
+      return;
+    }
+
+    const db = await getAdminDb();
+    const threadRef = db?.doc(`users/${uid}/telegramThread/main`);
+    const threadSnap = await threadRef?.get();
+    const priorHistory = (threadSnap?.exists ? threadSnap.data()?.messages : []) as
+      | { role: string; content: string }[]
+      | undefined;
+    const history = [...(priorHistory ?? []), { role: 'user', content: text }];
+
+    const appContext = await buildTelegramContext(uid);
+    const turn = await runJarvisTurn(
+      history,
+      { now: new Date().toString(), surface: 'Telegram (phone, text-only, read-only for now)', ...appContext },
+      [],
+    );
+
+    await sendTelegramMessage(token, chatId, turn.reply);
+
+    // Admin SDK writes bypass firestore.rules entirely — this collection was
+    // never meant to be client-readable, same reasoning as _logs in server-log.ts.
+    if (threadRef) {
+      const updated = [...history, { role: 'assistant', content: turn.reply }].slice(-MAX_HISTORY);
+      await threadRef.set?.({ messages: updated, updatedAt: new Date().toISOString() });
+    }
+
+    res.status(200).end();
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Telegram webhook failed';
+    logEvent({ level: 'error', scope: 'telegram', message });
+    // Still 200 — Telegram retries on non-2xx, and a retry won't fix a
+    // model/Firestore failure, just resend the same message pointlessly.
+    res.status(200).end();
+  }
+});
