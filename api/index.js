@@ -1280,10 +1280,18 @@ async function runTelegramCron(uid, token, chatId) {
   try {
     const snap = await db.collection(`users/${uid}/reminders`).get();
     const now = Date.now();
+    console.warn(`[telegram-cron] reminders: ${snap.docs.length} doc(s) in collection`);
     for (const d of snap.docs) {
       const r = d.data();
-      if (r.done || r.notified) continue;
-      if (!r.dueAt || Date.parse(r.dueAt) > now) continue;
+      if (r.done || r.notified) {
+        console.warn(`[telegram-cron] ${d.id} skipped: done=${r.done} notified=${r.notified}`);
+        continue;
+      }
+      if (!r.dueAt || Date.parse(r.dueAt) > now) {
+        console.warn(`[telegram-cron] ${d.id} skipped: dueAt=${r.dueAt} parsed=${Date.parse(r.dueAt ?? "")} now=${now} notYetDue=${Date.parse(r.dueAt ?? "") > now}`);
+        continue;
+      }
+      console.warn(`[telegram-cron] ${d.id} FIRING: ${r.text}`);
       messages.push(`\u23F0 Reminder: ${r.text ?? "(untitled)"}`);
       if (r.repeatMinutes && r.repeatMinutes > 0) {
         const nextDue = new Date(now + r.repeatMinutes * 6e4).toISOString();
