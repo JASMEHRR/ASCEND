@@ -42,6 +42,31 @@ export const TELEGRAM_TOOLS = [
     },
   },
   {
+    name: 'listReminders',
+    module: 'reminders',
+    description:
+      "List the user's pending reminders with their due times. Use before deleting or editing one so you can name exactly which is which.",
+    parameters: {},
+  },
+  {
+    name: 'deleteReminder',
+    module: 'reminders',
+    description:
+      "Delete a pending reminder. Use for 'cancel that reminder', 'delete the bank one', 'clear my reminders'. Matches on words from the reminder text.",
+    parameters: { match: 'words from the reminder text, or "all" to clear every pending one' },
+  },
+  {
+    name: 'editReminder',
+    module: 'reminders',
+    description:
+      "Change a pending reminder's text or time. Matches the existing one on words from its text.",
+    parameters: {
+      match: 'words from the current reminder text to find it',
+      text: 'optional new text',
+      time: 'optional new ISO 8601 local datetime',
+    },
+  },
+  {
     name: 'tickHabit',
     module: 'Arena',
     description:
@@ -127,6 +152,60 @@ export async function runTelegramTool(
         values[hit.id] = Math.max(1, Math.round(Number(args.value) || target));
         await dayRef.set({ values, updatedAt: new Date().toISOString() });
         return `${hit.label} marked done`;
+      }
+
+      case 'listReminders': {
+        const snap = await db.collection(`users/${uid}/reminders`).get();
+        const pending = snap.docs
+          .map((d) => d.data() as { text?: string; dueAt?: string; done?: boolean })
+          .filter((r) => !r.done);
+        if (!pending.length) return 'no pending reminders';
+        return pending
+          .map((r) => `"${r.text}" at ${r.dueAt ? new Date(r.dueAt).toLocaleString() : 'no time'}`)
+          .join(' · ');
+      }
+
+      case 'deleteReminder': {
+        const match = String(args.match ?? '').trim();
+        if (!match) return 'which reminder?';
+        const snap = await db.collection(`users/${uid}/reminders`).get();
+        const pending = snap.docs.filter((d) => !(d.data() as { done?: boolean }).done);
+
+        if (match.toLowerCase() === 'all') {
+          if (!pending.length) return 'no pending reminders to clear';
+          for (const d of pending) await db.doc(`users/${uid}/reminders/${d.id}`).delete();
+          return `cleared ${pending.length} reminder${pending.length === 1 ? '' : 's'}`;
+        }
+
+        const hit = pending.find((d) => fuzzy(String((d.data() as { text?: string }).text ?? ''), match));
+        if (!hit) return `no reminder matching "${match}"`;
+        const text = String((hit.data() as { text?: string }).text ?? '');
+        await db.doc(`users/${uid}/reminders/${hit.id}`).delete();
+        return `deleted "${text}"`;
+      }
+
+      case 'editReminder': {
+        const match = String(args.match ?? '').trim();
+        if (!match) return 'which reminder?';
+        const snap = await db.collection(`users/${uid}/reminders`).get();
+        const hit = snap.docs
+          .filter((d) => !(d.data() as { done?: boolean }).done)
+          .find((d) => fuzzy(String((d.data() as { text?: string }).text ?? ''), match));
+        if (!hit) return `no reminder matching "${match}"`;
+
+        const fields: Record<string, unknown> = {};
+        if (args.text) fields.text = String(args.text).trim();
+        if (args.time) {
+          const due = new Date(String(args.time));
+          if (Number.isNaN(due.getTime())) return 'that time did not parse';
+          fields.dueAt = due.toISOString();
+          // Re-arm it: the desktop app skips anything already notified, so a
+          // rescheduled reminder that kept notified:true would never fire.
+          fields.notified = false;
+        }
+        if (!Object.keys(fields).length) return 'nothing to change';
+        await db.doc(`users/${uid}/reminders/${hit.id}`).update(fields);
+        return `updated "${String((hit.data() as { text?: string }).text ?? '')}"`;
       }
 
       default:

@@ -34,6 +34,7 @@ import { buildTelegramContext } from './telegram-context';
 import { runJarvisTurn } from './jarvis-routes';
 import { logEvent } from './server-log';
 import { TELEGRAM_TOOLS, runTelegramTool } from './telegram-tools';
+import { runTelegramCron } from './telegram-cron';
 
 export const telegramRouter = Router();
 
@@ -61,6 +62,40 @@ async function sendTelegramMessage(token: string, chatId: number, text: string):
     throw new Error(`Telegram sendMessage failed: ${res.status} ${detail.slice(0, 200)}`);
   }
 }
+
+/**
+ * Scheduled pass — fired by Vercel Cron (see vercel.json "crons"), not by a
+ * person. Vercel signs its own cron invocations with CRON_SECRET; without
+ * that header this is a public URL that anyone could use to make the bot
+ * text the user, so the check is not optional.
+ *
+ * GET because that's what Vercel Cron issues.
+ */
+telegramRouter.get('/cron', async (req: Request, res: Response) => {
+  try {
+    const secret = process.env.CRON_SECRET;
+    if (secret && req.header('Authorization') !== `Bearer ${secret}`) {
+      res.status(401).end();
+      return;
+    }
+
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    const chatId = Number(process.env.TELEGRAM_CHAT_ID);
+    const uid = process.env.ASCEND_UID;
+    if (!token || !chatId || !uid) {
+      res.status(503).json({ error: 'Telegram integration is not configured.' });
+      return;
+    }
+
+    const result = await runTelegramCron(uid, token, chatId);
+    logEvent({ level: 'info', scope: 'telegram-cron', message: `sent ${result.sent}`, meta: result });
+    res.json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'cron failed';
+    logEvent({ level: 'error', scope: 'telegram-cron', message });
+    res.status(500).json({ error: message });
+  }
+});
 
 telegramRouter.post('/webhook', async (req: Request, res: Response) => {
   // Ack Telegram immediately in every branch below — it isn't waiting on our

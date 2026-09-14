@@ -1046,6 +1046,28 @@ var TELEGRAM_TOOLS = [
     }
   },
   {
+    name: "listReminders",
+    module: "reminders",
+    description: "List the user's pending reminders with their due times. Use before deleting or editing one so you can name exactly which is which.",
+    parameters: {}
+  },
+  {
+    name: "deleteReminder",
+    module: "reminders",
+    description: "Delete a pending reminder. Use for 'cancel that reminder', 'delete the bank one', 'clear my reminders'. Matches on words from the reminder text.",
+    parameters: { match: 'words from the reminder text, or "all" to clear every pending one' }
+  },
+  {
+    name: "editReminder",
+    module: "reminders",
+    description: "Change a pending reminder's text or time. Matches the existing one on words from its text.",
+    parameters: {
+      match: "words from the current reminder text to find it",
+      text: "optional new text",
+      time: "optional new ISO 8601 local datetime"
+    }
+  },
+  {
     name: "tickHabit",
     module: "Arena",
     description: "Mark one of the user's existing habits done for today. Match the habit by name, case-insensitively.",
@@ -1110,6 +1132,46 @@ async function runTelegramTool(uid, call) {
         await dayRef.set({ values, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
         return `${hit.label} marked done`;
       }
+      case "listReminders": {
+        const snap = await db.collection(`users/${uid}/reminders`).get();
+        const pending = snap.docs.map((d) => d.data()).filter((r) => !r.done);
+        if (!pending.length) return "no pending reminders";
+        return pending.map((r) => `"${r.text}" at ${r.dueAt ? new Date(r.dueAt).toLocaleString() : "no time"}`).join(" \xB7 ");
+      }
+      case "deleteReminder": {
+        const match = String(args.match ?? "").trim();
+        if (!match) return "which reminder?";
+        const snap = await db.collection(`users/${uid}/reminders`).get();
+        const pending = snap.docs.filter((d) => !d.data().done);
+        if (match.toLowerCase() === "all") {
+          if (!pending.length) return "no pending reminders to clear";
+          for (const d of pending) await db.doc(`users/${uid}/reminders/${d.id}`).delete();
+          return `cleared ${pending.length} reminder${pending.length === 1 ? "" : "s"}`;
+        }
+        const hit = pending.find((d) => fuzzy(String(d.data().text ?? ""), match));
+        if (!hit) return `no reminder matching "${match}"`;
+        const text = String(hit.data().text ?? "");
+        await db.doc(`users/${uid}/reminders/${hit.id}`).delete();
+        return `deleted "${text}"`;
+      }
+      case "editReminder": {
+        const match = String(args.match ?? "").trim();
+        if (!match) return "which reminder?";
+        const snap = await db.collection(`users/${uid}/reminders`).get();
+        const hit = snap.docs.filter((d) => !d.data().done).find((d) => fuzzy(String(d.data().text ?? ""), match));
+        if (!hit) return `no reminder matching "${match}"`;
+        const fields = {};
+        if (args.text) fields.text = String(args.text).trim();
+        if (args.time) {
+          const due = new Date(String(args.time));
+          if (Number.isNaN(due.getTime())) return "that time did not parse";
+          fields.dueAt = due.toISOString();
+          fields.notified = false;
+        }
+        if (!Object.keys(fields).length) return "nothing to change";
+        await db.doc(`users/${uid}/reminders/${hit.id}`).update(fields);
+        return `updated "${String(hit.data().text ?? "")}"`;
+      }
       default:
         return `unknown tool: ${call.tool}`;
     }
@@ -1118,13 +1180,93 @@ async function runTelegramTool(uid, call) {
   }
 }
 
+// telegram-cron.ts
+var TELEGRAM_API = "https://api.telegram.org";
+var MIRROR_FRESH_MINUTES = 30;
+async function send(token, chatId, text) {
+  const res = await fetch(`${TELEGRAM_API}/bot${token}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, text: text.slice(0, 4096) }),
+    signal: AbortSignal.timeout(1e4)
+  });
+  if (!res.ok) throw new Error(`sendMessage ${res.status}`);
+}
+async function runTelegramCron(uid, token, chatId) {
+  const db = await getAdminDb();
+  if (!db) return { sent: 0, checked: ["storage unavailable"] };
+  const stateRef = db.doc(`users/${uid}/telegramNotifyState/main`);
+  const stateSnap = await stateRef.get();
+  const state = stateSnap.exists ? stateSnap.data() : {};
+  const seen = new Set(state.seen ?? []);
+  const messages = [];
+  const newlySeen = [];
+  const checked = [];
+  try {
+    const snap = await db.collection(`users/${uid}/reminders`).get();
+    const now = Date.now();
+    for (const d of snap.docs) {
+      const r = d.data();
+      if (r.done || r.notified) continue;
+      if (!r.dueAt || Date.parse(r.dueAt) > now) continue;
+      messages.push(`\u23F0 Reminder: ${r.text ?? "(untitled)"}`);
+      await db.doc(`users/${uid}/reminders/${d.id}`).update({ notified: true });
+    }
+    checked.push("reminders");
+  } catch (err) {
+    console.warn("[telegram-cron] reminders failed:", err.message);
+  }
+  try {
+    const snap = await db.doc(`users/${uid}/postStudioMirror/latest`).get();
+    if (snap.exists) {
+      const data = snap.data() ?? {};
+      const mirroredAt = typeof data.mirroredAt === "string" ? Date.parse(data.mirroredAt) : NaN;
+      const ageMin = Number.isNaN(mirroredAt) ? Infinity : (Date.now() - mirroredAt) / 6e4;
+      if (ageMin > MIRROR_FRESH_MINUTES) {
+        checked.push(`mirror stale (${Math.round(ageMin)}m) \u2014 skipped`);
+      } else {
+        const inbox = data.inbox;
+        for (const m of inbox?.recent ?? []) {
+          if (m.importance !== "important" || !m.message_id) continue;
+          const key = `email:${m.message_id}`;
+          if (seen.has(key)) continue;
+          messages.push(`\u{1F4E7} Important email: ${m.subject ?? "(no subject)"}`);
+          newlySeen.push(key);
+        }
+        const classwork = data.classwork;
+        for (const a of classwork?.outstanding ?? []) {
+          const key = `classwork:${a.id ?? a.title ?? ""}`;
+          if (!a.title || seen.has(key)) continue;
+          messages.push(`\u{1F4DA} Assignment: ${a.title}${a.due ? ` \u2014 due ${a.due}` : ""}`);
+          newlySeen.push(key);
+        }
+        checked.push(`mirror fresh (${Math.round(ageMin)}m)`);
+      }
+    } else {
+      checked.push("no mirror yet");
+    }
+  } catch (err) {
+    console.warn("[telegram-cron] mirror failed:", err.message);
+  }
+  for (const text of messages) {
+    try {
+      await send(token, chatId, text);
+    } catch (err) {
+      console.warn("[telegram-cron] send failed:", err.message);
+    }
+  }
+  const mergedSeen = [...state.seen ?? [], ...newlySeen].slice(-500);
+  await stateRef.set({ seen: mergedSeen, lastRunAt: (/* @__PURE__ */ new Date()).toISOString() });
+  return { sent: messages.length, checked };
+}
+
 // telegram-routes.ts
 var telegramRouter = Router8();
-var TELEGRAM_API = "https://api.telegram.org";
+var TELEGRAM_API2 = "https://api.telegram.org";
 var MAX_HISTORY = 20;
 async function sendTelegramMessage(token, chatId, text) {
   const body = (text || "(no reply)").slice(0, 4096);
-  const res = await fetch(`${TELEGRAM_API}/bot${token}/sendMessage`, {
+  const res = await fetch(`${TELEGRAM_API2}/bot${token}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ chat_id: chatId, text: body }),
@@ -1135,6 +1277,29 @@ async function sendTelegramMessage(token, chatId, text) {
     throw new Error(`Telegram sendMessage failed: ${res.status} ${detail.slice(0, 200)}`);
   }
 }
+telegramRouter.get("/cron", async (req, res) => {
+  try {
+    const secret = process.env.CRON_SECRET;
+    if (secret && req.header("Authorization") !== `Bearer ${secret}`) {
+      res.status(401).end();
+      return;
+    }
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    const chatId = Number(process.env.TELEGRAM_CHAT_ID);
+    const uid = process.env.ASCEND_UID;
+    if (!token || !chatId || !uid) {
+      res.status(503).json({ error: "Telegram integration is not configured." });
+      return;
+    }
+    const result = await runTelegramCron(uid, token, chatId);
+    logEvent({ level: "info", scope: "telegram-cron", message: `sent ${result.sent}`, meta: result });
+    res.json(result);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "cron failed";
+    logEvent({ level: "error", scope: "telegram-cron", message });
+    res.status(500).json({ error: message });
+  }
+});
 telegramRouter.post("/webhook", async (req, res) => {
   try {
     const token = process.env.TELEGRAM_BOT_TOKEN;

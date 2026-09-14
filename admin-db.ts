@@ -17,6 +17,8 @@ interface AdminFirestoreLike {
   doc: (path: string) => {
     get: () => Promise<{ exists: boolean; data: () => Record<string, unknown> | undefined }>;
     set: (data: Record<string, unknown>) => Promise<unknown>;
+    update: (data: Record<string, unknown>) => Promise<unknown>;
+    delete: () => Promise<unknown>;
   };
 }
 
