@@ -160,9 +160,17 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
     // client. Same one-shot shape every other Ascend surface uses: the reply
     // was written before these ran, so their results are appended rather than
     // folded into it.
+    logEvent({
+      level: 'info',
+      scope: 'telegram',
+      message: `${turn.toolCalls.length} tool call(s)`,
+      meta: { toolCalls: turn.toolCalls },
+    });
     const results: string[] = [];
     for (const call of turn.toolCalls) {
-      results.push(await runTelegramTool(uid, call));
+      const result = await runTelegramTool(uid, call);
+      logEvent({ level: 'info', scope: 'telegram', message: `${call.tool} -> ${result}` });
+      results.push(result);
     }
     const replyText = results.length ? `${turn.reply}
 
