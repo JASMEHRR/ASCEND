@@ -14,6 +14,12 @@
  *                    must not produce "you have a new assignment" alerts, so
  *                    freshness is checked before anything fires.
  *
+ * Cadence note: Vercel's Hobby plan allows one cron run per day, so the
+ * scheduled pass here is a daily morning digest. The endpoint itself is
+ * stateless and safe to call as often as you like — any external scheduler
+ * (cron-job.org and similar are free) can hit it every 15 minutes with the
+ * same CRON_SECRET for near-real-time alerts, with no code change.
+ *
  * Two rules govern everything here, because the cost of getting them wrong is
  * a phone that buzzes at 3am for nothing:
  *   1. Never notify twice for the same thing. State lives in
