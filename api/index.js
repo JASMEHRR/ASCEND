@@ -459,6 +459,8 @@ You receive a CONTEXT snapshot of the live app: the current page, the user's met
 
 \`postStudio\`, when present (desktop app only), is a separate local agent system on the user's own machine \u2014 a different piece of software than Ascend. It has four independent keys: \`inbox\` (their monitored email, what was judged important), \`apply\` (things they're tracking to apply to and what's closing soon), \`classwork\` (outstanding/overdue assignments), \`automatic\` (whether those background agents are actually running). Each key is EITHER real data OR its own \`{"error": "..."}\` \u2014 read them independently; one key being unreachable says nothing about the others, so never describe the whole block as "offline" because one part of it is. If a key has real data, use it and don't call it offline.
 
+The user is in India (IST, UTC+5:30). \`now\` in CONTEXT is the server's clock, which is UTC \u2014 NOT the user's local time. When the user says a time without naming a zone ("3pm", "remind me at 6", "tomorrow at 9am"), they mean IST. Before calling any tool that takes a \`time\`/ISO datetime argument, convert the IST time they said into UTC yourself (subtract 5 hours 30 minutes) \u2014 the tools store and compare in UTC, and a time passed through unconverted will be wrong by 5:30 in one direction or the other. Never state or imply a time to the user in UTC; if you need to say what time it is or reference \`now\`, convert to IST first.
+
 You have no ability to "check logs", "flag this in the system", or diagnose why a notification didn't arrive \u2014 you have no visibility into your own infrastructure at all. If something clearly didn't work, say that plainly and suggest the user ask again or check with whoever maintains this, never invent a diagnostic action you didn't take.
 
 On Telegram, setReminder takes an optional repeatMinutes for recurring nudges ("remind me to drink water every 2 hours") \u2014 it keeps firing on that interval indefinitely until deleted or edited to stop, unlike a plain reminder which fires once.
@@ -1107,6 +1109,8 @@ var TELEGRAM_TOOLS = [
     }
   }
 ];
+var IST = "Asia/Kolkata";
+var toIST = (d) => d.toLocaleString("en-IN", { timeZone: IST, dateStyle: "medium", timeStyle: "short" });
 var fuzzy = (a, b) => a.toLowerCase().includes(b.toLowerCase()) || b.toLowerCase().includes(a.toLowerCase());
 async function runTelegramTool(uid, call) {
   const args = call.args ?? {};
@@ -1130,7 +1134,7 @@ async function runTelegramTool(uid, call) {
           source: "telegram",
           ...repeatMinutes > 0 ? { repeatMinutes } : {}
         });
-        return repeatMinutes > 0 ? `set \u2014 first at ${due.toLocaleString()}, then every ${repeatMinutes} min` : `reminder set for ${due.toLocaleString()}`;
+        return repeatMinutes > 0 ? `set \u2014 first at ${toIST(due)} IST, then every ${repeatMinutes} min` : `reminder set for ${toIST(due)} IST`;
       }
       case "addHabit": {
         const label = String(args.label ?? "").trim();
@@ -1168,7 +1172,7 @@ async function runTelegramTool(uid, call) {
         const snap = await db.collection(`users/${uid}/reminders`).get();
         const pending = snap.docs.map((d) => d.data()).filter((r) => !r.done);
         if (!pending.length) return "no pending reminders";
-        return pending.map((r) => `"${r.text}" at ${r.dueAt ? new Date(r.dueAt).toLocaleString() : "no time"}`).join(" \xB7 ");
+        return pending.map((r) => `"${r.text}" at ${r.dueAt ? toIST(new Date(r.dueAt)) + " IST" : "no time"}`).join(" \xB7 ");
       }
       case "deleteReminder": {
         const match = String(args.match ?? "").trim();

@@ -104,6 +104,12 @@ export const TELEGRAM_TOOLS = [
   },
 ];
 
+// Vercel's server clock is UTC; the user is IST. Every time shown back to
+// them must go through this, not the server-locale .toLocaleString() (which
+// silently renders UTC and reads as "wrong by 5:30" with no indication why).
+const IST = 'Asia/Kolkata';
+const toIST = (d: Date) => d.toLocaleString('en-IN', { timeZone: IST, dateStyle: 'medium', timeStyle: 'short' });
+
 const fuzzy = (a: string, b: string) =>
   a.toLowerCase().includes(b.toLowerCase()) || b.toLowerCase().includes(a.toLowerCase());
 
@@ -141,8 +147,8 @@ export async function runTelegramTool(
           ...(repeatMinutes > 0 ? { repeatMinutes } : {}),
         });
         return repeatMinutes > 0
-          ? `set — first at ${due.toLocaleString()}, then every ${repeatMinutes} min`
-          : `reminder set for ${due.toLocaleString()}`;
+          ? `set — first at ${toIST(due)} IST, then every ${repeatMinutes} min`
+          : `reminder set for ${toIST(due)} IST`;
       }
 
       case 'addHabit': {
@@ -191,7 +197,7 @@ export async function runTelegramTool(
           .filter((r) => !r.done);
         if (!pending.length) return 'no pending reminders';
         return pending
-          .map((r) => `"${r.text}" at ${r.dueAt ? new Date(r.dueAt).toLocaleString() : 'no time'}`)
+          .map((r) => `"${r.text}" at ${r.dueAt ? toIST(new Date(r.dueAt)) + ' IST' : 'no time'}`)
           .join(' · ');
       }
 
