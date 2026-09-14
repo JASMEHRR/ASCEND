@@ -13,6 +13,11 @@
  *                    been closed a while the mirror is stale, and stale data
  *                    must not produce "you have a new assignment" alerts, so
  *                    freshness is checked before anything fires.
+ *   - price alerts — Yahoo Finance, direct from Vercel (no loopback problem
+ *                    here; unlike Post Studio this is a real internet host).
+ *                    One-shot: fires once, then marked firedAt rather than
+ *                    deleted, so a re-run in the same cycle can't double-fire
+ *                    it if the price hasn't moved back.
  *
  * Cadence note: Vercel's Hobby plan allows one cron run per day, so the
  * scheduled pass here is a daily morning digest. The endpoint itself is
@@ -28,6 +33,7 @@
  *      gets muted, and then every future nudge is missed too.
  */
 import { getAdminDb } from './admin-db';
+import { fetchQuote } from './stocks-routes';
 
 const TELEGRAM_API = 'https://api.telegram.org';
 
@@ -126,6 +132,26 @@ export async function runTelegramCron(
     }
   } catch (err) {
     console.warn('[telegram-cron] mirror failed:', (err as Error).message);
+  }
+
+  // ── price alerts ────────────────────────────────────────────────────────
+  try {
+    const snap = await db.collection(`users/${uid}/priceAlerts`).get();
+    const active = snap.docs.filter((d) => !(d.data() as { firedAt?: string | null }).firedAt);
+    for (const d of active) {
+      const a = d.data() as { symbol?: string; target?: number; direction?: string };
+      if (!a.symbol || typeof a.target !== 'number') continue;
+      const quote = await fetchQuote(a.symbol);
+      if (!quote) continue; // upstream hiccup — try again next pass, don't fire on missing data
+      const crossed =
+        a.direction === 'above' ? quote.price >= a.target : quote.price <= a.target;
+      if (!crossed) continue;
+      messages.push(`📈 ${a.symbol} hit ${quote.price} (${a.direction} ${a.target})`);
+      await db.doc(`users/${uid}/priceAlerts/${d.id}`).update({ firedAt: new Date().toISOString() });
+    }
+    checked.push(`priceAlerts (${active.length} active)`);
+  } catch (err) {
+    console.warn('[telegram-cron] priceAlerts failed:', (err as Error).message);
   }
 
   for (const text of messages) {

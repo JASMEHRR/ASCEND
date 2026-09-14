@@ -459,6 +459,8 @@ You receive a CONTEXT snapshot of the live app: the current page, the user's met
 
 \`postStudio\`, when present (desktop app only), is a separate local agent system on the user's own machine \u2014 a different piece of software than Ascend. It has four independent keys: \`inbox\` (their monitored email, what was judged important), \`apply\` (things they're tracking to apply to and what's closing soon), \`classwork\` (outstanding/overdue assignments), \`automatic\` (whether those background agents are actually running). Each key is EITHER real data OR its own \`{"error": "..."}\` \u2014 read them independently; one key being unreachable says nothing about the others, so never describe the whole block as "offline" because one part of it is. If a key has real data, use it and don't call it offline.
 
+On Telegram, price-alert tools (setPriceAlert/listPriceAlerts/deletePriceAlert) check ticker symbols against a live quote before creating an alert, and it fires exactly once \u2014 mention that to the user rather than implying it keeps watching after it fires.
+
 On Telegram specifically, \`postStudio\` is a MIRROR written by the desktop app, not a live read \u2014 it carries a \`staleness\` field saying how old it is. Quote that freshness whenever you use the block: reporting a six-hour-old classwork list as if it were current is worse than saying you don't know. If \`postStudio\` is absent entirely on Telegram, the desktop app has never mirrored it; say that rather than implying the modules are broken.
 
 That list describes the usual shape, it is not a limit. The CONTEXT block below is the authority on what you can actually see: read it before you claim you cannot reach something. Never tell the user a module is outside your access, or offer to note something down for them by hand, when its data is present in CONTEXT \u2014 that is a bug in your reading, not a limitation. If a key really is missing, say plainly which one and use the tool that fetches it.
@@ -1068,6 +1070,28 @@ var TELEGRAM_TOOLS = [
     }
   },
   {
+    name: "setPriceAlert",
+    module: "stocks",
+    description: "Create a one-shot price alert: text the user once when a stock/ETF crosses the given price. Use for 'ping me when X hits Y', 'let me know if X drops below Y'. Symbol format matches Yahoo Finance (RELIANCE.NS, TCS.BO, AAPL).",
+    parameters: {
+      symbol: "ticker symbol, e.g. RELIANCE.NS or AAPL",
+      target: "the price to watch for",
+      direction: '"above" or "below" \u2014 which way it needs to cross to fire'
+    }
+  },
+  {
+    name: "listPriceAlerts",
+    module: "stocks",
+    description: "List the user's active (not yet fired) price alerts.",
+    parameters: {}
+  },
+  {
+    name: "deletePriceAlert",
+    module: "stocks",
+    description: "Cancel a price alert. Matches on the ticker symbol, or 'all' to clear every active one.",
+    parameters: { symbol: 'the ticker symbol to cancel, or "all"' }
+  },
+  {
     name: "tickHabit",
     module: "Arena",
     description: "Mark one of the user's existing habits done for today. Match the habit by name, case-insensitively.",
@@ -1172,6 +1196,45 @@ async function runTelegramTool(uid, call) {
         await db.doc(`users/${uid}/reminders/${hit.id}`).update(fields);
         return `updated "${String(hit.data().text ?? "")}"`;
       }
+      case "setPriceAlert": {
+        const symbol = String(args.symbol ?? "").trim().toUpperCase();
+        const target = Number(args.target);
+        const direction = String(args.direction ?? "").toLowerCase();
+        if (!symbol) return "needs a ticker symbol";
+        if (!Number.isFinite(target) || target <= 0) return "needs a real target price";
+        if (direction !== "above" && direction !== "below") return 'direction must be "above" or "below"';
+        const quote = await fetchQuote(symbol);
+        if (!quote) return `couldn't find a quote for "${symbol}" \u2014 check the symbol`;
+        await db.collection(`users/${uid}/priceAlerts`).add({
+          symbol,
+          target,
+          direction,
+          firedAt: null,
+          createdAt: (/* @__PURE__ */ new Date()).toISOString()
+        });
+        return `watching ${symbol} (currently ${quote.price}) for ${direction} ${target}`;
+      }
+      case "listPriceAlerts": {
+        const snap = await db.collection(`users/${uid}/priceAlerts`).get();
+        const active = snap.docs.map((d) => d.data()).filter((a) => !a.firedAt);
+        if (!active.length) return "no active price alerts";
+        return active.map((a) => `${a.symbol} ${a.direction} ${a.target}`).join(" \xB7 ");
+      }
+      case "deletePriceAlert": {
+        const symbol = String(args.symbol ?? "").trim().toUpperCase();
+        if (!symbol) return "which symbol?";
+        const snap = await db.collection(`users/${uid}/priceAlerts`).get();
+        const active = snap.docs.filter((d) => !d.data().firedAt);
+        if (symbol === "ALL") {
+          if (!active.length) return "no active alerts to clear";
+          for (const d of active) await db.doc(`users/${uid}/priceAlerts/${d.id}`).delete();
+          return `cleared ${active.length} alert${active.length === 1 ? "" : "s"}`;
+        }
+        const hit = active.find((d) => d.data().symbol === symbol);
+        if (!hit) return `no active alert for "${symbol}"`;
+        await db.doc(`users/${uid}/priceAlerts/${hit.id}`).delete();
+        return `cancelled alert for ${symbol}`;
+      }
       default:
         return `unknown tool: ${call.tool}`;
     }
@@ -1247,6 +1310,23 @@ async function runTelegramCron(uid, token, chatId) {
     }
   } catch (err) {
     console.warn("[telegram-cron] mirror failed:", err.message);
+  }
+  try {
+    const snap = await db.collection(`users/${uid}/priceAlerts`).get();
+    const active = snap.docs.filter((d) => !d.data().firedAt);
+    for (const d of active) {
+      const a = d.data();
+      if (!a.symbol || typeof a.target !== "number") continue;
+      const quote = await fetchQuote(a.symbol);
+      if (!quote) continue;
+      const crossed = a.direction === "above" ? quote.price >= a.target : quote.price <= a.target;
+      if (!crossed) continue;
+      messages.push(`\u{1F4C8} ${a.symbol} hit ${quote.price} (${a.direction} ${a.target})`);
+      await db.doc(`users/${uid}/priceAlerts/${d.id}`).update({ firedAt: (/* @__PURE__ */ new Date()).toISOString() });
+    }
+    checked.push(`priceAlerts (${active.length} active)`);
+  } catch (err) {
+    console.warn("[telegram-cron] priceAlerts failed:", err.message);
   }
   for (const text of messages) {
     try {

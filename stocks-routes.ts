@@ -26,7 +26,7 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 const cache = new Map<string, { at: number; quote: Quote }>();
 const CACHE_MS = 60_000;
 
-async function fetchQuote(symbol: string): Promise<Quote | null> {
+export async function fetchQuote(symbol: string): Promise<Quote | null> {
   const hit = cache.get(symbol);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.quote;
 

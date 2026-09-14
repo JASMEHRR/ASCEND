@@ -17,6 +17,7 @@
 import { getAdminDb } from './admin-db';
 import { todayStr } from './src/features/arena/logic/dates';
 import type { Habit } from './src/features/arena/logic/types';
+import { fetchQuote } from './stocks-routes';
 
 /** Same ToolDecl shape jarvis-routes.ts declares — flat key -> description. */
 export const TELEGRAM_TOOLS = [
@@ -65,6 +66,29 @@ export const TELEGRAM_TOOLS = [
       text: 'optional new text',
       time: 'optional new ISO 8601 local datetime',
     },
+  },
+  {
+    name: 'setPriceAlert',
+    module: 'stocks',
+    description:
+      "Create a one-shot price alert: text the user once when a stock/ETF crosses the given price. Use for 'ping me when X hits Y', 'let me know if X drops below Y'. Symbol format matches Yahoo Finance (RELIANCE.NS, TCS.BO, AAPL).",
+    parameters: {
+      symbol: 'ticker symbol, e.g. RELIANCE.NS or AAPL',
+      target: 'the price to watch for',
+      direction: '"above" or "below" — which way it needs to cross to fire',
+    },
+  },
+  {
+    name: 'listPriceAlerts',
+    module: 'stocks',
+    description: "List the user's active (not yet fired) price alerts.",
+    parameters: {},
+  },
+  {
+    name: 'deletePriceAlert',
+    module: 'stocks',
+    description: "Cancel a price alert. Matches on the ticker symbol, or 'all' to clear every active one.",
+    parameters: { symbol: 'the ticker symbol to cancel, or "all"' },
   },
   {
     name: 'tickHabit',
@@ -206,6 +230,56 @@ export async function runTelegramTool(
         if (!Object.keys(fields).length) return 'nothing to change';
         await db.doc(`users/${uid}/reminders/${hit.id}`).update(fields);
         return `updated "${String((hit.data() as { text?: string }).text ?? '')}"`;
+      }
+
+      case 'setPriceAlert': {
+        const symbol = String(args.symbol ?? '').trim().toUpperCase();
+        const target = Number(args.target);
+        const direction = String(args.direction ?? '').toLowerCase();
+        if (!symbol) return 'needs a ticker symbol';
+        if (!Number.isFinite(target) || target <= 0) return 'needs a real target price';
+        if (direction !== 'above' && direction !== 'below') return 'direction must be "above" or "below"';
+
+        // Fail loudly on a bad symbol now rather than silently never firing —
+        // the user finds out immediately instead of days later.
+        const quote = await fetchQuote(symbol);
+        if (!quote) return `couldn't find a quote for "${symbol}" — check the symbol`;
+
+        await db.collection(`users/${uid}/priceAlerts`).add({
+          symbol,
+          target,
+          direction,
+          firedAt: null,
+          createdAt: new Date().toISOString(),
+        });
+        return `watching ${symbol} (currently ${quote.price}) for ${direction} ${target}`;
+      }
+
+      case 'listPriceAlerts': {
+        const snap = await db.collection(`users/${uid}/priceAlerts`).get();
+        const active = snap.docs
+          .map((d) => d.data() as { symbol?: string; target?: number; direction?: string; firedAt?: string | null })
+          .filter((a) => !a.firedAt);
+        if (!active.length) return 'no active price alerts';
+        return active.map((a) => `${a.symbol} ${a.direction} ${a.target}`).join(' · ');
+      }
+
+      case 'deletePriceAlert': {
+        const symbol = String(args.symbol ?? '').trim().toUpperCase();
+        if (!symbol) return 'which symbol?';
+        const snap = await db.collection(`users/${uid}/priceAlerts`).get();
+        const active = snap.docs.filter((d) => !(d.data() as { firedAt?: string | null }).firedAt);
+
+        if (symbol === 'ALL') {
+          if (!active.length) return 'no active alerts to clear';
+          for (const d of active) await db.doc(`users/${uid}/priceAlerts/${d.id}`).delete();
+          return `cleared ${active.length} alert${active.length === 1 ? '' : 's'}`;
+        }
+
+        const hit = active.find((d) => (d.data() as { symbol?: string }).symbol === symbol);
+        if (!hit) return `no active alert for "${symbol}"`;
+        await db.doc(`users/${uid}/priceAlerts/${hit.id}`).delete();
+        return `cancelled alert for ${symbol}`;
       }
 
       default:
