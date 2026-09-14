@@ -34,8 +34,7 @@
  */
 import { getAdminDb } from './admin-db';
 import { fetchQuote } from './stocks-routes';
-
-const TELEGRAM_API = 'https://api.telegram.org';
+import { sendTelegramMessage as send } from './telegram-send';
 
 /** Past this, the desktop mirror is treated as too old to raise alerts from. */
 const MIRROR_FRESH_MINUTES = 30;
@@ -44,16 +43,6 @@ interface NotifyState {
   /** Ids/keys already sent, so nothing fires twice. */
   seen?: string[];
   lastRunAt?: string;
-}
-
-async function send(token: string, chatId: number, text: string): Promise<void> {
-  const res = await fetch(`${TELEGRAM_API}/bot${token}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text: text.slice(0, 4096) }),
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!res.ok) throw new Error(`sendMessage ${res.status}`);
 }
 
 /**
@@ -102,7 +91,7 @@ export async function runTelegramCron(
         continue;
       }
       console.warn(`[telegram-cron] ${d.id} FIRING: ${r.text}`);
-      messages.push(`⏰ Reminder: ${r.text ?? '(untitled)'}`);
+      messages.push(`⏰ **Reminder:** ${r.text ?? '(untitled)'}`);
       // Recurring reminders reschedule instead of staying fired — same
       // behavior as jarvis-desktop's own timer, so whichever surface catches
       // a given firing advances it identically rather than one path leaving
@@ -137,7 +126,7 @@ export async function runTelegramCron(
           if (m.importance !== 'important' || !m.message_id) continue;
           const key = `email:${m.message_id}`;
           if (seen.has(key)) continue;
-          messages.push(`📧 Important email: ${m.subject ?? '(no subject)'}`);
+          messages.push(`📧 **Important email:** ${m.subject ?? '(no subject)'}`);
           newlySeen.push(key);
         }
 
@@ -145,7 +134,7 @@ export async function runTelegramCron(
         for (const a of classwork?.outstanding ?? []) {
           const key = `classwork:${a.id ?? a.title ?? ''}`;
           if (!a.title || seen.has(key)) continue;
-          messages.push(`📚 Assignment: ${a.title}${a.due ? ` — due ${a.due}` : ''}`);
+          messages.push(`📚 **Assignment:** ${a.title}${a.due ? ` — due ${a.due}` : ''}`);
           newlySeen.push(key);
         }
         checked.push(`mirror fresh (${Math.round(ageMin)}m)`);
@@ -169,7 +158,7 @@ export async function runTelegramCron(
       const crossed =
         a.direction === 'above' ? quote.price >= a.target : quote.price <= a.target;
       if (!crossed) continue;
-      messages.push(`📈 ${a.symbol} hit ${quote.price} (${a.direction} ${a.target})`);
+      messages.push(`📈 **${a.symbol}** hit **${quote.price}** (${a.direction} ${a.target})`);
       await db.doc(`users/${uid}/priceAlerts/${d.id}`).update({ firedAt: new Date().toISOString() });
     }
     checked.push(`priceAlerts (${active.length} active)`);

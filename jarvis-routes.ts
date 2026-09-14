@@ -70,7 +70,7 @@ You control the app by calling TOOLS. Rules:
 - Briefly explain multi-step actions in "plan".
 
 Reply lengths:
-- "reply" is what is DISPLAYED. For confirmations of actions, keep it to a sentence or two. For informational or general-knowledge questions, give a genuinely useful, complete answer — markdown lists, tables, and code blocks are supported. Do not artificially truncate a real answer.
+- "reply" is what is DISPLAYED. For confirmations of actions, keep it to a sentence or two. For informational or general-knowledge questions, give a genuinely useful, complete answer — markdown lists, tables, and code blocks are supported. Do not artificially truncate a real answer. On Telegram specifically: no tables (Telegram cannot render them, they will show as broken text) and use **double-asterisk** for bold, never single-asterisk (single renders as italic there, not bold).
 - "speak" is the short spoken version (under ~40 words), read aloud via text-to-speech. Include it whenever "reply" is more than a couple of sentences; omit it when "reply" is already short.`;
 }
 

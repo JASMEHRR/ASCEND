@@ -479,7 +479,7 @@ You control the app by calling TOOLS. Rules:
 - Briefly explain multi-step actions in "plan".
 
 Reply lengths:
-- "reply" is what is DISPLAYED. For confirmations of actions, keep it to a sentence or two. For informational or general-knowledge questions, give a genuinely useful, complete answer \u2014 markdown lists, tables, and code blocks are supported. Do not artificially truncate a real answer.
+- "reply" is what is DISPLAYED. For confirmations of actions, keep it to a sentence or two. For informational or general-knowledge questions, give a genuinely useful, complete answer \u2014 markdown lists, tables, and code blocks are supported. Do not artificially truncate a real answer. On Telegram specifically: no tables (Telegram cannot render them, they will show as broken text) and use **double-asterisk** for bold, never single-asterisk (single renders as italic there, not bold).
 - "speak" is the short spoken version (under ~40 words), read aloud via text-to-speech. Include it whenever "reply" is more than a couple of sentences; omit it when "reply" is already short.`;
 }
 function buildSystem(tools, context) {
@@ -1259,18 +1259,50 @@ async function runTelegramTool(uid, call) {
   }
 }
 
-// telegram-cron.ts
+// telegram-send.ts
 var TELEGRAM_API = "https://api.telegram.org";
-var MIRROR_FRESH_MINUTES = 30;
-async function send(token, chatId, text) {
+function escapeHtml(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function markdownToTelegramHtml(text) {
+  const blocks = [];
+  let working = text.replace(/```(?:\w+\n)?([\s\S]*?)```/g, (_m, code) => {
+    blocks.push(`<pre>${escapeHtml(code.trim())}</pre>`);
+    return `\0${blocks.length - 1}\0`;
+  });
+  working = escapeHtml(working);
+  working = working.replace(/`([^`\n]+)`/g, (_m, code) => `<code>${code}</code>`);
+  working = working.replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>");
+  working = working.replace(/(?<![*\w])\*([^*\n]+)\*(?!\w)/g, "<i>$1</i>");
+  working = working.replace(/(?<![_\w])_([^_\n]+)_(?!\w)/g, "<i>$1</i>");
+  working = working.replace(/^[ \t]*[-*][ \t]+/gm, "\u2022 ");
+  return working.replace(/ (\d+) /g, (_m, i) => blocks[Number(i)]);
+}
+async function sendTelegramMessage(token, chatId, text) {
+  const body = markdownToTelegramHtml((text || "(no reply)").slice(0, 4096));
   const res = await fetch(`${TELEGRAM_API}/bot${token}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text: text.slice(0, 4096) }),
+    body: JSON.stringify({ chat_id: chatId, text: body, parse_mode: "HTML" }),
     signal: AbortSignal.timeout(1e4)
   });
-  if (!res.ok) throw new Error(`sendMessage ${res.status}`);
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    if (res.status === 400) {
+      const plain = await fetch(`${TELEGRAM_API}/bot${token}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, text: text.slice(0, 4096) }),
+        signal: AbortSignal.timeout(1e4)
+      });
+      if (plain.ok) return;
+    }
+    throw new Error(`Telegram sendMessage failed: ${res.status} ${detail.slice(0, 200)}`);
+  }
 }
+
+// telegram-cron.ts
+var MIRROR_FRESH_MINUTES = 30;
 async function runTelegramCron(uid, token, chatId) {
   const db = await getAdminDb();
   if (!db) return { sent: 0, checked: ["storage unavailable"] };
@@ -1296,7 +1328,7 @@ async function runTelegramCron(uid, token, chatId) {
         continue;
       }
       console.warn(`[telegram-cron] ${d.id} FIRING: ${r.text}`);
-      messages.push(`\u23F0 Reminder: ${r.text ?? "(untitled)"}`);
+      messages.push(`\u23F0 **Reminder:** ${r.text ?? "(untitled)"}`);
       if (r.repeatMinutes && r.repeatMinutes > 0) {
         const nextDue = new Date(now + r.repeatMinutes * 6e4).toISOString();
         await db.doc(`users/${uid}/reminders/${d.id}`).update({ dueAt: nextDue, notified: false });
@@ -1322,14 +1354,14 @@ async function runTelegramCron(uid, token, chatId) {
           if (m.importance !== "important" || !m.message_id) continue;
           const key = `email:${m.message_id}`;
           if (seen.has(key)) continue;
-          messages.push(`\u{1F4E7} Important email: ${m.subject ?? "(no subject)"}`);
+          messages.push(`\u{1F4E7} **Important email:** ${m.subject ?? "(no subject)"}`);
           newlySeen.push(key);
         }
         const classwork = data.classwork;
         for (const a of classwork?.outstanding ?? []) {
           const key = `classwork:${a.id ?? a.title ?? ""}`;
           if (!a.title || seen.has(key)) continue;
-          messages.push(`\u{1F4DA} Assignment: ${a.title}${a.due ? ` \u2014 due ${a.due}` : ""}`);
+          messages.push(`\u{1F4DA} **Assignment:** ${a.title}${a.due ? ` \u2014 due ${a.due}` : ""}`);
           newlySeen.push(key);
         }
         checked.push(`mirror fresh (${Math.round(ageMin)}m)`);
@@ -1350,7 +1382,7 @@ async function runTelegramCron(uid, token, chatId) {
       if (!quote) continue;
       const crossed = a.direction === "above" ? quote.price >= a.target : quote.price <= a.target;
       if (!crossed) continue;
-      messages.push(`\u{1F4C8} ${a.symbol} hit ${quote.price} (${a.direction} ${a.target})`);
+      messages.push(`\u{1F4C8} **${a.symbol}** hit **${quote.price}** (${a.direction} ${a.target})`);
       await db.doc(`users/${uid}/priceAlerts/${d.id}`).update({ firedAt: (/* @__PURE__ */ new Date()).toISOString() });
     }
     checked.push(`priceAlerts (${active.length} active)`);
@@ -1359,7 +1391,7 @@ async function runTelegramCron(uid, token, chatId) {
   }
   for (const text of messages) {
     try {
-      await send(token, chatId, text);
+      await sendTelegramMessage(token, chatId, text);
     } catch (err) {
       console.warn("[telegram-cron] send failed:", err.message);
     }
@@ -1371,21 +1403,7 @@ async function runTelegramCron(uid, token, chatId) {
 
 // telegram-routes.ts
 var telegramRouter = Router8();
-var TELEGRAM_API2 = "https://api.telegram.org";
 var MAX_HISTORY = 20;
-async function sendTelegramMessage(token, chatId, text) {
-  const body = (text || "(no reply)").slice(0, 4096);
-  const res = await fetch(`${TELEGRAM_API2}/bot${token}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text: body }),
-    signal: AbortSignal.timeout(1e4)
-  });
-  if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    throw new Error(`Telegram sendMessage failed: ${res.status} ${detail.slice(0, 200)}`);
-  }
-}
 telegramRouter.get("/cron", async (req, res) => {
   try {
     const secret = process.env.CRON_SECRET;

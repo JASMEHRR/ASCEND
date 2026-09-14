@@ -35,10 +35,10 @@ import { runJarvisTurn } from './jarvis-routes';
 import { logEvent } from './server-log';
 import { TELEGRAM_TOOLS, runTelegramTool } from './telegram-tools';
 import { runTelegramCron } from './telegram-cron';
+import { sendTelegramMessage } from './telegram-send';
 
 export const telegramRouter = Router();
 
-const TELEGRAM_API = 'https://api.telegram.org';
 const MAX_HISTORY = 20; // messages kept, not turns — matches jarvis-routes' own history.slice(-24)
 
 interface TelegramUpdate {
@@ -46,21 +46,6 @@ interface TelegramUpdate {
     chat?: { id?: number };
     text?: string;
   };
-}
-
-async function sendTelegramMessage(token: string, chatId: number, text: string): Promise<void> {
-  // Telegram rejects empty text and hard-caps at 4096 chars per message.
-  const body = (text || '(no reply)').slice(0, 4096);
-  const res = await fetch(`${TELEGRAM_API}/bot${token}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text: body }),
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!res.ok) {
-    const detail = await res.text().catch(() => '');
-    throw new Error(`Telegram sendMessage failed: ${res.status} ${detail.slice(0, 200)}`);
-  }
 }
 
 /**
