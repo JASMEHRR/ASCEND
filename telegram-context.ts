@@ -27,6 +27,13 @@ export interface ArenaContext {
 export interface TelegramAppContext {
   arena: ArenaContext | null;
   pendingReminders: { text: string; dueAt: string }[];
+  /**
+   * Post Studio's inbox/classwork/apply status, mirrored into Firestore by
+   * jarvis-desktop. Null when that app has never run, or when its own reads
+   * failed. Post Studio itself is loopback-only on the user's laptop, so this
+   * route can never fetch it directly — the mirror is the only path.
+   */
+  postStudio: (Record<string, unknown> & { staleness?: string }) | null;
 }
 
 /**
@@ -38,7 +45,7 @@ export interface TelegramAppContext {
  */
 export async function buildTelegramContext(uid: string): Promise<TelegramAppContext> {
   const db = await getAdminDb();
-  if (!db) return { arena: null, pendingReminders: [] };
+  if (!db) return { arena: null, pendingReminders: [], postStudio: null };
 
   const today = todayStr();
 
@@ -82,5 +89,30 @@ export async function buildTelegramContext(uid: string): Promise<TelegramAppCont
     console.warn('[telegram-context] reminders fetch failed:', (err as Error).message);
   }
 
-  return { arena, pendingReminders };
+  // Mirrored by jarvis-desktop (see its mirrorPostStudio). Age matters more
+  // than the data here: a six-hour-old classwork list reported as current is
+  // worse than no answer, so the freshness is spelled out in words the model
+  // will repeat rather than left as a raw timestamp to reason about.
+  let postStudio: (Record<string, unknown> & { staleness?: string }) | null = null;
+  try {
+    const snap = await db.doc(`users/${uid}/postStudioMirror/latest`).get();
+    if (snap.exists) {
+      const data = snap.data() ?? {};
+      const mirroredAt = typeof data.mirroredAt === 'string' ? data.mirroredAt : null;
+      const ageMin = mirroredAt ? Math.round((Date.now() - Date.parse(mirroredAt)) / 60000) : null;
+      postStudio = {
+        ...data,
+        staleness:
+          ageMin === null
+            ? 'unknown age — treat as possibly out of date'
+            : ageMin < 10
+              ? `fresh (${ageMin} min old)`
+              : `${ageMin} min old — jarvis-desktop may be closed; say so before relying on it`,
+      };
+    }
+  } catch (err) {
+    console.warn('[telegram-context] postStudio mirror fetch failed:', (err as Error).message);
+  }
+
+  return { arena, pendingReminders, postStudio };
 }

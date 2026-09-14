@@ -12,6 +12,7 @@
 interface AdminFirestoreLike {
   collection: (path: string) => {
     get: () => Promise<{ docs: { id: string; data: () => Record<string, unknown> }[] }>;
+    add: (data: Record<string, unknown>) => Promise<{ id: string }>;
   };
   doc: (path: string) => {
     get: () => Promise<{ exists: boolean; data: () => Record<string, unknown> | undefined }>;

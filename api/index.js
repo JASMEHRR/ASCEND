@@ -457,6 +457,8 @@ You receive a CONTEXT snapshot of the live app: the current page, the user's met
 
 \`postStudio\`, when present (desktop app only), is a separate local agent system on the user's own machine \u2014 a different piece of software than Ascend. It has four independent keys: \`inbox\` (their monitored email, what was judged important), \`apply\` (things they're tracking to apply to and what's closing soon), \`classwork\` (outstanding/overdue assignments), \`automatic\` (whether those background agents are actually running). Each key is EITHER real data OR its own \`{"error": "..."}\` \u2014 read them independently; one key being unreachable says nothing about the others, so never describe the whole block as "offline" because one part of it is. If a key has real data, use it and don't call it offline.
 
+On Telegram specifically, \`postStudio\` is a MIRROR written by the desktop app, not a live read \u2014 it carries a \`staleness\` field saying how old it is. Quote that freshness whenever you use the block: reporting a six-hour-old classwork list as if it were current is worse than saying you don't know. If \`postStudio\` is absent entirely on Telegram, the desktop app has never mirrored it; say that rather than implying the modules are broken.
+
 That list describes the usual shape, it is not a limit. The CONTEXT block below is the authority on what you can actually see: read it before you claim you cannot reach something. Never tell the user a module is outside your access, or offer to note something down for them by hand, when its data is present in CONTEXT \u2014 that is a bug in your reading, not a limitation. If a key really is missing, say plainly which one and use the tool that fetches it.
 
 You control the app by calling TOOLS. Rules:
@@ -965,7 +967,7 @@ function tilesEarnedOn(habits, entries, day) {
 // telegram-context.ts
 async function buildTelegramContext(uid) {
   const db = await getAdminDb();
-  if (!db) return { arena: null, pendingReminders: [] };
+  if (!db) return { arena: null, pendingReminders: [], postStudio: null };
   const today = todayStr();
   let arena = null;
   try {
@@ -1002,7 +1004,116 @@ async function buildTelegramContext(uid) {
   } catch (err) {
     console.warn("[telegram-context] reminders fetch failed:", err.message);
   }
-  return { arena, pendingReminders };
+  let postStudio = null;
+  try {
+    const snap = await db.doc(`users/${uid}/postStudioMirror/latest`).get();
+    if (snap.exists) {
+      const data = snap.data() ?? {};
+      const mirroredAt = typeof data.mirroredAt === "string" ? data.mirroredAt : null;
+      const ageMin = mirroredAt ? Math.round((Date.now() - Date.parse(mirroredAt)) / 6e4) : null;
+      postStudio = {
+        ...data,
+        staleness: ageMin === null ? "unknown age \u2014 treat as possibly out of date" : ageMin < 10 ? `fresh (${ageMin} min old)` : `${ageMin} min old \u2014 jarvis-desktop may be closed; say so before relying on it`
+      };
+    }
+  } catch (err) {
+    console.warn("[telegram-context] postStudio mirror fetch failed:", err.message);
+  }
+  return { arena, pendingReminders, postStudio };
+}
+
+// telegram-tools.ts
+var TELEGRAM_TOOLS = [
+  {
+    name: "setReminder",
+    module: "reminders",
+    description: "Create a reminder that pops up on the user's desktop and in Ascend at the given time. Use for 'remind me to X at Y', 'wake me at 6', 'ping me before the call'.",
+    parameters: {
+      text: "what to remind them about, in their own words",
+      time: "ISO 8601 local datetime, e.g. 2026-09-15T18:30:00"
+    }
+  },
+  {
+    name: "addHabit",
+    module: "Arena",
+    description: "Add a habit to the user's Arena board. Use for 'track X', 'add a habit', 'I want to start doing X'. Note it starts counting tomorrow, not today.",
+    parameters: {
+      label: 'the habit name, e.g. "Read 30 minutes"',
+      target: "optional number of reps needed per day (default 1)",
+      unit: 'optional unit for counter habits, e.g. "glasses"'
+    }
+  },
+  {
+    name: "tickHabit",
+    module: "Arena",
+    description: "Mark one of the user's existing habits done for today. Match the habit by name, case-insensitively.",
+    parameters: {
+      habit: "the habit name to mark done",
+      value: "optional reps for counter habits"
+    }
+  }
+];
+var fuzzy = (a, b) => a.toLowerCase().includes(b.toLowerCase()) || b.toLowerCase().includes(a.toLowerCase());
+async function runTelegramTool(uid, call) {
+  const args = call.args ?? {};
+  const db = await getAdminDb();
+  if (!db) return "storage unavailable";
+  try {
+    switch (call.tool) {
+      case "setReminder": {
+        const text = String(args.text ?? "").trim();
+        const time = String(args.time ?? "").trim();
+        const due = new Date(time);
+        if (!text) return "reminder needs something to say";
+        if (!time || Number.isNaN(due.getTime())) return "reminder failed (bad time)";
+        await db.collection(`users/${uid}/reminders`).add({
+          text,
+          dueAt: due.toISOString(),
+          done: false,
+          notified: false,
+          createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+          source: "telegram"
+        });
+        return `reminder set for ${due.toLocaleString()}`;
+      }
+      case "addHabit": {
+        const label = String(args.label ?? "").trim();
+        if (!label) return "habit needs a name";
+        const target = Math.max(1, Math.round(Number(args.target) || 1));
+        await db.collection(`users/${uid}/arenaHabits`).add({
+          label,
+          kind: "good",
+          icon: "check",
+          color: "#10b981",
+          ...target > 1 ? { target } : {},
+          ...args.unit ? { unit: String(args.unit) } : {},
+          startsAt: todayStr(),
+          createdAt: (/* @__PURE__ */ new Date()).toISOString()
+        });
+        return `added "${label}" \u2014 starts counting tomorrow`;
+      }
+      case "tickHabit": {
+        const needle = String(args.habit ?? "").trim();
+        if (!needle) return "which habit?";
+        const snap = await db.collection(`users/${uid}/arenaHabits`).get();
+        const habits = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const hit = habits.find((h) => h.label?.toLowerCase() === needle.toLowerCase()) ?? habits.find((h) => fuzzy(String(h.label ?? ""), needle));
+        if (!hit) return `no habit matching "${needle}"`;
+        const today = todayStr();
+        const dayRef = db.doc(`users/${uid}/arenaDays/${today}`);
+        const daySnap = await dayRef.get();
+        const values = (daySnap.exists ? daySnap.data()?.values : {}) ?? {};
+        const target = hit.target && hit.target > 0 ? hit.target : 1;
+        values[hit.id] = Math.max(1, Math.round(Number(args.value) || target));
+        await dayRef.set({ values, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
+        return `${hit.label} marked done`;
+      }
+      default:
+        return `unknown tool: ${call.tool}`;
+    }
+  } catch (err) {
+    return `${call.tool} failed: ${err.message}`;
+  }
 }
 
 // telegram-routes.ts
@@ -1057,12 +1168,23 @@ telegramRouter.post("/webhook", async (req, res) => {
     const appContext = await buildTelegramContext(uid);
     const turn = await runJarvisTurn(
       history,
-      { now: (/* @__PURE__ */ new Date()).toString(), surface: "Telegram (phone, text-only, read-only for now)", ...appContext },
-      []
+      {
+        now: (/* @__PURE__ */ new Date()).toString(),
+        surface: "Telegram (phone, text-only). You can set reminders and add/tick habits from here.",
+        ...appContext
+      },
+      TELEGRAM_TOOLS
     );
-    await sendTelegramMessage(token, chatId, turn.reply);
+    const results = [];
+    for (const call of turn.toolCalls) {
+      results.push(await runTelegramTool(uid, call));
+    }
+    const replyText = results.length ? `${turn.reply}
+
+\u2713 ${results.join(" \xB7 ")}` : turn.reply;
+    await sendTelegramMessage(token, chatId, replyText);
     if (threadRef) {
-      const updated = [...history, { role: "assistant", content: turn.reply }].slice(-MAX_HISTORY);
+      const updated = [...history, { role: "assistant", content: replyText }].slice(-MAX_HISTORY);
       await threadRef.set?.({ messages: updated, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
     }
     res.status(200).end();

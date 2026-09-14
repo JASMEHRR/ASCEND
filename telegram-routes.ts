@@ -21,18 +21,19 @@
  *   6. Register the webhook once, after deploying:
  *      curl "https://api.telegram.org/bot<token>/setWebhook?url=https://<your-domain>/api/telegram/webhook&secret_token=<TELEGRAM_WEBHOOK_SECRET>"
  *
- * v1 scope: read-only. Jarvis answers from Arena/reminders context the same
- * way the web/desktop apps do, but cannot yet add a habit or set a reminder
- * from here — toolCalls come back from the model like anywhere else, but
- * nothing executes them, since that needs a Firestore-writing client and
- * this route has none. Wiring specific write tools through admin-db.ts is a
- * clear, bounded follow-up, not attempted here.
+ * Scope: reads Arena/reminders live, plus Post Studio's inbox/classwork/apply
+ * status via the Firestore mirror jarvis-desktop writes (Post Studio itself is
+ * loopback-only and unreachable from Vercel — see telegram-context.ts).
+ * Writes go through telegram-tools.ts, executed server-side here since this
+ * surface has no client to run them. Deliberately limited to Ascend's own
+ * Firestore: nothing here publishes anywhere or touches the user's laptop.
  */
 import { Router, type Request, type Response } from 'express';
 import { getAdminDb } from './admin-db';
 import { buildTelegramContext } from './telegram-context';
 import { runJarvisTurn } from './jarvis-routes';
 import { logEvent } from './server-log';
+import { TELEGRAM_TOOLS, runTelegramTool } from './telegram-tools';
 
 export const telegramRouter = Router();
 
@@ -112,16 +113,32 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
     const appContext = await buildTelegramContext(uid);
     const turn = await runJarvisTurn(
       history,
-      { now: new Date().toString(), surface: 'Telegram (phone, text-only, read-only for now)', ...appContext },
-      [],
+      {
+        now: new Date().toString(),
+        surface: 'Telegram (phone, text-only). You can set reminders and add/tick habits from here.',
+        ...appContext,
+      },
+      TELEGRAM_TOOLS,
     );
 
-    await sendTelegramMessage(token, chatId, turn.reply);
+    // Executed here rather than client-side, because this surface has no
+    // client. Same one-shot shape every other Ascend surface uses: the reply
+    // was written before these ran, so their results are appended rather than
+    // folded into it.
+    const results: string[] = [];
+    for (const call of turn.toolCalls) {
+      results.push(await runTelegramTool(uid, call));
+    }
+    const replyText = results.length ? `${turn.reply}
+
+✓ ${results.join(' · ')}` : turn.reply;
+
+    await sendTelegramMessage(token, chatId, replyText);
 
     // Admin SDK writes bypass firestore.rules entirely — this collection was
     // never meant to be client-readable, same reasoning as _logs in server-log.ts.
     if (threadRef) {
-      const updated = [...history, { role: 'assistant', content: turn.reply }].slice(-MAX_HISTORY);
+      const updated = [...history, { role: 'assistant', content: replyText }].slice(-MAX_HISTORY);
       await threadRef.set?.({ messages: updated, updatedAt: new Date().toISOString() });
     }
 
