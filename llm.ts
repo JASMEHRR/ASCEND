@@ -15,7 +15,7 @@
  * NVIDIA_API_KEY, GEMINI_API_KEY) are server-side only; a missing key just
  * skips that hop.
  */
-import { getGemini, GEMINI_MODEL, GEMINI_FALLBACK_MODEL, isQuotaError, GeminiError, extractJson } from './gemini';
+import { getGemini, GEMINI_MODEL, GEMINI_FALLBACK_MODEL, isQuotaError, isOverloadError, GeminiError, extractJson } from './gemini';
 
 export { GeminiError, extractJson };
 
@@ -141,14 +141,20 @@ export async function generateChat(opts: ChatOptions): Promise<string> {
   try {
     return await callGemini(opts, GEMINI_MODEL);
   } catch (err) {
-    if (!isQuotaError(err)) throw err;
+    // A transient 503 used to throw straight through here, which took Jarvis
+    // down entirely whenever Gemini was the last provider standing — the
+    // fallback model was never even tried. Overload is precisely the case
+    // worth retrying.
+    if (!isQuotaError(err) && !isOverloadError(err)) throw err;
     try {
       return await callGemini(opts, GEMINI_FALLBACK_MODEL);
     } catch (err2) {
-      if (isQuotaError(err2)) {
+      if (isQuotaError(err2) || isOverloadError(err2)) {
         throw new GeminiError(
           429,
-          "I've hit the limits on every AI provider for now, sir — quotas reset within minutes to hours. Give it a short while and try again.",
+          isOverloadError(err2)
+            ? "Every model I can reach is overloaded right now, sir — that usually clears within a minute. Try again shortly."
+            : "I've hit the limits on every AI provider for now, sir — quotas reset within minutes to hours. Give it a short while and try again.",
         );
       }
       throw err2;

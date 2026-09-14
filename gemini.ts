@@ -25,6 +25,17 @@ export function isQuotaError(err: unknown): boolean {
   return /RESOURCE_EXHAUSTED|"code"\s*:\s*429|exceeded your current quota|rate.?limit/i.test(msg);
 }
 
+/**
+ * Transient upstream overload ("high demand", 503 UNAVAILABLE) — distinct
+ * from a quota wall. Worth retrying on another model rather than failing the
+ * request, since it clears on its own in seconds. Observed taking Jarvis down
+ * completely while Gemini was the only surviving provider in the chain.
+ */
+export function isOverloadError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /UNAVAILABLE|"code"\s*:\s*503|experiencing high demand|overloaded/i.test(msg);
+}
+
 /** Error carrying an HTTP status for the route error handlers. */
 export class GeminiError extends Error {
   constructor(public status: number, message: string) {

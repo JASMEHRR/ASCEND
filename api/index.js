@@ -9,6 +9,10 @@ function isQuotaError(err) {
   const msg = err instanceof Error ? err.message : String(err);
   return /RESOURCE_EXHAUSTED|"code"\s*:\s*429|exceeded your current quota|rate.?limit/i.test(msg);
 }
+function isOverloadError(err) {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /UNAVAILABLE|"code"\s*:\s*503|experiencing high demand|overloaded/i.test(msg);
+}
 var GeminiError = class extends Error {
   constructor(status, message) {
     super(message);
@@ -128,14 +132,14 @@ async function generateChat(opts) {
   try {
     return await callGemini(opts, GEMINI_MODEL);
   } catch (err) {
-    if (!isQuotaError(err)) throw err;
+    if (!isQuotaError(err) && !isOverloadError(err)) throw err;
     try {
       return await callGemini(opts, GEMINI_FALLBACK_MODEL);
     } catch (err2) {
-      if (isQuotaError(err2)) {
+      if (isQuotaError(err2) || isOverloadError(err2)) {
         throw new GeminiError(
           429,
-          "I've hit the limits on every AI provider for now, sir \u2014 quotas reset within minutes to hours. Give it a short while and try again."
+          isOverloadError(err2) ? "Every model I can reach is overloaded right now, sir \u2014 that usually clears within a minute. Try again shortly." : "I've hit the limits on every AI provider for now, sir \u2014 quotas reset within minutes to hours. Give it a short while and try again."
         );
       }
       throw err2;
