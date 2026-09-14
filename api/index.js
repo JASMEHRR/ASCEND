@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 
 // gemini.ts
 var GEMINI_MODEL = "gemini-3.6-flash";
-var GEMINI_FALLBACK_MODEL = "gemini-flash-latest";
+var GEMINI_CHAIN = ["gemini-3.6-flash", "gemini-3.5-flash"];
 function isQuotaError(err) {
   const msg = err instanceof Error ? err.message : String(err);
   return /RESOURCE_EXHAUSTED|"code"\s*:\s*429|exceeded your current quota|rate.?limit/i.test(msg);
@@ -129,22 +129,20 @@ async function generateChat(opts) {
       console.warn(`[llm] ${provider.name} failed, trying next provider:`, msg);
     }
   }
-  try {
-    return await callGemini(opts, GEMINI_MODEL);
-  } catch (err) {
-    if (!isQuotaError(err) && !isOverloadError(err)) throw err;
+  let lastErr;
+  for (const model of GEMINI_CHAIN) {
     try {
-      return await callGemini(opts, GEMINI_FALLBACK_MODEL);
-    } catch (err2) {
-      if (isQuotaError(err2) || isOverloadError(err2)) {
-        throw new GeminiError(
-          429,
-          isOverloadError(err2) ? "Every model I can reach is overloaded right now, sir \u2014 that usually clears within a minute. Try again shortly." : "I've hit the limits on every AI provider for now, sir \u2014 quotas reset within minutes to hours. Give it a short while and try again."
-        );
-      }
-      throw err2;
+      return await callGemini(opts, model);
+    } catch (err) {
+      lastErr = err;
+      if (!isQuotaError(err) && !isOverloadError(err)) throw err;
+      console.warn(`[llm] gemini ${model} unavailable, trying next:`, err.message.slice(0, 120));
     }
   }
+  throw new GeminiError(
+    429,
+    isOverloadError(lastErr) ? "Every model I can reach is overloaded right now, sir \u2014 that usually clears within a minute. Try again shortly." : "I've hit the limits on every AI provider for now, sir \u2014 quotas reset within minutes to hours. Give it a short while and try again."
+  );
 }
 async function generateStructured(opts) {
   const system = `${opts.system}

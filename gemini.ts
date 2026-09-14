@@ -19,6 +19,19 @@ export const GEMINI_MODEL = 'gemini-3.6-flash';
  */
 export const GEMINI_FALLBACK_MODEL = 'gemini-flash-latest';
 
+/**
+ * Gemini models to try in order. Distinct models, not aliases: probed live,
+ * gemini-flash-latest resolves to the same capacity as gemini-3.6-flash, so
+ * "falling back" to it during an overload just hit the same overloaded pool
+ * and failed identically. gemini-3.5-flash is a genuinely different
+ * generation, so it survives a 3.6 overload.
+ *
+ * Kept as a list rather than primary+fallback because the failure this fixes
+ * was structural: with Groq and NIM both serving retired models, Gemini is
+ * the whole chain, and one model deep is not a chain.
+ */
+export const GEMINI_CHAIN = ['gemini-3.6-flash', 'gemini-3.5-flash'] as const;
+
 /** Does this upstream error mean "quota/rate exhausted for this model"? */
 export function isQuotaError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);

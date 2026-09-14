@@ -15,7 +15,7 @@
  * NVIDIA_API_KEY, GEMINI_API_KEY) are server-side only; a missing key just
  * skips that hop.
  */
-import { getGemini, GEMINI_MODEL, GEMINI_FALLBACK_MODEL, isQuotaError, isOverloadError, GeminiError, extractJson } from './gemini';
+import { getGemini, GEMINI_CHAIN, isQuotaError, isOverloadError, GeminiError, extractJson } from './gemini';
 
 export { GeminiError, extractJson };
 
@@ -138,28 +138,26 @@ export async function generateChat(opts: ChatOptions): Promise<string> {
     }
   }
 
-  try {
-    return await callGemini(opts, GEMINI_MODEL);
-  } catch (err) {
-    // A transient 503 used to throw straight through here, which took Jarvis
-    // down entirely whenever Gemini was the last provider standing — the
-    // fallback model was never even tried. Overload is precisely the case
-    // worth retrying.
-    if (!isQuotaError(err) && !isOverloadError(err)) throw err;
+  // Walk the Gemini models in order. Only quota/overload advances to the next
+  // one — a genuine error (bad request, dead model) still throws immediately,
+  // since retrying it on another model would just fail the same way slower.
+  let lastErr: unknown;
+  for (const model of GEMINI_CHAIN) {
     try {
-      return await callGemini(opts, GEMINI_FALLBACK_MODEL);
-    } catch (err2) {
-      if (isQuotaError(err2) || isOverloadError(err2)) {
-        throw new GeminiError(
-          429,
-          isOverloadError(err2)
-            ? "Every model I can reach is overloaded right now, sir — that usually clears within a minute. Try again shortly."
-            : "I've hit the limits on every AI provider for now, sir — quotas reset within minutes to hours. Give it a short while and try again.",
-        );
-      }
-      throw err2;
+      return await callGemini(opts, model);
+    } catch (err) {
+      lastErr = err;
+      if (!isQuotaError(err) && !isOverloadError(err)) throw err;
+      console.warn(`[llm] gemini ${model} unavailable, trying next:`, (err as Error).message.slice(0, 120));
     }
   }
+
+  throw new GeminiError(
+    429,
+    isOverloadError(lastErr)
+      ? "Every model I can reach is overloaded right now, sir — that usually clears within a minute. Try again shortly."
+      : "I've hit the limits on every AI provider for now, sir — quotas reset within minutes to hours. Give it a short while and try again.",
+  );
 }
 
 /** One structured-output call through the chain: returns JSON parsed to T. */
