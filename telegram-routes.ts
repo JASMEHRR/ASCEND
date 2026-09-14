@@ -129,8 +129,21 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Telegram webhook failed';
     logEvent({ level: 'error', scope: 'telegram', message });
-    // Still 200 — Telegram retries on non-2xx, and a retry won't fix a
-    // model/Firestore failure, just resend the same message pointlessly.
+    // Previously this just logged and went silent — the message vanished
+    // with no sign it ever arrived. Best-effort notify instead: if the
+    // token/chat id were ever readable this far, at least say something
+    // broke, rather than leaving the user wondering if Telegram ate it.
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    const chatId = Number(process.env.TELEGRAM_CHAT_ID);
+    if (token && chatId) {
+      try {
+        await sendTelegramMessage(token, chatId, `Something went wrong on my end: ${message}`);
+      } catch {
+        /* the original error is already logged; a second failure here isn't worth surfacing */
+      }
+    }
+    // Still 200 to Telegram itself — retries on non-2xx, and a retry won't
+    // fix a model/Firestore failure, just resend the same message pointlessly.
     res.status(200).end();
   }
 });

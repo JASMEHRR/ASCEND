@@ -1069,6 +1069,14 @@ telegramRouter.post("/webhook", async (req, res) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Telegram webhook failed";
     logEvent({ level: "error", scope: "telegram", message });
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    const chatId = Number(process.env.TELEGRAM_CHAT_ID);
+    if (token && chatId) {
+      try {
+        await sendTelegramMessage(token, chatId, `Something went wrong on my end: ${message}`);
+      } catch {
+      }
+    }
     res.status(200).end();
   }
 });
