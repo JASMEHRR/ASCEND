@@ -28,7 +28,8 @@ export const TELEGRAM_TOOLS = [
       "Create a reminder that pops up on the user's desktop and in Ascend at the given time. Use for 'remind me to X at Y', 'wake me at 6', 'ping me before the call'.",
     parameters: {
       text: 'what to remind them about, in their own words',
-      time: 'ISO 8601 local datetime, e.g. 2026-09-15T18:30:00',
+      time: 'ISO 8601 local datetime of the FIRST occurrence, e.g. 2026-09-15T18:30:00',
+      repeatMinutes: 'optional: repeat every N minutes after that (e.g. 120 for every 2 hours), for things like "remind me to drink water". Omit for a one-time reminder.',
     },
   },
   {
@@ -65,6 +66,7 @@ export const TELEGRAM_TOOLS = [
       match: 'words from the current reminder text to find it',
       text: 'optional new text',
       time: 'optional new ISO 8601 local datetime',
+      repeatMinutes: 'optional: set to repeat every N minutes, or 0 to stop it repeating',
     },
   },
   {
@@ -126,6 +128,7 @@ export async function runTelegramTool(
         const due = new Date(time);
         if (!text) return 'reminder needs something to say';
         if (!time || Number.isNaN(due.getTime())) return 'reminder failed (bad time)';
+        const repeatMinutes = Math.round(Number(args.repeatMinutes) || 0);
         // Same shape jarvis-desktop writes, so its existing listener picks
         // this up and schedules the notification with no changes there.
         await db.collection(`users/${uid}/reminders`).add({
@@ -135,8 +138,11 @@ export async function runTelegramTool(
           notified: false,
           createdAt: new Date().toISOString(),
           source: 'telegram',
+          ...(repeatMinutes > 0 ? { repeatMinutes } : {}),
         });
-        return `reminder set for ${due.toLocaleString()}`;
+        return repeatMinutes > 0
+          ? `set — first at ${due.toLocaleString()}, then every ${repeatMinutes} min`
+          : `reminder set for ${due.toLocaleString()}`;
       }
 
       case 'addHabit': {
@@ -226,6 +232,10 @@ export async function runTelegramTool(
           // Re-arm it: the desktop app skips anything already notified, so a
           // rescheduled reminder that kept notified:true would never fire.
           fields.notified = false;
+        }
+        if (args.repeatMinutes !== undefined) {
+          const n = Math.round(Number(args.repeatMinutes) || 0);
+          fields.repeatMinutes = n > 0 ? n : null; // null reads as falsy everywhere this field is checked
         }
         if (!Object.keys(fields).length) return 'nothing to change';
         await db.doc(`users/${uid}/reminders/${hit.id}`).update(fields);

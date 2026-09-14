@@ -459,6 +459,8 @@ You receive a CONTEXT snapshot of the live app: the current page, the user's met
 
 \`postStudio\`, when present (desktop app only), is a separate local agent system on the user's own machine \u2014 a different piece of software than Ascend. It has four independent keys: \`inbox\` (their monitored email, what was judged important), \`apply\` (things they're tracking to apply to and what's closing soon), \`classwork\` (outstanding/overdue assignments), \`automatic\` (whether those background agents are actually running). Each key is EITHER real data OR its own \`{"error": "..."}\` \u2014 read them independently; one key being unreachable says nothing about the others, so never describe the whole block as "offline" because one part of it is. If a key has real data, use it and don't call it offline.
 
+On Telegram, setReminder takes an optional repeatMinutes for recurring nudges ("remind me to drink water every 2 hours") \u2014 it keeps firing on that interval indefinitely until deleted or edited to stop, unlike a plain reminder which fires once.
+
 On Telegram, price-alert tools (setPriceAlert/listPriceAlerts/deletePriceAlert) check ticker symbols against a live quote before creating an alert, and it fires exactly once \u2014 mention that to the user rather than implying it keeps watching after it fires.
 
 On Telegram specifically, \`postStudio\` is a MIRROR written by the desktop app, not a live read \u2014 it carries a \`staleness\` field saying how old it is. Quote that freshness whenever you use the block: reporting a six-hour-old classwork list as if it were current is worse than saying you don't know. If \`postStudio\` is absent entirely on Telegram, the desktop app has never mirrored it; say that rather than implying the modules are broken.
@@ -1034,7 +1036,8 @@ var TELEGRAM_TOOLS = [
     description: "Create a reminder that pops up on the user's desktop and in Ascend at the given time. Use for 'remind me to X at Y', 'wake me at 6', 'ping me before the call'.",
     parameters: {
       text: "what to remind them about, in their own words",
-      time: "ISO 8601 local datetime, e.g. 2026-09-15T18:30:00"
+      time: "ISO 8601 local datetime of the FIRST occurrence, e.g. 2026-09-15T18:30:00",
+      repeatMinutes: 'optional: repeat every N minutes after that (e.g. 120 for every 2 hours), for things like "remind me to drink water". Omit for a one-time reminder.'
     }
   },
   {
@@ -1066,7 +1069,8 @@ var TELEGRAM_TOOLS = [
     parameters: {
       match: "words from the current reminder text to find it",
       text: "optional new text",
-      time: "optional new ISO 8601 local datetime"
+      time: "optional new ISO 8601 local datetime",
+      repeatMinutes: "optional: set to repeat every N minutes, or 0 to stop it repeating"
     }
   },
   {
@@ -1114,15 +1118,17 @@ async function runTelegramTool(uid, call) {
         const due = new Date(time);
         if (!text) return "reminder needs something to say";
         if (!time || Number.isNaN(due.getTime())) return "reminder failed (bad time)";
+        const repeatMinutes = Math.round(Number(args.repeatMinutes) || 0);
         await db.collection(`users/${uid}/reminders`).add({
           text,
           dueAt: due.toISOString(),
           done: false,
           notified: false,
           createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-          source: "telegram"
+          source: "telegram",
+          ...repeatMinutes > 0 ? { repeatMinutes } : {}
         });
-        return `reminder set for ${due.toLocaleString()}`;
+        return repeatMinutes > 0 ? `set \u2014 first at ${due.toLocaleString()}, then every ${repeatMinutes} min` : `reminder set for ${due.toLocaleString()}`;
       }
       case "addHabit": {
         const label = String(args.label ?? "").trim();
@@ -1191,6 +1197,10 @@ async function runTelegramTool(uid, call) {
           if (Number.isNaN(due.getTime())) return "that time did not parse";
           fields.dueAt = due.toISOString();
           fields.notified = false;
+        }
+        if (args.repeatMinutes !== void 0) {
+          const n = Math.round(Number(args.repeatMinutes) || 0);
+          fields.repeatMinutes = n > 0 ? n : null;
         }
         if (!Object.keys(fields).length) return "nothing to change";
         await db.doc(`users/${uid}/reminders/${hit.id}`).update(fields);
@@ -1273,7 +1283,12 @@ async function runTelegramCron(uid, token, chatId) {
       if (r.done || r.notified) continue;
       if (!r.dueAt || Date.parse(r.dueAt) > now) continue;
       messages.push(`\u23F0 Reminder: ${r.text ?? "(untitled)"}`);
-      await db.doc(`users/${uid}/reminders/${d.id}`).update({ notified: true });
+      if (r.repeatMinutes && r.repeatMinutes > 0) {
+        const nextDue = new Date(now + r.repeatMinutes * 6e4).toISOString();
+        await db.doc(`users/${uid}/reminders/${d.id}`).update({ dueAt: nextDue, notified: false });
+      } else {
+        await db.doc(`users/${uid}/reminders/${d.id}`).update({ notified: true });
+      }
     }
     checked.push("reminders");
   } catch (err) {

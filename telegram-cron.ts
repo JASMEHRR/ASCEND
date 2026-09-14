@@ -85,11 +85,26 @@ export async function runTelegramCron(
     const snap = await db.collection(`users/${uid}/reminders`).get();
     const now = Date.now();
     for (const d of snap.docs) {
-      const r = d.data() as { text?: string; dueAt?: string; done?: boolean; notified?: boolean };
+      const r = d.data() as {
+        text?: string;
+        dueAt?: string;
+        done?: boolean;
+        notified?: boolean;
+        repeatMinutes?: number;
+      };
       if (r.done || r.notified) continue;
       if (!r.dueAt || Date.parse(r.dueAt) > now) continue;
       messages.push(`⏰ Reminder: ${r.text ?? '(untitled)'}`);
-      await db.doc(`users/${uid}/reminders/${d.id}`).update({ notified: true });
+      // Recurring reminders reschedule instead of staying fired — same
+      // behavior as jarvis-desktop's own timer, so whichever surface catches
+      // a given firing advances it identically rather than one path leaving
+      // it dead.
+      if (r.repeatMinutes && r.repeatMinutes > 0) {
+        const nextDue = new Date(now + r.repeatMinutes * 60000).toISOString();
+        await db.doc(`users/${uid}/reminders/${d.id}`).update({ dueAt: nextDue, notified: false });
+      } else {
+        await db.doc(`users/${uid}/reminders/${d.id}`).update({ notified: true });
+      }
     }
     checked.push('reminders');
   } catch (err) {
