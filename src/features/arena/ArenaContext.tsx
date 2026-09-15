@@ -49,6 +49,7 @@ import {
 import { migrateRitualsOnce } from './data/migrate';
 import type { MessageDoc } from './data/schema';
 import { todayStr, weekDays, weekKey } from './logic/dates';
+import { compareHabits } from './logic/slots';
 import { clearedDay, dailyStreak } from './logic/streaks';
 import { tilesEarnedOn, wallet, weekMisses } from './logic/tiles';
 import type { DayKey, Entry, Habit, Player, Room } from './logic/types';
@@ -211,7 +212,15 @@ export function ArenaProvider({ children }: { children: ReactNode }) {
     return () => unsubs.forEach((u) => u());
   }, [roomId]);
 
-  const mine = useMemo(() => habits.filter((h) => !h.removedAt || weekKey(h.removedAt.slice(0, 10)) >= weekKey(today)), [habits, today]);
+  // Sorted here rather than in each panel so the board, the room's view and
+  // Today all read a habit list in the same order.
+  const mine = useMemo(
+    () =>
+      habits
+        .filter((h) => !h.removedAt || weekKey(h.removedAt.slice(0, 10)) >= weekKey(today))
+        .sort(compareHabits),
+    [habits, today],
+  );
 
   const todayTiles = useMemo(() => tilesEarnedOn(mine, entries, today), [mine, entries, today]);
   const misses = useMemo(() => weekMisses(mine, entries, today, today), [mine, entries, today]);

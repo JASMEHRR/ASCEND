@@ -272,7 +272,28 @@ function DitherCanvas({
       onReady(index, draw);
     };
 
-    img.src = src;
+    // Deferred until the field is nearly in view. `new Image()` ignores
+    // loading="lazy" — it fetches the moment src is set — so mounting the
+    // helix pulled all nine captures (~800KB) before the visitor had scrolled
+    // past the hero, competing with the one screenshot that is actually on
+    // screen. rootMargin buys a full viewport of warning, so a card is still
+    // painted by the time it arrives.
+    const canvas = canvasRef.current;
+    if (!canvas || typeof IntersectionObserver === 'undefined') {
+      img.src = src;
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          io.disconnect();
+          img.src = src;
+        }
+      },
+      { rootMargin: '100% 0px' },
+    );
+    io.observe(canvas);
+    return () => io.disconnect();
   }, [src, w, h, index, onReady]);
 
   return <canvas ref={canvasRef} style={{ width: w, height: h }} className="block" />;

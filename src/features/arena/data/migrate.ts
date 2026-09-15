@@ -10,26 +10,10 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../../../lib/firebase';
 import { RITUALS } from '../../../constants';
+import { iconNameFor } from '../icons';
 import { addHabit, listHabits } from './habits';
 
 const FLAG = (uid: string) => doc(db, `users/${uid}/arenaMeta/migration`);
-
-/** Icons roughly matched from the ritual name, same idea as habit-arena's. */
-function iconFor(name: string): string {
-  const n = name.toLowerCase();
-  if (/wake|morning|sun/.test(n)) return 'sunrise';
-  if (/meditat|breath/.test(n)) return 'brain';
-  if (/shower|cold/.test(n)) return 'droplets';
-  if (/read|book/.test(n)) return 'book-open';
-  if (/work|deep|focus/.test(n)) return 'target';
-  if (/vitamin|med|pill/.test(n)) return 'pill';
-  if (/detox|digital|phone/.test(n)) return 'smartphone';
-  if (/skin|care/.test(n)) return 'sparkles';
-  if (/journal|grateful/.test(n)) return 'notebook-pen';
-  if (/sleep|bed/.test(n)) return 'moon';
-  if (/plan|review/.test(n)) return 'list-checks';
-  return 'check';
-}
 
 /** A colour per ritual category, so the imported set still reads as a routine. */
 const CATEGORY_COLOR: Record<string, string> = {
@@ -63,7 +47,7 @@ export async function migrateRitualsOnce(uid: string): Promise<number> {
     await addHabit(uid, {
       label: r.name,
       kind: 'good',
-      icon: iconFor(r.name),
+      icon: iconNameFor(r.name),
       color: CATEGORY_COLOR[r.category] ?? '#10b981',
       startsAt,
     });

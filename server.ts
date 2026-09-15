@@ -21,6 +21,9 @@ import { ttsRouter } from "./tts-routes";
 import { searchRouter } from "./search-routes";
 import { kiteRouter } from "./kite-routes";
 import { telegramRouter } from "./telegram-routes";
+import { llmKeysRouter } from "./llm-keys-routes";
+import { timetableRouter } from "./timetable-routes";
+import { googleOAuthRouter } from "./google-oauth-routes";
 
 dotenv.config({ override: true });
 
@@ -29,6 +32,8 @@ app.set("trust proxy", true);
 // Mounted BEFORE the app-wide 256kb JSON parser: audio payloads need the
 // router's own larger body limit, and Express uses the first matching parser.
 app.use("/api/transcribe", transcribeRouter);
+// Timetable photos are similarly oversized for the app-wide limit.
+app.use("/api/timetable", timetableRouter);
 app.use(express.json({ limit: "256kb" }));
 
 // LaunchKit AI endpoints (stateless; persistence lives client-side in Firestore).
@@ -46,6 +51,12 @@ app.use("/api/kite", kiteRouter);
 // Two-way texting with Jarvis over Telegram — no browser/Electron session
 // involved; the webhook builds its own context via the Admin SDK.
 app.use("/api/telegram", telegramRouter);
+// Test a provider key from the Settings UI before it's trusted in the pool.
+app.use("/api/llm-keys", llmKeysRouter);
+// Server-side Google OAuth (offline/refresh tokens) — lets telegram-cron read
+// Calendar with no browser open. Separate from GoogleContext's client-side
+// token flow, which only lasts while a tab is open.
+app.use("/api/google-oauth", googleOAuthRouter);
 
 // The AI physiotherapist's persona and safety rules. Personalise the
 // conditions / trek details below as the user's situation changes.

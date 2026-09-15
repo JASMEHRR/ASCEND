@@ -223,3 +223,35 @@ input[type=range].glass-slider::-webkit-slider-thumb {
 input[type=range].glass-slider::-webkit-slider-thumb:hover {
   transform: scale(1.2);
 }
+
+/* Jarvis "Thinking" — a light sweeping left to right across the word, the way
+   Claude marks that it is working. Pure CSS so it costs nothing while idle,
+   and it holds still for anyone who has asked for reduced motion. */
+.jarvis-thinking {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.28) 0%,
+    rgba(255, 255, 255, 0.28) 35%,
+    rgba(255, 255, 255, 0.95) 50%,
+    rgba(255, 255, 255, 0.28) 65%,
+    rgba(255, 255, 255, 0.28) 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: jarvis-thinking-sweep 1.6s linear infinite;
+}
+
+@keyframes jarvis-thinking-sweep {
+  from { background-position: 120% 0; }
+  to { background-position: -120% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jarvis-thinking {
+    animation: none;
+    color: rgba(255, 255, 255, 0.65);
+    -webkit-text-fill-color: rgba(255, 255, 255, 0.65);
+  }
+}

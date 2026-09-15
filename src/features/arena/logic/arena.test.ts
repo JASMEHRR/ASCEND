@@ -24,6 +24,8 @@ import {
   windowDays,
 } from './tiles';
 import { halfFor, isComplete, nextSlot, placeTile, progress, revealOrder } from './reveal';
+import { compareHabits, groupBySlot, slotFor } from './slots';
+import { stepFor, stepped } from './counters';
 import { clearedDay, dailyStreak, roomStreak, weeklyStreak } from './streaks';
 import type { Entry, Habit, TilePlacement } from './types';
 
@@ -385,6 +387,116 @@ test('tilesEarnedInWindow sums earned tiles across an arbitrary span', () => {
   const es = [entry('a', '2026-08-05'), entry('a', '2026-08-06'), entry('a', '2026-08-09')];
   // A 3-day window from the 5th only sees the first two.
   assert.equal(tilesEarnedInWindow(hs, es, '2026-08-05', 3), 2);
+});
+
+test('groupBySlot orders slots by the day, not by creation', () => {
+  const hs = [
+    habit('bed', { slot: 'evening', order: 0 }),
+    habit('gym', { slot: 'morning', order: 1 }),
+    habit('wake', { slot: 'morning', order: 0 }),
+    habit('phone', { slot: 'control', order: 0 }),
+  ];
+  const groups = groupBySlot(hs);
+  assert.deepEqual(
+    groups.map((g) => g.slot.id),
+    ['morning', 'evening', 'control'],
+  );
+  // Rank decides order inside a slot.
+  assert.deepEqual(
+    groups[0].habits.map((h) => h.id),
+    ['wake', 'gym'],
+  );
+});
+
+test('groupBySlot puts unslotted habits last under Anytime', () => {
+  const groups = groupBySlot([habit('legacy'), habit('wake', { slot: 'morning', order: 0 })]);
+  assert.deepEqual(
+    groups.map((g) => g.slot.id),
+    ['morning', 'anytime'],
+  );
+  assert.equal(groups[1].habits[0].id, 'legacy');
+});
+
+test('compareHabits is stable for equal ranks, falling back to creation time', () => {
+  const a = habit('a', { slot: 'day', createdAt: '2026-01-02T00:00:00.000Z' });
+  const b = habit('b', { slot: 'day', createdAt: '2026-01-01T00:00:00.000Z' });
+  assert.deepEqual([a, b].sort(compareHabits).map((h) => h.id), ['b', 'a']);
+  // Sorting the same set twice must not shuffle it.
+  assert.deepEqual([b, a].sort(compareHabits).map((h) => h.id), ['b', 'a']);
+});
+
+test('an unknown slot value degrades to anytime rather than vanishing', () => {
+  const odd = habit('odd', { slot: 'brunch' as never });
+  const groups = groupBySlot([odd]);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].slot.id, 'anytime');
+  assert.equal(groups[0].habits[0].id, 'odd');
+});
+
+test('stepFor scales the step with the target', () => {
+  assert.equal(stepFor(3), 1); // 3 hrs of study
+  assert.equal(stepFor(20), 5); // 20 min of sunlight
+  assert.equal(stepFor(60), 5); // 60 min of practice
+  assert.equal(stepFor(5000), 500); // 5000 steps
+  // Any target is fillable by hand in a sane number of presses.
+  for (const t of [2, 3, 15, 20, 60, 100, 5000, 10000]) {
+    assert.ok(Math.ceil(t / stepFor(t)) <= 20, `${t} needs too many presses`);
+  }
+});
+
+test('stepped never leaves 0..target', () => {
+  assert.equal(stepped(0, 5000, -1), 0);
+  assert.equal(stepped(4800, 5000, 1), 5000);
+  assert.equal(stepped(5000, 5000, 1), 5000);
+  assert.equal(stepped(1, 3, -1), 0);
+});
+
+test('stepped snaps an odd typed value back onto the grid', () => {
+  // Typed 5412 steps, then pressed minus: round down to 5000, not 4912.
+  assert.equal(stepped(5412, 10000, -1), 5000);
+  assert.equal(stepped(5412, 10000, 1), 5500);
+  // Already on the grid, so it moves a whole step.
+  assert.equal(stepped(5000, 10000, 1), 5500);
+});
+
+test('slotFor files the real Week 1 board correctly', () => {
+  const expected: Record<string, string> = {
+    'Wake 6:50 AM': 'morning',
+    'Morning Sunlight': 'morning',
+    'Gym / Movement': 'morning',
+    Mobility: 'morning',
+    'Attend & Engage in Class': 'day',
+    'Library Study': 'day',
+    'Deep Study': 'day',
+    'Problem Practice': 'day',
+    'Active Recall': 'day',
+    'Build / Claude': 'day',
+    Steps: 'day',
+    'Personal Connections': 'evening',
+    'Night Planning': 'evening',
+    'Digital Sunset': 'evening',
+    'Sleep by 11:30': 'evening',
+    'No Phone During Study': 'control',
+    'Instagram over 30 min': 'control',
+    'Blitz Chess over 20 min': 'control',
+    'No Phone in Bed': 'control',
+  };
+  for (const [label, slot] of Object.entries(expected)) {
+    assert.equal(slotFor(label), slot, `${label} should be ${slot}`);
+  }
+});
+
+test('slotFor reads a limit as control, not as the thing being limited', () => {
+  // "No Phone in Bed" names a bed; filing it under Evening would be wrong.
+  assert.equal(slotFor('No Phone in Bed'), 'control');
+  assert.equal(slotFor('No scrolling before class'), 'control');
+  // A plain bedtime habit still reads as evening.
+  assert.equal(slotFor('Bed by midnight'), 'evening');
+});
+
+test('slotFor admits when it does not know', () => {
+  assert.equal(slotFor('Xyzzy'), 'anytime');
+  assert.equal(slotFor(''), 'anytime');
 });
 
 console.log(`arena logic: ${passed} tests passed`);

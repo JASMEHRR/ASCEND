@@ -1,14 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
-import { motion } from 'motion/react';
 import { Mic, MicOff, Radio, Send, Square, Volume2, VolumeX } from 'lucide-react';
 import { useJarvis } from '../engine/JarvisProvider';
 import type { JarvisMessage } from '../types';
 import MessageContent from './MessageContent';
-import { useTypewriter } from './useTypewriter';
+import { useTypewriter, type TypewriterSync } from './useTypewriter';
 
-function Bubble({ message, animate, stopSignal }: { message: JarvisMessage; animate: boolean; stopSignal: number }) {
+function Bubble({
+  message,
+  animate,
+  stopSignal,
+  sync,
+}: {
+  message: JarvisMessage;
+  animate: boolean;
+  stopSignal: number;
+  sync?: TypewriterSync;
+}) {
   const isUser = message.role === 'user';
-  const { shown, done, skip } = useTypewriter(message.content, animate && !isUser);
+  const { shown, done, skip } = useTypewriter(message.content, animate && !isUser, sync);
 
   useEffect(() => {
     if (stopSignal > 0) skip();
@@ -110,7 +119,19 @@ export default function JarvisConsole({ autoFocus = false, fill = false }: { aut
         }`}
       >
         {visibleMessages.map((m, i) => (
-          <Bubble key={i} message={m} animate={i === visibleMessages.length - 1 && m.role === 'assistant'} stopSignal={stopSignal} />
+          <Bubble
+            key={i}
+            message={m}
+            animate={i === visibleMessages.length - 1 && m.role === 'assistant'}
+            stopSignal={stopSignal}
+            // Only the newest reply is the one being spoken; older bubbles are
+            // history and must never sit waiting on audio.
+            sync={
+              i === visibleMessages.length - 1 && m.role === 'assistant'
+                ? { pending: voice.speechPending, cue: voice.speechCue }
+                : undefined
+            }
+          />
         ))}
         {voice.interim && (
           <div className="flex justify-end">
@@ -118,10 +139,8 @@ export default function JarvisConsole({ autoFocus = false, fill = false }: { aut
           </div>
         )}
         {thinking && (
-          <div className="flex gap-1.5 px-2" aria-label="JARVIS is thinking">
-            {[0, 1, 2].map((i) => (
-              <motion.span key={i} animate={{ opacity: [0.2, 1, 0.2] }} transition={{ repeat: Infinity, duration: 1, delay: i * 0.2 }} className="h-1.5 w-1.5 rounded-full bg-brand-400" />
-            ))}
+          <div className="px-2" aria-live="polite" aria-label="JARVIS is thinking">
+            <span className="jarvis-thinking text-[13px] font-semibold">Thinking</span>
           </div>
         )}
       </div>

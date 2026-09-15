@@ -27,6 +27,9 @@ export interface LlmKey {
   disabledUntil?: string | null;
   lastError?: string | null;
   addedAt: string;
+  /** Result of the Settings UI's "Test" action — a key that has never
+   *  passed a real completion is skipped here even if not on cooldown. */
+  testOk?: boolean | null;
 }
 
 const POOL_TTL_MS = 20_000;
@@ -54,7 +57,12 @@ export async function activeKeysFor(provider: LlmProvider): Promise<LlmKey[]> {
     cache = { at: Date.now(), keys: await loadPool() };
   }
   const now = Date.now();
-  return cache.keys.filter((k) => k.provider === provider && !(k.disabledUntil && Date.parse(k.disabledUntil) > now));
+  return cache.keys.filter(
+    (k) =>
+      k.provider === provider &&
+      k.testOk !== false &&
+      !(k.disabledUntil && Date.parse(k.disabledUntil) > now),
+  );
 }
 
 /** Put a key on cooldown after a quota/rate-limit-shaped failure. Fire-and-

@@ -39,6 +39,17 @@ export interface PuzzleWindow {
 export type HabitKind = 'good' | 'bad';
 
 /**
+ * Where a habit sits in the shape of a day. Purely presentational — it changes
+ * nothing about scoring — but a board of nineteen habits in arbitrary order is
+ * a wall to be endured rather than a day to be walked down, and the Today
+ * screen is the one that decides whether any of this survives week one.
+ *
+ * 'anytime' is the absence of a choice, not a time: habits created before slots
+ * existed (and any the assistant adds) land there rather than being guessed at.
+ */
+export type HabitSlot = 'morning' | 'day' | 'evening' | 'control' | 'anytime';
+
+/**
  * How a bad habit scores.
  *   reward_avoid — earn a tile when you explicitly log it avoided
  *   penalty_do   — no tile, and doing it burns a miss
@@ -63,6 +74,10 @@ export interface Habit {
    * Changeable at any time.
    */
   private?: boolean;
+  /** Which part of the day this belongs to. Absent means 'anytime'. */
+  slot?: HabitSlot;
+  /** Rank within the slot. Absent sorts last, then by creation time. */
+  order?: number;
   /** Counter habits need N reps to count as done (e.g. 8 glasses). Default 1. */
   target?: number;
   /** Unit label for counter habits, e.g. 'glasses', 'hours'. */

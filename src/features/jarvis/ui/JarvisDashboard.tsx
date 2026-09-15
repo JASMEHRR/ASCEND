@@ -35,7 +35,7 @@ import JarvisOrb, { useOrbState, type OrbState } from './JarvisOrb';
 import PlanApprovalCard from '../../planning/PlanApprovalCard';
 import HabitsPanel from '../../arena/panels/HabitsPanel';
 import { useArenaOptional } from '../../arena/ArenaContext';
-import { isDone } from '../../arena/logic/tiles';
+import { activeHabits, isDone } from '../../arena/logic/tiles';
 
 interface Props {
   state: OSState;
@@ -108,8 +108,11 @@ export default function JarvisDashboard({ state, updateState, setView, openSetti
   // Discipline now counts Arena habits, so this number and the leaderboard
   // are reading the same day.
   const arena = useArenaOptional();
+  // Only habits live today, or a habit starting next week would count against
+  // the discipline score before it had ever been askable.
+  const arenaLive = arena ? activeHabits(arena.habits, arena.today) : [];
   const arenaProgress = arena
-    ? { done: arena.habits.filter((h) => isDone(h, arena.entries, arena.today)).length, total: arena.habits.length }
+    ? { done: arenaLive.filter((h) => isDone(h, arena.entries, arena.today)).length, total: arenaLive.length }
     : undefined;
   const score = disciplineScore(state, arenaProgress);
   const streak = effectiveStreak(state);

@@ -35,6 +35,7 @@
 import { getAdminDb } from './admin-db';
 import { fetchQuote } from './stocks-routes';
 import { sendTelegramMessage as send } from './telegram-send';
+import { collectCalendarAlerts } from './google-oauth-routes';
 
 /** Past this, the desktop mirror is treated as too old to raise alerts from. */
 const MIRROR_FRESH_MINUTES = 30;
@@ -144,6 +145,69 @@ export async function runTelegramCron(
     }
   } catch (err) {
     console.warn('[telegram-cron] mirror failed:', (err as Error).message);
+  }
+
+  // ── next lesson (timetable) ─────────────────────────────────────────────
+  // A recurring weekly schedule, not one-shot reminders — see
+  // src/features/timetable/types.ts. Computed fresh each pass rather than
+  // materialised into `reminders`, so editing the timetable takes effect
+  // immediately with nothing stale left behind from the old schedule.
+  try {
+    const snap = await db.doc(`users/${uid}/timetable/main`).get();
+    if (snap.exists) {
+      const data = snap.data() as { lessons?: { day?: number; start?: string; subject?: string; room?: string }[]; timeZone?: string };
+      const tz = data.timeZone || 'UTC';
+      const now = new Date();
+      // "day HH:MM" in the user's own zone — Node's Intl has zone data built
+      // in, no extra dependency needed for what is otherwise a one-liner.
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: tz,
+        weekday: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).formatToParts(now);
+      const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+      const WEEKDAY_NUM: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+      const today = WEEKDAY_NUM[get('weekday')];
+      const nowHM = `${get('hour').padStart(2, '0')}:${get('minute').padStart(2, '0')}`;
+      const dateKey = now.toISOString().slice(0, 10);
+
+      for (const l of data.lessons ?? []) {
+        if (l.day !== today || !l.start || !l.subject) continue;
+        // Fires the pass whose "5 minutes before" clock-time matches now,
+        // within the cron's own polling granularity rather than an exact
+        // instant — see the granularity note in this file's header.
+        const [h, m] = l.start.split(':').map(Number);
+        if (Number.isNaN(h) || Number.isNaN(m)) continue;
+        const startMin = h * 60 + m;
+        const [nh, nm] = nowHM.split(':').map(Number);
+        const nowMin = nh * 60 + nm;
+        const until = startMin - nowMin;
+        if (until < 0 || until > 6) continue; // window: due now through 6 min out
+
+        const key = `lesson:${dateKey}:${l.day}:${l.start}:${l.subject}`;
+        if (seen.has(key)) continue;
+        messages.push(`🎓 **${l.subject}** starts at ${l.start}${l.room ? ` (${l.room})` : ''} — ${until <= 0 ? 'now' : `in ${until} min`}.`);
+        newlySeen.push(key);
+      }
+      checked.push(`timetable (${(data.lessons ?? []).length} lessons, today=${today})`);
+    } else {
+      checked.push('no timetable set');
+    }
+  } catch (err) {
+    console.warn('[telegram-cron] timetable failed:', (err as Error).message);
+  }
+
+  // ── calendar events (server-side Google OAuth) ──────────────────────────
+  // Distinct from the timetable above: one-off Google Calendar events rather
+  // than a recurring weekly grid. Silently no-ops if Calendar was never
+  // connected (see google-oauth-routes.ts) — nothing to check, nothing sent.
+  try {
+    const summary = await collectCalendarAlerts(db, uid, seen, messages, newlySeen);
+    checked.push(summary);
+  } catch (err) {
+    console.warn('[telegram-cron] calendar failed:', (err as Error).message);
   }
 
   // ── price alerts ────────────────────────────────────────────────────────

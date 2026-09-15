@@ -49,6 +49,13 @@ export interface FeatureModule {
   nav: boolean;
   /** Also appears in the space-constrained mobile bottom nav. */
   mobile?: boolean;
+  /**
+   * One-word name for the mobile bar, which shows the label of the active
+   * module only — eight unlabelled glyphs is a memory test, and there is no
+   * width for "Strategic Command" beside seven other icons. Falls back to
+   * `label` when a module's name is already short enough.
+   */
+  short?: string;
   /** Enabled for new users before they customise anything. */
   defaultEnabled: boolean;
   /**
@@ -68,6 +75,7 @@ export const FEATURES: FeatureModule[] = [
     core: true,
     nav: true,
     mobile: true,
+    short: 'Home',
     defaultEnabled: true,
     status: 'active',
   },
@@ -88,6 +96,7 @@ export const FEATURES: FeatureModule[] = [
     icon: Activity,
     nav: true,
     mobile: true,
+    short: 'Physio',
     defaultEnabled: true,
     status: 'active',
   },
@@ -98,6 +107,7 @@ export const FEATURES: FeatureModule[] = [
     icon: Lightbulb,
     nav: true,
     mobile: true,
+    short: 'Strategy',
     defaultEnabled: true,
     status: 'active',
   },
@@ -108,6 +118,7 @@ export const FEATURES: FeatureModule[] = [
     icon: Eye,
     nav: true,
     mobile: true,
+    short: 'Vision',
     defaultEnabled: true,
     status: 'active',
   },
@@ -118,6 +129,7 @@ export const FEATURES: FeatureModule[] = [
     icon: ShoppingCart,
     nav: true,
     mobile: true,
+    short: 'Buy',
     defaultEnabled: true,
     status: 'active',
   },
@@ -169,6 +181,7 @@ export const FEATURES: FeatureModule[] = [
     icon: LineChart,
     nav: true,
     mobile: true,
+    short: 'Stocks',
     defaultEnabled: true,
     status: 'active',
   },

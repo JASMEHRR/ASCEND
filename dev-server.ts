@@ -28,17 +28,21 @@ const isProd = process.env.NODE_ENV === 'production';
       console.log(`\n  ➜  Ascend Protocol running at http://localhost:${port}\n`);
     });
   } else {
-    // Serve the client through Vite in middleware mode (single-port dev).
-    // The HTTP server must exist before Vite starts so its HMR websocket can
-    // attach to it — otherwise HMR silently fails to connect and the client
-    // never recovers from a stale/cold module graph.
-    const httpServer = app.listen(port, () => {
+    // Serve the client through Vite in middleware mode.
+    //
+    // HMR gets its own port rather than sharing this server's `upgrade` event.
+    // Sharing is the tidier-looking setup but it was silently failing here, and
+    // a dead HMR socket is worse than no HMR: when Vite re-optimises deps it
+    // can no longer tell the browser to reload, so the page keeps its cached
+    // pre-bundle and ends up loading two different copies of React — which
+    // renders as a blank screen that only a cache-bypassing reload clears.
+    app.listen(port, () => {
       console.log(`\n  ➜  Ascend Protocol running at http://localhost:${port}\n`);
     });
 
     const { createServer } = await import('vite');
     const vite = await createServer({
-      server: { middlewareMode: true, hmr: { server: httpServer } },
+      server: { middlewareMode: true, hmr: { port: port + 1 } },
       appType: 'spa',
     });
     app.use(vite.middlewares);

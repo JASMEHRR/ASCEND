@@ -91,7 +91,9 @@ async function activeKeysFor(provider) {
     cache = { at: Date.now(), keys: await loadPool() };
   }
   const now = Date.now();
-  return cache.keys.filter((k) => k.provider === provider && !(k.disabledUntil && Date.parse(k.disabledUntil) > now));
+  return cache.keys.filter(
+    (k) => k.provider === provider && k.testOk !== false && !(k.disabledUntil && Date.parse(k.disabledUntil) > now)
+  );
 }
 async function coolDownKey(id, reason, minutes) {
   const uid = process.env.ASCEND_UID;
@@ -205,6 +207,28 @@ async function callGemini(opts, model, apiKey) {
     }
   });
   return response.text ?? "";
+}
+async function testKey(input) {
+  const started = Date.now();
+  const opts = {
+    system: "Reply with exactly one word: OK",
+    messages: [{ role: "user", content: "ping" }],
+    maxTokens: 16
+  };
+  try {
+    if (input.provider === "gemini") {
+      await callGemini(opts, GEMINI_CHAIN[0], input.apiKey);
+    } else if (input.provider === "custom") {
+      if (!input.baseUrl || !input.model) throw new Error("custom provider needs a base URL and model");
+      await callOpenAICompat(opts, { name: "custom", url: input.baseUrl, model: input.model, timeoutMs: 15e3 }, input.apiKey);
+    } else {
+      const shape = PROVIDER_SHAPE[input.provider];
+      await callOpenAICompat(opts, shape, input.apiKey);
+    }
+    return { ok: true, latencyMs: Date.now() - started };
+  } catch (err) {
+    return { ok: false, error: (err instanceof Error ? err.message : String(err)).slice(0, 300), latencyMs: Date.now() - started };
+  }
 }
 async function generateChat(opts) {
   for (const name of ["groq", "nvidia"]) {
@@ -1771,9 +1795,32 @@ telegramRouter.post("/webhook", async (req, res) => {
   }
 });
 
+// llm-keys-routes.ts
+import { Router as Router10 } from "express";
+var llmKeysRouter = Router10();
+llmKeysRouter.post("/test", async (req, res) => {
+  const { provider, key, baseUrl, model } = req.body ?? {};
+  const validProvider = provider === "groq" || provider === "nvidia" || provider === "gemini" || provider === "custom";
+  if (!validProvider || typeof key !== "string" || !key.trim()) {
+    res.status(400).json({ ok: false, error: "provider and key are required." });
+    return;
+  }
+  if (provider === "custom" && (typeof baseUrl !== "string" || !baseUrl.trim() || typeof model !== "string" || !model.trim())) {
+    res.status(400).json({ ok: false, error: "custom provider needs a base URL and model." });
+    return;
+  }
+  const result = await testKey({
+    provider,
+    apiKey: key.trim(),
+    baseUrl: typeof baseUrl === "string" ? baseUrl.trim() : void 0,
+    model: typeof model === "string" ? model.trim() : void 0
+  });
+  res.json(result);
+});
+
 // timetable-routes.ts
-import express2, { Router as Router10 } from "express";
-var timetableRouter = Router10();
+import express2, { Router as Router11 } from "express";
+var timetableRouter = Router11();
 timetableRouter.use(express2.json({ limit: "4mb" }));
 var ALLOWED_MIME2 = /* @__PURE__ */ new Set(["image/jpeg", "image/png", "image/webp"]);
 var PROMPT = `This image is a photo of a weekly class/lecture timetable \u2014 a grid of
@@ -1854,6 +1901,7 @@ app.use("/api/tts", ttsRouter);
 app.use("/api/search", searchRouter);
 app.use("/api/kite", kiteRouter);
 app.use("/api/telegram", telegramRouter);
+app.use("/api/llm-keys", llmKeysRouter);
 app.use("/api/google-oauth", googleOAuthRouter);
 var PHYSIO_SYSTEM_PROMPT = `You are Alex, a highly knowledgeable personal AI physiotherapist assistant specialising in spinal rehab, posture correction, gait mechanics, sports recovery, and mobility training.
 

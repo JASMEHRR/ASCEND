@@ -15,7 +15,7 @@
  * carousel above the field. It was cut because it did the same job as the
  * field with fake screens, and the real captures win that comparison.
  */
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import {
   Flame,
@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import JarvisOrb from '../features/jarvis/ui/JarvisOrb';
 import ScreenField, { type FieldScreen } from './ScreenField';
+import { FEATURES as FEATURES_REGISTRY } from '../features/registry';
 
 /**
  * Real captures of the running app, in the order the field walks through
@@ -96,6 +97,16 @@ const FIELD_SCREENS: FieldScreen[] = [
     desc: 'Google, Obsidian and Zerodha Kite. Read-only, and the access stays in your browser.',
   },
 ];
+
+/**
+ * The modules that actually ship, straight from the registry.
+ *
+ * The hero claimed "9 connected modules" as a hand-typed number and never said
+ * what they were — a claim a visitor has no reason to believe. Deriving both
+ * the count and the names from FEATURES means the page cannot drift from the
+ * product: add a module and the pitch updates itself.
+ */
+const SHIPPED_MODULES = FEATURES_REGISTRY.filter((m) => m.status === 'active' && m.nav);
 
 const FEATURES = [
   {
@@ -180,6 +191,19 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
     };
   }, []);
 
+  // The orb is the tallest single thing above the headline, so it shrinks on a
+  // phone. A number, not a CSS class — JarvisOrb sizes its canvas from a prop.
+  const [narrow, setNarrow] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 639px)').matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 639px)');
+    const on = () => setNarrow(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  const heroOrb = narrow ? 62 : 88;
+
   return (
     // overflow-x-clip, NOT overflow-x-hidden: `hidden` turns this into a
     // scroll container, which silently breaks position:sticky on every
@@ -193,19 +217,23 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
           that the fold cuts through. Padding is deliberately tighter than a
           typical hero: the screenshot has to start above the fold to do its
           job, and every pixel spent above it pushes it under. */}
-      <div className="relative flex flex-col items-center px-6 pt-12 text-center sm:pt-16">
+      {/* Phone spacing is tighter throughout this block: at 375px the original
+          rhythm pushed the CTA to the bottom of the first screen and the
+          product shot entirely off it, so the visitor's first impression was
+          a sentence and a lot of dark space. */}
+      <div className="relative flex flex-col items-center px-6 pt-8 text-center sm:pt-16">
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ type: 'spring', stiffness: 220, damping: 24 }}>
-          <JarvisOrb state="idle" size={88} />
+          <JarvisOrb state="idle" size={heroOrb} />
         </motion.div>
-        <p className="mt-5 text-[11px] font-mono font-black uppercase tracking-[0.32em] text-brand-400">Ascend Protocol</p>
-        <h1 className="mt-3 max-w-4xl text-4xl font-extrabold tracking-tight sm:text-6xl">The AI-run life OS.</h1>
-        <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-white/55 sm:text-[17px]">
+        <p className="mt-3.5 text-[11px] font-mono font-black uppercase tracking-[0.32em] text-brand-400 sm:mt-5">Ascend Protocol</p>
+        <h1 className="mt-2.5 max-w-4xl text-[2rem] font-extrabold tracking-tight sm:mt-3 sm:text-6xl">The AI-run life OS.</h1>
+        <p className="mt-3 max-w-2xl text-[14px] leading-relaxed text-white/55 sm:mt-4 sm:text-[17px]">
           Habits, goals, and an AI assistant that actually sees your whole day, builds you new tools on
           request, and connects to the accounts you already use — plus a shared game with friends that
           turns showing up into something you can see grow.
         </p>
 
-        <div className="mt-7 flex flex-col items-center gap-6 sm:flex-row sm:gap-8">
+        <div className="mt-5 flex flex-col items-center gap-4 sm:mt-7 sm:flex-row sm:gap-8">
           <button
             onClick={onContinue}
             className="flex shrink-0 items-center gap-2 rounded-full bg-brand-500 px-7 py-3.5 text-sm font-bold uppercase tracking-wider text-black transition-all hover:bg-brand-400 cursor-pointer"
@@ -220,10 +248,13 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
-            className="liquid-glass-panel flex flex-wrap items-center justify-center gap-x-7 gap-y-3 rounded-2xl px-6 py-3.5 text-left"
+            // Desktop only. Beside the CTA it costs nothing, but on a phone it
+            // stacks into three rows (~138px) and repeats what the named module
+            // list directly below already proves better.
+            className="liquid-glass-panel hidden flex-wrap items-center justify-center gap-x-7 gap-y-3 rounded-2xl px-6 py-3.5 text-left sm:flex"
           >
             {[
-              { value: '9', label: 'connected modules' },
+              { value: String(SHIPPED_MODULES.length), label: 'connected modules' },
               { value: '1', label: 'AI that sees all of them' },
               { value: '∞', label: 'modules Jarvis can build you' },
             ].map((s) => (
@@ -235,12 +266,33 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
           </motion.div>
         </div>
 
+        {/* The nine, named. "9 connected modules" on its own is a number a
+            visitor has to take on faith; the list is the evidence, and it is
+            small enough to sit above the fold without pushing the screenshot
+            off it. */}
+        <motion.ul
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.45 }}
+          className="mt-5 flex max-w-3xl flex-wrap items-center justify-center gap-x-2 gap-y-1.5 sm:mt-6 sm:gap-x-2.5"
+        >
+          {SHIPPED_MODULES.map((m) => (
+            <li
+              key={m.id}
+              className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] text-white/55"
+            >
+              <m.icon size={11} className="shrink-0 text-brand-400/80" aria-hidden />
+              {m.label}
+            </li>
+          ))}
+        </motion.ul>
+
         {/* The product, inside the first screen. Tilted back a few degrees so
             it reads as an object standing in the page rather than a flat
             banner, and deliberately given no bottom padding and no bottom
             corner radius: the fold slices it, which is what makes it an
             invitation to scroll instead of a finished picture. */}
-        <div className="relative mt-12 w-full max-w-5xl" style={{ perspective: 1600 }}>
+        <div className="relative mt-8 w-full max-w-5xl sm:mt-12" style={{ perspective: 1600 }}>
           {/* Ambient glow, the same trick the rest of the page uses to stop a
               panel reading as a card pasted onto flat black. */}
           <div
@@ -257,11 +309,16 @@ export default function LandingPage({ onContinue }: { onContinue: () => void }) 
             className="liquid-glass-highlight overflow-hidden rounded-t-[1.75rem] p-2 shadow-[0_-10px_120px_-20px_rgba(16,185,129,0.3),0_40px_90px_-20px_rgba(0,0,0,0.8)] sm:p-3"
             style={{ transform: 'rotateX(7deg)', transformOrigin: 'top center' }}
           >
+            {/* The one image that is actually on screen at first paint, so it
+                is told to go first rather than queue behind the field's. */}
             <img
               src="/screens/field/dashboard.jpg"
               alt="The Ascend dashboard: discipline score, streak, today’s tasks and habits on one screen."
               width={1280}
               height={720}
+              loading="eager"
+              fetchPriority="high"
+              decoding="async"
               className="block w-full rounded-t-[1.15rem]"
             />
           </motion.div>

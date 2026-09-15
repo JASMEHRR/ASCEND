@@ -7,6 +7,7 @@ import { useArena } from '../ArenaContext';
 import { useDialog } from '../../../context/DialogContext';
 import { useToast } from '../../../context/ToastContext';
 import { REMOVAL_PENALTY_TILES } from '../logic/tiles';
+import { habitDefaults } from '../newHabit';
 
 export default function ArenaSettings() {
   const {
@@ -38,8 +39,7 @@ export default function ArenaSettings() {
     await addHabit({
       label: name,
       kind: 'good',
-      icon: 'check',
-      color: '#10b981',
+      ...habitDefaults(name),
       ...(n > 1 ? { target: n } : {}),
     });
     toast.show({ message: `"${name}" starts counting tomorrow.` });

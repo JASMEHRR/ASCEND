@@ -11,7 +11,7 @@
  */
 import { useEffect, useState } from 'react';
 import { addDoc, collection, deleteDoc, doc, onSnapshot, updateDoc } from 'firebase/firestore';
-import { Check, Clock, KeyRound, Plus, Trash2 } from 'lucide-react';
+import { Check, Clock, KeyRound, Loader2, Plus, Trash2, X } from 'lucide-react';
 import { db } from '../../lib/firebase';
 import { useAuth } from '../../context/AuthContext';
 
@@ -26,6 +26,12 @@ interface LlmKeyDoc {
   disabledUntil?: string | null;
   lastError?: string | null;
   addedAt: string;
+  /** Result of the last real completion test — separate from disabledUntil,
+   *  which tracks a *previously working* key hitting its rate limit; this
+   *  tracks whether the key ever worked at all. */
+  testOk?: boolean | null;
+  testError?: string | null;
+  testedAt?: string | null;
 }
 
 interface LlmKeyRow extends LlmKeyDoc {
@@ -41,12 +47,35 @@ const PROVIDER_LABEL: Record<Provider, string> = {
 
 const keysRef = (uid: string) => collection(db, 'users', uid, 'llmKeys');
 
-function statusFor(k: LlmKeyRow): { text: string; tone: 'ok' | 'cooling' } {
+function statusFor(k: LlmKeyRow): { text: string; tone: 'ok' | 'cooling' | 'failed' | 'untested' } {
+  // A confirmed-bad key is worse news than a cooldown (which implies it
+  // worked at least once) — check it first.
+  if (k.testOk === false) return { text: k.testError || 'test failed', tone: 'failed' };
   if (k.disabledUntil && Date.parse(k.disabledUntil) > Date.now()) {
     const mins = Math.max(1, Math.round((Date.parse(k.disabledUntil) - Date.now()) / 60000));
     return { text: `cooling down, ~${mins}m left`, tone: 'cooling' };
   }
+  if (k.testOk === undefined || k.testOk === null) return { text: 'untested', tone: 'untested' };
   return { text: 'active', tone: 'ok' };
+}
+
+interface TestResult {
+  ok: boolean;
+  error?: string;
+  latencyMs: number;
+}
+
+async function callTestEndpoint(input: { provider: Provider; key: string; baseUrl?: string; model?: string }): Promise<TestResult> {
+  try {
+    const res = await fetch('/api/llm-keys/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    return (await res.json()) as TestResult;
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'network error', latencyMs: 0 };
+  }
 }
 
 export default function LlmKeysSettings() {
@@ -59,6 +88,8 @@ export default function LlmKeysSettings() {
   const [baseUrl, setBaseUrl] = useState('');
   const [model, setModel] = useState('');
   const [saving, setSaving] = useState(false);
+  /** Keys currently being (re)tested — drives the inline spinner per row. */
+  const [testing, setTesting] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!uid) return;
@@ -67,24 +98,59 @@ export default function LlmKeysSettings() {
     });
   }, [uid]);
 
+  /** Runs the real test and writes the result onto the key's own doc, so the
+   *  status shown persists across reloads instead of living only in this
+   *  component's state. */
+  const runTest = async (id: string, input: { provider: Provider; key: string; baseUrl?: string; model?: string }) => {
+    if (!uid) return;
+    setTesting((s) => new Set(s).add(id));
+    try {
+      const result = await callTestEndpoint(input);
+      await updateDoc(doc(db, 'users', uid, 'llmKeys', id), {
+        testOk: result.ok,
+        testError: result.ok ? null : result.error || 'test failed',
+        testedAt: new Date().toISOString(),
+      });
+    } finally {
+      setTesting((s) => {
+        const next = new Set(s);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
   const add = async () => {
     if (!uid || !key.trim()) return;
     if (provider === 'custom' && (!baseUrl.trim() || !model.trim())) return;
     setSaving(true);
     try {
-      await addDoc(keysRef(uid), {
+      const trimmedKey = key.trim();
+      const trimmedBaseUrl = baseUrl.trim();
+      const trimmedModel = model.trim();
+      const ref = await addDoc(keysRef(uid), {
         provider,
         label: label.trim() || PROVIDER_LABEL[provider],
-        key: key.trim(),
-        ...(provider === 'custom' ? { baseUrl: baseUrl.trim(), model: model.trim() } : {}),
+        key: trimmedKey,
+        ...(provider === 'custom' ? { baseUrl: trimmedBaseUrl, model: trimmedModel } : {}),
         disabledUntil: null,
         lastError: null,
+        testOk: null,
+        testError: null,
+        testedAt: null,
         addedAt: new Date().toISOString(),
       } satisfies LlmKeyDoc);
       setLabel('');
       setKey('');
       setBaseUrl('');
       setModel('');
+      // Test immediately — the whole point of asking "does it work" is
+      // knowing right away, not the next time Jarvis happens to need it.
+      void runTest(ref.id, {
+        provider,
+        key: trimmedKey,
+        ...(provider === 'custom' ? { baseUrl: trimmedBaseUrl, model: trimmedModel } : {}),
+      });
     } finally {
       setSaving(false);
     }
@@ -124,6 +190,7 @@ export default function LlmKeysSettings() {
               <p className="text-[10px] font-bold uppercase tracking-wider text-white/30">{PROVIDER_LABEL[p]}</p>
               {rows.map((k) => {
                 const status = statusFor(k);
+                const isTesting = testing.has(k.id);
                 return (
                   <div
                     key={k.id}
@@ -132,21 +199,41 @@ export default function LlmKeysSettings() {
                     <KeyRound size={13} className="shrink-0 text-white/30" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[12px] font-semibold text-white/85">{k.label}</span>
-                      <span className="block font-mono text-[10px] text-white/30">
+                      <span className="block truncate font-mono text-[10px] text-white/30">
                         …{k.key.slice(-4)}
                         {k.baseUrl ? ` · ${k.baseUrl}` : ''}
                       </span>
                     </span>
                     <span
-                      className={`flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-mono ${
+                      className={`flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-mono max-w-[9rem] truncate ${
                         status.tone === 'ok'
                           ? 'bg-brand-500/15 text-brand-300 ring-1 ring-brand-500/25'
-                          : 'bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/25'
+                          : status.tone === 'failed'
+                            ? 'bg-red-500/15 text-red-300 ring-1 ring-red-500/25'
+                            : status.tone === 'untested'
+                              ? 'bg-white/[0.06] text-white/45 ring-1 ring-white/10'
+                              : 'bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/25'
                       }`}
+                      title={status.text}
                     >
-                      {status.tone === 'ok' ? <Check size={10} /> : <Clock size={10} />}
-                      {status.text}
+                      {status.tone === 'ok' ? (
+                        <Check size={10} />
+                      ) : status.tone === 'failed' ? (
+                        <X size={10} />
+                      ) : status.tone === 'untested' ? (
+                        <KeyRound size={10} />
+                      ) : (
+                        <Clock size={10} />
+                      )}
+                      <span className="truncate">{status.text}</span>
                     </span>
+                    <button
+                      onClick={() => runTest(k.id, { provider: k.provider, key: k.key, baseUrl: k.baseUrl, model: k.model })}
+                      disabled={isTesting}
+                      className="shrink-0 text-[10px] font-bold text-white/40 hover:text-brand-300 disabled:opacity-40 cursor-pointer"
+                    >
+                      {isTesting ? <Loader2 size={12} className="animate-spin" /> : 'Test'}
+                    </button>
                     {status.tone === 'cooling' && (
                       <button
                         onClick={() => reactivate(k.id)}

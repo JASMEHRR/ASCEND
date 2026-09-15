@@ -160,6 +160,42 @@ async function callGemini(opts: ChatOptions, model: string, apiKey: string): Pro
   return response.text ?? '';
 }
 
+/**
+ * Fires one minimal real completion against a single specific key — used by
+ * the Settings UI's "Test" action so a bad key is caught the moment it's
+ * added, not discovered later as a silent failure buried in server logs only
+ * the deploy owner can see. Reuses the exact same call path generateChat
+ * uses, so "test passed" means the pool will genuinely be able to use it,
+ * not just that the key superficially looks well-formed.
+ */
+export async function testKey(input: {
+  provider: 'groq' | 'nvidia' | 'gemini' | 'custom';
+  apiKey: string;
+  baseUrl?: string;
+  model?: string;
+}): Promise<{ ok: boolean; error?: string; latencyMs: number }> {
+  const started = Date.now();
+  const opts: ChatOptions = {
+    system: 'Reply with exactly one word: OK',
+    messages: [{ role: 'user', content: 'ping' }],
+    maxTokens: 16,
+  };
+  try {
+    if (input.provider === 'gemini') {
+      await callGemini(opts, GEMINI_CHAIN[0], input.apiKey);
+    } else if (input.provider === 'custom') {
+      if (!input.baseUrl || !input.model) throw new Error('custom provider needs a base URL and model');
+      await callOpenAICompat(opts, { name: 'custom', url: input.baseUrl, model: input.model, timeoutMs: 15_000 }, input.apiKey);
+    } else {
+      const shape = PROVIDER_SHAPE[input.provider];
+      await callOpenAICompat(opts, shape, input.apiKey);
+    }
+    return { ok: true, latencyMs: Date.now() - started };
+  } catch (err) {
+    return { ok: false, error: (err instanceof Error ? err.message : String(err)).slice(0, 300), latencyMs: Date.now() - started };
+  }
+}
+
 /** One chat completion through the resilient provider chain. Returns raw model
  * text; callers extractJson/parse as needed. Throws GeminiError(429) with a
  * human-readable message only when every provider is exhausted. */

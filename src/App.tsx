@@ -481,16 +481,22 @@ function MobileNavButton({
 }) {
   const Icon = module.icon;
   const active = current === module.id;
+  // Only the active module is named. Eight glyphs with no words is a memory
+  // test, but there is no room to label them all — so the label rides on the
+  // one button that can afford the width, and it grows to make room for it.
   return (
     <button
       onClick={() => onSelect(module.id as View)}
       aria-label={module.label}
       aria-current={active ? 'page' : undefined}
-      className={`relative flex min-w-0 flex-1 flex-col items-center gap-1.5 p-1 sm:p-2 rounded-xl transition-all ${
-        active ? 'text-white bg-white/10' : 'text-white/40'
+      className={`relative flex min-h-11 min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-0.5 transition-all ${
+        active ? 'flex-[2] bg-brand-500/15 text-brand-300' : 'flex-1 text-white/40'
       }`}
     >
-      <Icon size={20} />
+      <Icon size={20} className="shrink-0" />
+      {active && (
+        <span className="max-w-full truncate text-[9px] font-bold">{module.short ?? module.label}</span>
+      )}
       {badge > 0 && (
         <span className="absolute -top-1 -right-1 bg-brand-500 text-white min-w-4 h-4 rounded-full text-[9px] flex items-center justify-center font-bold px-1 ring-2 ring-app">
           {badge}

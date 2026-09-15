@@ -9,6 +9,7 @@ import { useEffect, useRef } from 'react';
 import { useJarvis } from '../jarvis/engine/JarvisProvider';
 import type { JarvisTool } from '../jarvis/types';
 import { useArenaOptional, type ArenaValue } from './ArenaContext';
+import { habitDefaults } from './newHabit';
 import { isDone } from './logic/tiles';
 
 export default function ArenaRegistrar() {
@@ -64,16 +65,16 @@ export default function ArenaRegistrar() {
           // impossible to fill in by the very path the UI leads you down.
           if (!s) return { ok: false, message: 'Arena is not ready yet' };
           const target = Math.max(1, Math.round(Number(a.target) || 1));
+          const label = String(a.label).trim();
           await s.addHabit({
-            label: String(a.label).trim(),
+            label,
             kind: 'good',
-            icon: 'check',
-            color: '#10b981',
+            ...habitDefaults(label),
             ...(target > 1 ? { target } : {}),
             ...(a.unit ? { unit: String(a.unit) } : {}),
             ...(a.isPrivate ? { private: true } : {}),
           });
-          return { ok: true, message: `added "${String(a.label).trim()}" — it starts counting tomorrow` };
+          return { ok: true, message: `added "${label}" — it starts counting tomorrow` };
         },
       },
       {

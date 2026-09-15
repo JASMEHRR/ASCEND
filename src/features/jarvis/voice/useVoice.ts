@@ -9,6 +9,16 @@ const SpeechRecognitionImpl: any =
 
 const synthAvailable = typeof window !== 'undefined' && 'speechSynthesis' in window;
 
+/** Timing of the utterance now playing, so the transcript can match it. */
+export interface SpeechCue {
+  /** Utterance generation — changes for every new reply. */
+  id: number;
+  /** performance.now() at the moment audio started. */
+  startedAt: number;
+  /** Clip length in seconds; null for browser TTS, which won't say. */
+  duration: number | null;
+}
+
 /** Persisted so Jarvis sounds the same on every reload and every session. */
 const VOICE_STORAGE_KEY = 'ascend_jarvis_voice_uri';
 const HANDS_FREE_KEY = 'ascend_jarvis_handsfree';
@@ -120,6 +130,19 @@ export function useVoice({ onResult }: UseVoiceOptions) {
   // over a newer utterance.
   const speakGenRef = useRef(0);
 
+  /**
+   * When the reply's audio actually began, and how long it runs.
+   *
+   * ElevenLabs is fetched whole before it can play, so the voice starts about
+   * two seconds after the text does — the transcript had already typed itself
+   * out by the time Jarvis began speaking. The console uses this to hold the
+   * text until the audio starts and then reveal it over the clip's real
+   * duration, so the two run together instead of racing.
+   */
+  const [speechCue, setSpeechCue] = useState<SpeechCue | null>(null);
+  /** A reply is on its way to being spoken — audio fetched, not yet playing. */
+  const [speechPending, setSpeechPending] = useState(false);
+
   const inputSupported = !!SpeechRecognitionImpl;
 
   // Voices load asynchronously (often empty on first call) — resolve the pinned
@@ -176,6 +199,10 @@ export function useVoice({ onResult }: UseVoiceOptions) {
 
   const stopSpeaking = useCallback(() => {
     speakGenRef.current += 1;
+    // Interrupted: drop the cue so a half-revealed reply finishes at its own
+    // pace instead of waiting on audio that is never going to arrive.
+    setSpeechPending(false);
+    setSpeechCue(null);
     if (synthAvailable) window.speechSynthesis.cancel();
     if (audioRef.current) {
       audioRef.current.pause();
@@ -198,8 +225,11 @@ export function useVoice({ onResult }: UseVoiceOptions) {
     }
   }, []);
 
-  const speakBrowser = useCallback((cleaned: string) => {
-    if (!synthAvailable) return;
+  const speakBrowser = useCallback((cleaned: string, gen: number) => {
+    if (!synthAvailable) {
+      setSpeechPending(false);
+      return;
+    }
     const u = new SpeechSynthesisUtterance(cleaned);
     u.rate = 1.05;
     u.pitch = 0.9;
@@ -217,9 +247,18 @@ export function useVoice({ onResult }: UseVoiceOptions) {
         (uri && !uri.startsWith(ELEVEN_PREFIX) && list.find((v) => v.voiceURI === uri)) || pickDefaultVoice(list);
     }
     if (voiceRef.current) u.voice = voiceRef.current;
-    u.onstart = () => setSpeaking(true);
+    u.onstart = () => {
+      setSpeaking(true);
+      setSpeechPending(false);
+      // No duration from SpeechSynthesis, so the transcript falls back to its
+      // own pace — it still starts in step, which is the part that showed.
+      setSpeechCue({ id: gen, startedAt: performance.now(), duration: null });
+    };
     u.onend = finishSpeaking;
-    u.onerror = () => setSpeaking(false);
+    u.onerror = () => {
+      setSpeaking(false);
+      setSpeechPending(false);
+    };
     window.speechSynthesis.speak(u);
   }, [finishSpeaking]);
 
@@ -232,6 +271,7 @@ export function useVoice({ onResult }: UseVoiceOptions) {
           body: JSON.stringify({ text: cleaned, voiceId }),
         });
         if (gen !== speakGenRef.current) return; // superseded while fetching
+
         if (!res.ok) {
           let code = '';
           try {
@@ -244,7 +284,7 @@ export function useVoice({ onResult }: UseVoiceOptions) {
             elevenDownRef.current = true;
             setElevenStatus('down');
           }
-          speakBrowser(cleaned);
+          speakBrowser(cleaned, gen);
           return;
         }
         const blob = await res.blob();
@@ -259,12 +299,23 @@ export function useVoice({ onResult }: UseVoiceOptions) {
             finishSpeaking();
           }
         };
-        audio.onplay = () => setSpeaking(true);
+        audio.onplay = () => {
+          setSpeaking(true);
+          setSpeechPending(false);
+          // duration is NaN until metadata lands; null then means "unknown",
+          // and the transcript uses its own pace rather than dividing by NaN.
+          setSpeechCue({
+            id: gen,
+            startedAt: performance.now(),
+            duration: Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : null,
+          });
+        };
         audio.onended = done;
         audio.onerror = done;
         await audio.play();
       } catch {
-        if (gen === speakGenRef.current) speakBrowser(cleaned);
+        if (gen === speakGenRef.current) speakBrowser(cleaned, gen);
+        else setSpeechPending(false);
       }
     },
     [speakBrowser, finishSpeaking],
@@ -277,11 +328,14 @@ export function useVoice({ onResult }: UseVoiceOptions) {
       const cleaned = text.replace(/[*_`#>|]/g, '');
       const gen = speakGenRef.current;
       const pinned = voiceURIRef.current;
+      // Marked pending before either path starts, so the transcript knows to
+      // wait rather than typing the reply out while the audio is still loading.
+      setSpeechPending(true);
       if (pinned?.startsWith(ELEVEN_PREFIX) && !elevenDownRef.current) {
         void speakEleven(cleaned, pinned.slice(ELEVEN_PREFIX.length), gen);
         return;
       }
-      speakBrowser(cleaned);
+      speakBrowser(cleaned, gen);
     },
     [stopSpeaking, speakBrowser, speakEleven],
   );
@@ -407,6 +461,8 @@ export function useVoice({ onResult }: UseVoiceOptions) {
   return {
     listening,
     speaking,
+    speechCue,
+    speechPending,
     interim,
     muted,
     inputSupported,
