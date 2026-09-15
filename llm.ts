@@ -144,9 +144,16 @@ async function callOpenAICompat(opts: ChatOptions, provider: ResolvedKey['provid
     const detail = (await res.text().catch(() => '')).slice(0, 300);
     throw new Error(`${provider.name} ${res.status}: ${detail}`);
   }
-  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
-  const text = data.choices?.[0]?.message?.content ?? '';
-  if (!text.trim()) throw new Error(`${provider.name} returned empty content`);
+  const data = (await res.json()) as {
+    choices?: Array<{ message?: { content?: string; reasoning_content?: string } }>;
+  };
+  const message = data.choices?.[0]?.message;
+  // Reasoning-style models (gpt-oss and similar) can put the actual answer in
+  // reasoning_content and leave content empty, depending on the serving
+  // backend and how much of the token budget the hidden reasoning consumed
+  // before ever reaching a final answer. Observed on NIM's openai/gpt-oss-20b.
+  const text = message?.content?.trim() || message?.reasoning_content?.trim() || '';
+  if (!text) throw new Error(`${provider.name} returned empty content`);
   return text;
 }
 
@@ -186,7 +193,12 @@ export async function testKey(input: {
   const opts: ChatOptions = {
     system: 'Reply with exactly one word: OK',
     messages: [{ role: 'user', content: 'ping' }],
-    maxTokens: 16,
+    // Reasoning models (gpt-oss and similar) spend tokens on hidden
+    // chain-of-thought before ever reaching the actual answer — 16 wasn't
+    // enough room for that to complete even in the best case, regardless of
+    // which field the answer landed in. 200 gives real reasoning room while
+    // still keeping the test fast.
+    maxTokens: 200,
   };
   try {
     if (input.provider === 'gemini') {
