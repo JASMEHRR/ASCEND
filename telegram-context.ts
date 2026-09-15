@@ -15,6 +15,7 @@ import { getAdminDb } from './admin-db';
 import { todayStr } from './src/features/arena/logic/dates';
 import { activeHabits, isDone, tilesEarnedOn } from './src/features/arena/logic/tiles';
 import type { Habit, Entry } from './src/features/arena/logic/types';
+import { fetchUpcomingEvents } from './google-oauth-routes';
 
 /** Same shape ArenaRegistrar.tsx sends under context.arena — see jarvis-routes.ts's persona prompt. */
 export interface ArenaContext {
@@ -34,6 +35,8 @@ export interface TelegramAppContext {
    * route can never fetch it directly — the mirror is the only path.
    */
   postStudio: (Record<string, unknown> & { staleness?: string }) | null;
+  /** null = Calendar was never connected (see google-oauth-routes.ts /start), not "no events". */
+  calendar: { summary: string; start: string }[] | null;
 }
 
 /**
@@ -45,7 +48,7 @@ export interface TelegramAppContext {
  */
 export async function buildTelegramContext(uid: string): Promise<TelegramAppContext> {
   const db = await getAdminDb();
-  if (!db) return { arena: null, pendingReminders: [], postStudio: null };
+  if (!db) return { arena: null, pendingReminders: [], postStudio: null, calendar: null };
 
   const today = todayStr();
 
@@ -114,5 +117,12 @@ export async function buildTelegramContext(uid: string): Promise<TelegramAppCont
     console.warn('[telegram-context] postStudio mirror fetch failed:', (err as Error).message);
   }
 
-  return { arena, pendingReminders, postStudio };
+  let calendar: { summary: string; start: string }[] | null = null;
+  try {
+    calendar = await fetchUpcomingEvents(uid, db);
+  } catch (err) {
+    console.warn('[telegram-context] calendar fetch failed:', (err as Error).message);
+  }
+
+  return { arena, pendingReminders, postStudio, calendar };
 }

@@ -158,6 +158,48 @@ async function refreshAccessToken(refreshToken: string): Promise<string | null> 
 }
 
 /**
+ * Upcoming events for Jarvis to answer "what's on my calendar" from on
+ * Telegram — a wider window than collectCalendarAlerts' 10-minute alert
+ * lookahead below, since this is read on-demand in conversation rather than
+ * polled for imminent-start pings. Same token path (stored refresh_token,
+ * see the OAuth flow above); returns null (not []) when Calendar was never
+ * connected, so the persona prompt can say so instead of implying an empty day.
+ */
+export async function fetchUpcomingEvents(
+  uid: string,
+  db: AdminFirestoreLike,
+  hoursAhead = 24,
+): Promise<{ summary: string; start: string }[] | null> {
+  const snap = await db.doc(`users/${uid}/googleTokens/main`).get();
+  if (!snap.exists) return null;
+  const stored = snap.data() as { refreshToken?: string };
+  if (!stored.refreshToken) return null;
+
+  const accessToken = await refreshAccessToken(stored.refreshToken);
+  if (!accessToken) return null;
+
+  const now = Date.now();
+  const params = new URLSearchParams({
+    timeMin: new Date(now).toISOString(),
+    timeMax: new Date(now + hoursAhead * 60 * 60_000).toISOString(),
+    singleEvents: 'true',
+    orderBy: 'startTime',
+    maxResults: '15',
+  });
+  const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) return null;
+  const data = (await res.json()) as { items?: CalEvent[] };
+  return (data.items ?? [])
+    .filter((e) => e.start?.dateTime || e.start?.date)
+    .map((e) => ({
+      summary: e.summary ?? '(untitled event)',
+      start: e.start?.dateTime ?? e.start?.date ?? '',
+    }));
+}
+
+/**
  * Text for each event starting in the next few minutes — pushed into the
  * caller's own `messages`/`newlySeen` arrays rather than sending directly, so
  * calendar alerts go through the exact same collect-then-send-then-persist
