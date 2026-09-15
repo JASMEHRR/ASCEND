@@ -19,13 +19,15 @@ import type { Lesson, Weekday } from './types';
 const DAY_ORDER: Weekday[] = [1, 2, 3, 4, 5, 6, 0];
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-function blankLesson(day: Weekday = 1): Lesson {
-  return { id: `new-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, day, start: '09:00', end: '10:00', subject: '' };
-}
-
 function toMinutes(hhmm: string): number {
   const [h, m] = hhmm.split(':').map(Number);
   return h * 60 + m;
+}
+
+function blankLesson(day: Weekday = 1, start = '09:00'): Lesson {
+  const endMin = toMinutes(start) + 70;
+  const end = `${String(Math.floor(endMin / 60) % 24).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
+  return { id: `new-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, day, start, end, subject: '' };
 }
 
 export default function TimetableHub() {
@@ -75,8 +77,8 @@ export default function TimetableHub() {
     setLessons((prev) => (prev ? prev.filter((l) => l.id !== id) : prev));
     setEditingId(null);
   };
-  const addLesson = () => {
-    const l = blankLesson();
+  const addLesson = (day?: Weekday, start?: string) => {
+    const l = blankLesson(day, start);
     setLessons((prev) => [...(prev ?? []), l]);
     setEditingId(l.id);
   };
@@ -194,7 +196,15 @@ export default function TimetableHub() {
                                   {lesson.room ? ` · ${lesson.room}` : ''}
                                 </span>
                               </button>
-                            ) : null}
+                            ) : (
+                              <button
+                                onClick={() => addLesson(d, start)}
+                                aria-label={`Add a lesson ${DAY_LABELS[d]} at ${to12h(start)}`}
+                                className="flex h-full min-h-[2.6rem] w-full items-center justify-center rounded-lg border border-dashed border-white/0 text-white/0 transition-colors hover:border-white/15 hover:text-white/30 cursor-pointer"
+                              >
+                                <Plus size={13} />
+                              </button>
+                            )}
                           </td>
                         );
                       })}
@@ -214,7 +224,7 @@ export default function TimetableHub() {
             )}
 
             <button
-              onClick={addLesson}
+              onClick={() => addLesson()}
               className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-white/12 px-3 py-2 text-[11px] font-semibold text-white/40 transition-colors hover:border-white/25 hover:text-white/70 cursor-pointer"
             >
               <Plus size={12} /> Add lesson by hand

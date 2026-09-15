@@ -5,6 +5,11 @@
  * required for string-sort ordering and is what the input element needs
  * regardless of locale. This only governs what the user reads.
  */
+/** Local "YYYY-MM-DD" — en-CA formats as ISO order without a UTC shift. */
+export function toDateKey(d: Date): string {
+  return d.toLocaleDateString('en-CA');
+}
+
 export function to12h(hhmm: string): string {
   const [hStr, mStr] = hhmm.split(':');
   const h = Number(hStr);

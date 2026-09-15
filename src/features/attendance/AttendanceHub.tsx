@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { CalendarCheck, ChevronLeft, ChevronRight, Check, X, CalendarOff } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import Panel from '../../components/ui/Panel';
-import { to12h } from '../../lib/time';
+import { to12h, toDateKey } from '../../lib/time';
 import { getTimetable } from '../timetable/timetableClient';
 import { getAttendanceRange, setAttendance } from './attendanceClient';
 import { attendanceSubject } from './subjectRules';
@@ -16,11 +16,6 @@ import type { AttendanceRecord, AttendanceStatus } from './types';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const STATS_WINDOW_DAYS = 90;
-
-/** Local "YYYY-MM-DD" — en-CA formats as ISO order without a UTC shift. */
-function toDateKey(d: Date): string {
-  return d.toLocaleDateString('en-CA');
-}
 
 export default function AttendanceHub() {
   const { user } = useAuth();

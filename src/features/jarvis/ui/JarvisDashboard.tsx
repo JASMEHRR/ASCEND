@@ -26,6 +26,7 @@ import type { OSState } from '../../../types';
 import { readStore, writeStore } from '../../../lib/storage';
 import { useAuth } from '../../../context/AuthContext';
 import { useDialog } from '../../../context/DialogContext';
+import { useToast } from '../../../context/ToastContext';
 import { disciplineScore } from '../../../lib/discipline';
 import { effectiveStreak } from '../../../hooks/useStreak';
 import { useJarvis } from '../engine/JarvisProvider';
@@ -41,6 +42,7 @@ import { isFeatureEnabled } from '../../registry';
 import { getTimetable } from '../../timetable/timetableClient';
 import { nextLesson } from '../../timetable/nextLesson';
 import type { Lesson } from '../../timetable/types';
+import { to12h, toDateKey } from '../../../lib/time';
 
 interface Props {
   state: OSState;
@@ -98,6 +100,7 @@ const DOCK: {
 export default function JarvisDashboard({ state, updateState, setView, openSettings }: Props) {
   const { user } = useAuth();
   const { prompt } = useDialog();
+  const { show: showToast } = useToast();
   const { sendMessage, messages, chats, activeChatId, newChat, openChat, removeChat } = useJarvis();
   const orbState = useOrbState();
   const [openPanel, setOpenPanel] = useState<DockPanel | null>(null);
@@ -137,6 +140,27 @@ export default function JarvisDashboard({ state, updateState, setView, openSetti
     };
   }, [user, timetableOn]);
   const upNext = timetableLessons ? nextLesson(timetableLessons) : null;
+
+  // Once per day, on a day with classes: surface the day's lessons up front
+  // instead of leaving them for the Timetable module to be checked manually.
+  useEffect(() => {
+    if (!timetableLessons) return;
+    const todayKey = toDateKey(new Date());
+    const seenKey = 'ascend_timetable_daily_popup';
+    if (readStore(seenKey) === todayKey) return;
+    const today = new Date().getDay();
+    const todaysLessons = timetableLessons.filter((l) => l.day === today).sort((a, b) => a.start.localeCompare(b.start));
+    writeStore(seenKey, todayKey);
+    if (todaysLessons.length === 0) return;
+    const list = todaysLessons.map((l) => `${to12h(l.start)} ${l.subject || '(untitled)'}`).join(' · ');
+    showToast({
+      kind: 'info',
+      title: `${todaysLessons.length} class${todaysLessons.length === 1 ? '' : 'es'} today`,
+      message: list,
+      duration: 12000,
+    });
+  }, [timetableLessons, showToast]);
+
   const openTasks = state.tasks.filter((t) => !t.done).length;
   // The name from setup wins; the email's local part is only the fallback.
   const name = state.displayName?.trim() || (user?.email ?? 'there').split('@')[0];
