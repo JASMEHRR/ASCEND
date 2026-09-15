@@ -3,26 +3,34 @@
  * LaunchKit generators) calls generateChat/generateStructured here instead of
  * talking to a provider directly, so the whole app shares one resilient chain:
  *
- *   Groq (Llama 4 Maverick, free ~30 req/min — reachable from Vercel)
- *     → NVIDIA NIM (same model; NVIDIA's edge silently drops chat POSTs from
- *       Vercel egress, but NIM works from local dev and may recover)
- *       → Gemini 2.5 Flash (free ~20 req/day)
- *         → Gemini 2.5 Flash-Lite
+ *   Groq (llama-3.3-70b-versatile, free ~30 req/min)
+ *     → NVIDIA NIM (openai/gpt-oss-20b)
+ *       → any custom OpenAI-compatible endpoints the user added
+ *         → Gemini (gemini-3.6-flash → gemini-3.5-flash, free ~20 req/day)
  *           → clear 429 error (never a silent failure)
  *
  * Per-minute free tiers lead the chain because the v3 root cause of "Jarvis
- * randomly broken" was Gemini's tiny daily cap. All keys (GROQ_API_KEY,
- * NVIDIA_API_KEY, GEMINI_API_KEY) are server-side only; a missing key just
- * skips that hop.
+ * randomly broken" was Gemini's tiny daily cap.
+ *
+ * Since v5, each hop's key isn't a single fixed value — llm-keys.ts holds a
+ * Firestore-backed pool per provider (Settings -> AI provider keys), so more
+ * than one free-tier account can back the same provider with automatic
+ * failover when one hits its limit. The GROQ_API_KEY/NVIDIA_API_KEY/
+ * GEMINI_API_KEY env vars are the fallback when that provider's pool is
+ * empty, kept so a deployment that predates the pool keeps working unchanged.
  */
 import { getGeminiClient, GEMINI_CHAIN, isQuotaError, isOverloadError, GeminiError, extractJson } from './gemini';
 import { activeKeysFor, coolDownKey, type LlmKey } from './llm-keys';
 
 export { GeminiError, extractJson };
 
-/** Llama 4 Maverick: MoE (~17B active) so flash-class latency, reliable at
- * strict-JSON instruction following, 1M context. See BUILD_NOTES.md (v4). */
-export const NIM_MODEL = 'meta/llama-4-maverick-17b-128e-instruct';
+// meta/llama-4-maverick-17b-128e-instruct is gone from NVIDIA's catalog
+// entirely — confirmed against the live, unauthenticated GET
+// https://integrate.api.nvidia.com/v1/models, not just the 410 it started
+// returning. openai/gpt-oss-20b is a real, currently-listed model on that
+// same endpoint, picked for the same reasons the original was: fast (20B,
+// not a slow dense giant) and strong at instruction-following/JSON.
+export const NIM_MODEL = 'openai/gpt-oss-20b';
 
 /**
  * Static shape for the two named OpenAI-compatible providers — url/model/
