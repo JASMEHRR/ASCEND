@@ -6,7 +6,9 @@ import { useDialog } from '../context/DialogContext';
 import { useJarvis } from '../features/jarvis/engine/JarvisProvider';
 import ObsidianSettings from '../features/obsidian/ObsidianSettings';
 import RemindersSettings from '../features/reminders/RemindersSettings';
+import TimetableSettings from '../features/timetable/TimetableSettings';
 import KiteSettings from '../features/kite/KiteSettings';
+import LlmKeysSettings from '../features/llmKeys/LlmKeysSettings';
 import GoogleSettings from '../features/google/GoogleSettings';
 import type { FeaturesApi } from '../features/useFeatures';
 import { FEATURES, type FeatureModule } from '../features/registry';
@@ -467,6 +469,9 @@ export default function SettingsModal({ isOpen, onClose, state, updateState, fea
             </div>
             <RemindersSettings />
             <div className="border-t border-white/8 pt-4">
+              <TimetableSettings />
+            </div>
+            <div className="border-t border-white/8 pt-4">
               <GoogleSettings />
             </div>
             <div className="border-t border-white/8 pt-4">
@@ -474,6 +479,9 @@ export default function SettingsModal({ isOpen, onClose, state, updateState, fea
             </div>
             <div className="border-t border-white/8 pt-4">
               <KiteSettings />
+            </div>
+            <div className="border-t border-white/8 pt-4">
+              <LlmKeysSettings />
             </div>
           </section>
           )}

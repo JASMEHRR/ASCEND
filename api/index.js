@@ -1,5 +1,5 @@
 // server.ts
-import express2 from "express";
+import express3 from "express";
 import dotenv from "dotenv";
 
 // gemini.ts
@@ -19,14 +19,19 @@ var GeminiError = class extends Error {
     this.status = status;
   }
 };
-var clientPromise = null;
 async function getGemini() {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new GeminiError(500, "Missing GEMINI_API_KEY environment variable.");
-  if (!clientPromise) {
-    clientPromise = import("@google/genai").then(({ GoogleGenAI }) => new GoogleGenAI({ apiKey }));
+  return getGeminiClient(apiKey);
+}
+var clientsByKey = /* @__PURE__ */ new Map();
+function getGeminiClient(apiKey) {
+  let p = clientsByKey.get(apiKey);
+  if (!p) {
+    p = import("@google/genai").then(({ GoogleGenAI }) => new GoogleGenAI({ apiKey }));
+    clientsByKey.set(apiKey, p);
   }
-  return clientPromise;
+  return p;
 }
 function extractJson(raw) {
   let text = raw.trim();
@@ -41,29 +46,112 @@ function extractJson(raw) {
   return text;
 }
 
+// admin-db.ts
+var dbPromise = null;
+async function initAdminDb() {
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (!raw) return null;
+  try {
+    const appPkg = "firebase-admin/app";
+    const firestorePkg = "firebase-admin/firestore";
+    const { getApps, initializeApp, cert } = await import(appPkg);
+    const { getFirestore } = await import(firestorePkg);
+    if (getApps().length === 0) {
+      initializeApp({ credential: cert(JSON.parse(raw)) });
+    }
+    return getFirestore();
+  } catch (err) {
+    console.warn("[admin-db] init failed:", err.message);
+    return null;
+  }
+}
+function getAdminDb() {
+  dbPromise ??= initAdminDb();
+  return dbPromise;
+}
+
+// llm-keys.ts
+var POOL_TTL_MS = 2e4;
+var cache = null;
+async function loadPool() {
+  const uid = process.env.ASCEND_UID;
+  if (!uid) return [];
+  const db = await getAdminDb();
+  if (!db) return [];
+  try {
+    const snap = await db.collection(`users/${uid}/llmKeys`).get();
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  } catch (err) {
+    console.warn("[llm-keys] pool read failed:", err.message);
+    return [];
+  }
+}
+async function activeKeysFor(provider) {
+  if (!cache || Date.now() - cache.at > POOL_TTL_MS) {
+    cache = { at: Date.now(), keys: await loadPool() };
+  }
+  const now = Date.now();
+  return cache.keys.filter((k) => k.provider === provider && !(k.disabledUntil && Date.parse(k.disabledUntil) > now));
+}
+async function coolDownKey(id, reason, minutes) {
+  const uid = process.env.ASCEND_UID;
+  if (!uid) return;
+  const db = await getAdminDb();
+  if (!db) return;
+  try {
+    await db.doc(`users/${uid}/llmKeys/${id}`).update({
+      disabledUntil: new Date(Date.now() + minutes * 6e4).toISOString(),
+      lastError: reason.slice(0, 300)
+    });
+    if (cache) {
+      const hit = cache.keys.find((k) => k.id === id);
+      if (hit) hit.disabledUntil = new Date(Date.now() + minutes * 6e4).toISOString();
+    }
+  } catch (err) {
+    console.warn("[llm-keys] cooldown write failed:", err.message);
+  }
+}
+
 // llm.ts
 var NIM_MODEL = "meta/llama-4-maverick-17b-128e-instruct";
-var OPENAI_PROVIDERS = [
-  {
+var PROVIDER_SHAPE = {
+  groq: {
     name: "groq",
     url: "https://api.groq.com/openai/v1/chat/completions",
-    keyEnv: "GROQ_API_KEY",
+    envKey: "GROQ_API_KEY",
     // Groq no longer hosts Llama 4 Maverick; 3.3-70b is the best
     // conversational fit there (non-reasoning, strong JSON, ~300 tok/s).
     model: "llama-3.3-70b-versatile",
     timeoutMs: 3e4
   },
-  {
+  nvidia: {
     name: "nim",
     url: "https://integrate.api.nvidia.com/v1/chat/completions",
-    keyEnv: "NVIDIA_API_KEY",
+    envKey: "NVIDIA_API_KEY",
     model: NIM_MODEL,
     // A healthy NIM answers in 1-5s; when its edge drops the request
     // (observed from Vercel: /v1/models 200 in 13ms, chat POST never
     // returns, streamed or not) fail over fast instead of stalling.
     timeoutMs: 15e3
   }
-];
+};
+async function resolveKeys(name) {
+  const shape = PROVIDER_SHAPE[name];
+  const pooled = await activeKeysFor(name);
+  if (pooled.length) {
+    return pooled.map((k) => ({ keyId: k.id, apiKey: k.key, provider: shape }));
+  }
+  const envKey = process.env[shape.envKey];
+  return envKey ? [{ apiKey: envKey, provider: shape }] : [];
+}
+async function resolveCustomKeys() {
+  const pooled = await activeKeysFor("custom");
+  return pooled.filter((k) => !!k.baseUrl && !!k.model).map((k) => ({
+    keyId: k.id,
+    apiKey: k.key,
+    provider: { name: `custom:${k.label || k.id}`, url: k.baseUrl, model: k.model, timeoutMs: 2e4 }
+  }));
+}
 async function callOpenAICompat(opts, provider, apiKey) {
   const body = {
     model: provider.model,
@@ -101,8 +189,8 @@ async function callOpenAICompat(opts, provider, apiKey) {
   if (!text.trim()) throw new Error(`${provider.name} returned empty content`);
   return text;
 }
-async function callGemini(opts, model) {
-  const ai = await getGemini();
+async function callGemini(opts, model, apiKey) {
+  const ai = await getGeminiClient(apiKey);
   const response = await ai.models.generateContent({
     model,
     contents: opts.messages.map((m) => ({
@@ -119,24 +207,44 @@ async function callGemini(opts, model) {
   return response.text ?? "";
 }
 async function generateChat(opts) {
-  for (const provider of OPENAI_PROVIDERS) {
-    const apiKey = process.env[provider.keyEnv];
-    if (!apiKey) continue;
+  for (const name of ["groq", "nvidia"]) {
+    const keys = await resolveKeys(name);
+    for (const { keyId, apiKey, provider } of keys) {
+      try {
+        return await callOpenAICompat(opts, provider, apiKey);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[llm] ${provider.name} (${keyId ?? "env"}) failed, trying next:`, msg);
+        if (keyId && isQuotaError(err)) void coolDownKey(keyId, msg, 15);
+      }
+    }
+  }
+  for (const { keyId, apiKey, provider } of await resolveCustomKeys()) {
     try {
       return await callOpenAICompat(opts, provider, apiKey);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[llm] ${provider.name} failed, trying next provider:`, msg);
+      console.warn(`[llm] ${provider.name} failed, trying next:`, msg);
+      if (keyId && isQuotaError(err)) void coolDownKey(keyId, msg, 15);
     }
   }
+  const geminiPool = await activeKeysFor("gemini");
+  const geminiKeys = geminiPool.length ? geminiPool.map((k) => ({ keyId: k.id, apiKey: k.key })) : [{ keyId: void 0, apiKey: process.env.GEMINI_API_KEY }];
   let lastErr;
-  for (const model of GEMINI_CHAIN) {
-    try {
-      return await callGemini(opts, model);
-    } catch (err) {
-      lastErr = err;
-      if (!isQuotaError(err) && !isOverloadError(err)) throw err;
-      console.warn(`[llm] gemini ${model} unavailable, trying next:`, err.message.slice(0, 120));
+  for (const { keyId, apiKey } of geminiKeys) {
+    if (!apiKey) continue;
+    for (const model of GEMINI_CHAIN) {
+      try {
+        return await callGemini(opts, model, apiKey);
+      } catch (err) {
+        lastErr = err;
+        if (!isQuotaError(err) && !isOverloadError(err)) throw err;
+        console.warn(`[llm] gemini ${model} (${keyId ?? "env"}) unavailable, trying next:`, err.message.slice(0, 120));
+        if (keyId && isQuotaError(err)) {
+          void coolDownKey(keyId, err.message, 60);
+          break;
+        }
+      }
     }
   }
   throw new GeminiError(
@@ -169,7 +277,7 @@ import { Router } from "express";
 
 // server-log.ts
 var COLLECTION = "_logs";
-var dbPromise = null;
+var dbPromise2 = null;
 async function getDb() {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (!raw) return null;
@@ -192,8 +300,8 @@ function logEvent(entry) {
   if (entry.level === "error") console.error(line, entry.meta ?? "");
   else if (entry.level === "warn") console.warn(line, entry.meta ?? "");
   else console.log(line, entry.meta ?? "");
-  dbPromise ??= getDb();
-  void dbPromise.then((db) => {
+  dbPromise2 ??= getDb();
+  void dbPromise2.then((db) => {
     if (!db) return;
     return db.collection(COLLECTION).add({
       ...entry,
@@ -645,10 +753,10 @@ transcribeRouter.post("/", async (req, res) => {
 import { Router as Router4 } from "express";
 var stocksRouter = Router4();
 var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36";
-var cache = /* @__PURE__ */ new Map();
+var cache2 = /* @__PURE__ */ new Map();
 var CACHE_MS = 6e4;
 async function fetchQuote(symbol) {
-  const hit = cache.get(symbol);
+  const hit = cache2.get(symbol);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.quote;
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=1d`;
   const res = await fetch(url, { headers: { "User-Agent": UA, Accept: "application/json" } });
@@ -666,7 +774,7 @@ async function fetchQuote(symbol) {
     currency: meta.currency ?? null,
     exchange: meta.exchangeName ?? null
   };
-  cache.set(symbol, { at: Date.now(), quote });
+  cache2.set(symbol, { at: Date.now(), quote });
   return quote;
 }
 stocksRouter.get("/quotes", async (req, res) => {
@@ -901,31 +1009,7 @@ for (const [name, path] of Object.entries(DATA_PATHS)) {
 }
 
 // telegram-routes.ts
-import { Router as Router8 } from "express";
-
-// admin-db.ts
-var dbPromise2 = null;
-async function initAdminDb() {
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (!raw) return null;
-  try {
-    const appPkg = "firebase-admin/app";
-    const firestorePkg = "firebase-admin/firestore";
-    const { getApps, initializeApp, cert } = await import(appPkg);
-    const { getFirestore } = await import(firestorePkg);
-    if (getApps().length === 0) {
-      initializeApp({ credential: cert(JSON.parse(raw)) });
-    }
-    return getFirestore();
-  } catch (err) {
-    console.warn("[admin-db] init failed:", err.message);
-    return null;
-  }
-}
-function getAdminDb() {
-  dbPromise2 ??= initAdminDb();
-  return dbPromise2;
-}
+import { Router as Router9 } from "express";
 
 // src/features/arena/logic/dates.ts
 function todayStr(d = /* @__PURE__ */ new Date()) {
@@ -1301,6 +1385,143 @@ async function sendTelegramMessage(token, chatId, text) {
   }
 }
 
+// google-oauth-routes.ts
+import { Router as Router8 } from "express";
+var googleOAuthRouter = Router8();
+var AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
+var TOKEN_URL = "https://oauth2.googleapis.com/token";
+var SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
+function clientId() {
+  return process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID;
+}
+googleOAuthRouter.get("/start", (req, res) => {
+  const id = clientId();
+  const redirectUri = process.env.GOOGLE_OAUTH_REDIRECT_URI;
+  const secret = process.env.GOOGLE_CLIENT_SECRET;
+  if (!id || !redirectUri || !secret) {
+    res.status(500).send("Google OAuth is not fully configured. Set GOOGLE_CLIENT_SECRET and GOOGLE_OAUTH_REDIRECT_URI \u2014 see GOOGLE_SETUP.md.");
+    return;
+  }
+  const params = new URLSearchParams({
+    client_id: id,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: SCOPE,
+    access_type: "offline",
+    // Forces the consent screen every time, which is the only way Google
+    // reliably hands back a refresh_token — without it, a second connect
+    // attempt (e.g. after revoking access) silently returns none.
+    prompt: "consent"
+  });
+  res.redirect(`${AUTH_URL}?${params}`);
+});
+googleOAuthRouter.get("/callback", async (req, res) => {
+  const code = typeof req.query.code === "string" ? req.query.code : null;
+  const error = typeof req.query.error === "string" ? req.query.error : null;
+  if (error) {
+    res.status(400).send(`Google declined: ${error}`);
+    return;
+  }
+  if (!code) {
+    res.status(400).send("Missing authorization code.");
+    return;
+  }
+  const id = clientId();
+  const secret = process.env.GOOGLE_CLIENT_SECRET;
+  const redirectUri = process.env.GOOGLE_OAUTH_REDIRECT_URI;
+  const uid = process.env.ASCEND_UID;
+  if (!id || !secret || !redirectUri || !uid) {
+    res.status(500).send("Google OAuth is not fully configured server-side.");
+    return;
+  }
+  try {
+    const tokenRes = await fetch(TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id: id,
+        client_secret: secret,
+        redirect_uri: redirectUri,
+        grant_type: "authorization_code"
+      })
+    });
+    const data = await tokenRes.json();
+    if (!tokenRes.ok || !data.refresh_token) {
+      res.status(400).send(
+        `Google didn't return a refresh token (${data.error ?? tokenRes.status}: ${data.error_description ?? "unknown"}). If you've connected this app before, revoke access at myaccount.google.com/permissions first, then try again.`
+      );
+      return;
+    }
+    const db = await getAdminDb();
+    if (!db) {
+      res.status(500).send("Firestore admin access is not configured (FIREBASE_SERVICE_ACCOUNT).");
+      return;
+    }
+    await db.doc(`users/${uid}/googleTokens/main`).set({
+      refreshToken: data.refresh_token,
+      connectedAt: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    logEvent({ level: "info", scope: "google-oauth", message: "calendar connected for telegram alerts" });
+    res.send(
+      '<html><body style="font-family:sans-serif;padding:2rem"><h2>Calendar connected.</h2><p>Telegram will now text you before upcoming events. You can close this tab.</p></body></html>'
+    );
+  } catch (err) {
+    logEvent({ level: "error", scope: "google-oauth", message: err.message });
+    res.status(500).send("Token exchange failed \u2014 check the server logs.");
+  }
+});
+async function refreshAccessToken(refreshToken) {
+  const id = clientId();
+  const secret = process.env.GOOGLE_CLIENT_SECRET;
+  if (!id || !secret) return null;
+  const res = await fetch(TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ client_id: id, client_secret: secret, refresh_token: refreshToken, grant_type: "refresh_token" })
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.access_token ?? null;
+}
+async function collectCalendarAlerts(db, uid, seen, messages, newlySeen) {
+  const snap = await db.doc(`users/${uid}/googleTokens/main`).get();
+  if (!snap.exists) return "calendar not connected";
+  const stored = snap.data();
+  if (!stored.refreshToken) return "calendar not connected";
+  const accessToken = await refreshAccessToken(stored.refreshToken);
+  if (!accessToken) return "calendar token refresh failed";
+  const now = Date.now();
+  const params = new URLSearchParams({
+    timeMin: new Date(now).toISOString(),
+    // 10 min out: wide enough to catch an event even if the cron's own
+    // interval is coarser than 5 minutes, narrow enough that nothing fires
+    // twice as "coming up" across two consecutive passes.
+    timeMax: new Date(now + 10 * 6e4).toISOString(),
+    singleEvents: "true",
+    orderBy: "startTime",
+    maxResults: "10"
+  });
+  const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`, {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  if (!res.ok) return `calendar fetch failed (${res.status})`;
+  const data = await res.json();
+  let queued = 0;
+  for (const e of data.items ?? []) {
+    const startIso = e.start?.dateTime;
+    if (!startIso || !e.id) continue;
+    const minsUntil = Math.round((Date.parse(startIso) - now) / 6e4);
+    if (minsUntil < 0 || minsUntil > 6) continue;
+    const key = `calendar:${e.id}:${startIso}`;
+    if (seen.has(key)) continue;
+    messages.push(`\u{1F4C5} **${e.summary ?? "(untitled event)"}** starts ${minsUntil <= 0 ? "now" : `in ${minsUntil} min`}.`);
+    newlySeen.push(key);
+    queued += 1;
+  }
+  return `calendar (${queued} queued)`;
+}
+
 // telegram-cron.ts
 var MIRROR_FRESH_MINUTES = 30;
 async function runTelegramCron(uid, token, chatId) {
@@ -1373,6 +1594,51 @@ async function runTelegramCron(uid, token, chatId) {
     console.warn("[telegram-cron] mirror failed:", err.message);
   }
   try {
+    const snap = await db.doc(`users/${uid}/timetable/main`).get();
+    if (snap.exists) {
+      const data = snap.data();
+      const tz = data.timeZone || "UTC";
+      const now = /* @__PURE__ */ new Date();
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: tz,
+        weekday: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
+      }).formatToParts(now);
+      const get = (t) => parts.find((p) => p.type === t)?.value ?? "";
+      const WEEKDAY_NUM = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+      const today = WEEKDAY_NUM[get("weekday")];
+      const nowHM = `${get("hour").padStart(2, "0")}:${get("minute").padStart(2, "0")}`;
+      const dateKey = now.toISOString().slice(0, 10);
+      for (const l of data.lessons ?? []) {
+        if (l.day !== today || !l.start || !l.subject) continue;
+        const [h, m] = l.start.split(":").map(Number);
+        if (Number.isNaN(h) || Number.isNaN(m)) continue;
+        const startMin = h * 60 + m;
+        const [nh, nm] = nowHM.split(":").map(Number);
+        const nowMin = nh * 60 + nm;
+        const until = startMin - nowMin;
+        if (until < 0 || until > 6) continue;
+        const key = `lesson:${dateKey}:${l.day}:${l.start}:${l.subject}`;
+        if (seen.has(key)) continue;
+        messages.push(`\u{1F393} **${l.subject}** starts at ${l.start}${l.room ? ` (${l.room})` : ""} \u2014 ${until <= 0 ? "now" : `in ${until} min`}.`);
+        newlySeen.push(key);
+      }
+      checked.push(`timetable (${(data.lessons ?? []).length} lessons, today=${today})`);
+    } else {
+      checked.push("no timetable set");
+    }
+  } catch (err) {
+    console.warn("[telegram-cron] timetable failed:", err.message);
+  }
+  try {
+    const summary = await collectCalendarAlerts(db, uid, seen, messages, newlySeen);
+    checked.push(summary);
+  } catch (err) {
+    console.warn("[telegram-cron] calendar failed:", err.message);
+  }
+  try {
     const snap = await db.collection(`users/${uid}/priceAlerts`).get();
     const active = snap.docs.filter((d) => !d.data().firedAt);
     for (const d of active) {
@@ -1402,7 +1668,7 @@ async function runTelegramCron(uid, token, chatId) {
 }
 
 // telegram-routes.ts
-var telegramRouter = Router8();
+var telegramRouter = Router9();
 var MAX_HISTORY = 20;
 telegramRouter.get("/cron", async (req, res) => {
   try {
@@ -1505,12 +1771,82 @@ telegramRouter.post("/webhook", async (req, res) => {
   }
 });
 
+// timetable-routes.ts
+import express2, { Router as Router10 } from "express";
+var timetableRouter = Router10();
+timetableRouter.use(express2.json({ limit: "4mb" }));
+var ALLOWED_MIME2 = /* @__PURE__ */ new Set(["image/jpeg", "image/png", "image/webp"]);
+var PROMPT = `This image is a photo of a weekly class/lecture timetable \u2014 a grid of
+days vs. times. Read every lesson slot you can make out and return ONLY a JSON
+object of this exact shape, no prose, no markdown fence:
+
+{"lessons":[{"day":1,"start":"09:00","end":"10:00","subject":"QTM","room":"LT-2"}]}
+
+Rules:
+- "day": 0=Sunday, 1=Monday, ... 6=Saturday (match the grid's actual day columns/rows).
+- "start"/"end": 24-hour "HH:MM". If only a start time is legible, set "end" to one hour after "start".
+- "subject": the short name/code as written (e.g. "QTM", "Accounts", "FAR") \u2014 don't expand abbreviations you're not sure of.
+- "room": omit the field entirely if it isn't legible or isn't shown.
+- Skip a cell entirely rather than guessing if it's genuinely unreadable \u2014 a missing lesson is better than a wrong one.
+- If the image isn't a timetable at all, return {"lessons":[]}.`;
+async function parseWithGemini(imageB64, mime) {
+  const ai = await getGemini();
+  let lastErr;
+  for (const model of GEMINI_CHAIN) {
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents: [
+          {
+            role: "user",
+            parts: [{ inlineData: { mimeType: mime, data: imageB64 } }, { text: PROMPT }]
+          }
+        ],
+        config: { maxOutputTokens: 4096 }
+      });
+      return JSON.parse(extractJson(response.text ?? "{}"));
+    } catch (err) {
+      lastErr = err;
+      if (!isQuotaError(err) && !isOverloadError(err)) throw err;
+    }
+  }
+  throw lastErr;
+}
+timetableRouter.post("/parse", async (req, res) => {
+  try {
+    const { image, mimeType } = req.body ?? {};
+    if (typeof image !== "string" || image.length === 0) {
+      res.status(400).json({ error: "`image` must be a non-empty base64 string." });
+      return;
+    }
+    const mime = typeof mimeType === "string" ? mimeType.split(";")[0] : "";
+    if (!ALLOWED_MIME2.has(mime)) {
+      res.status(400).json({ error: `Unsupported mimeType "${mime}". Use a JPEG, PNG or WebP.` });
+      return;
+    }
+    const parsed = await parseWithGemini(image, mime);
+    const lessons = Array.isArray(parsed?.lessons) ? parsed.lessons : [];
+    res.json({ lessons });
+  } catch (err) {
+    if (isQuotaError(err)) {
+      res.status(429).json({ error: "Timetable reading has hit its limits for now \u2014 try again shortly." });
+      return;
+    }
+    const status = err instanceof GeminiError ? err.status : 500;
+    const message = err instanceof Error ? err.message : "Could not read that timetable.";
+    if (status >= 500) console.error("[timetable]", err);
+    logEvent({ level: status >= 500 ? "error" : "warn", scope: "timetable", message, meta: { status } });
+    res.status(status).json({ error: "Couldn't read that image as a timetable \u2014 try a clearer or straighter photo." });
+  }
+});
+
 // server.ts
 dotenv.config({ override: true });
-var app = express2();
+var app = express3();
 app.set("trust proxy", true);
 app.use("/api/transcribe", transcribeRouter);
-app.use(express2.json({ limit: "256kb" }));
+app.use("/api/timetable", timetableRouter);
+app.use(express3.json({ limit: "256kb" }));
 app.use("/api/launch", launchRouter);
 app.use("/api/jarvis", jarvisRouter);
 app.use("/api/stocks", stocksRouter);
@@ -1518,6 +1854,7 @@ app.use("/api/tts", ttsRouter);
 app.use("/api/search", searchRouter);
 app.use("/api/kite", kiteRouter);
 app.use("/api/telegram", telegramRouter);
+app.use("/api/google-oauth", googleOAuthRouter);
 var PHYSIO_SYSTEM_PROMPT = `You are Alex, a highly knowledgeable personal AI physiotherapist assistant specialising in spinal rehab, posture correction, gait mechanics, sports recovery, and mobility training.
 
 Your role is to help the user safely manage and improve these conditions:

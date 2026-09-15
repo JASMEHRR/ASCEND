@@ -56,16 +56,27 @@ export class GeminiError extends Error {
   }
 }
 
-let clientPromise: Promise<GoogleGenAI> | null = null;
 
 /** Lazily construct (and memoize) the Gemini client. */
 export async function getGemini(): Promise<GoogleGenAI> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new GeminiError(500, 'Missing GEMINI_API_KEY environment variable.');
-  if (!clientPromise) {
-    clientPromise = import('@google/genai').then(({ GoogleGenAI }) => new GoogleGenAI({ apiKey }));
+  return getGeminiClient(apiKey);
+}
+
+/**
+ * One memoized client per distinct API key, not just the env-configured one —
+ * the key pool can hold several Gemini keys, each needing its own client
+ * (the SDK ties a client to one key at construction).
+ */
+const clientsByKey = new Map<string, Promise<GoogleGenAI>>();
+export function getGeminiClient(apiKey: string): Promise<GoogleGenAI> {
+  let p = clientsByKey.get(apiKey);
+  if (!p) {
+    p = import('@google/genai').then(({ GoogleGenAI }) => new GoogleGenAI({ apiKey }));
+    clientsByKey.set(apiKey, p);
   }
-  return clientPromise;
+  return p;
 }
 
 /**
