@@ -115,7 +115,7 @@ async function coolDownKey(id, reason, minutes) {
 }
 
 // llm.ts
-var NIM_MODEL = "meta/llama-4-maverick-17b-128e-instruct";
+var NIM_MODEL = "openai/gpt-oss-20b";
 var PROVIDER_SHAPE = {
   groq: {
     name: "groq",
@@ -187,8 +187,9 @@ async function callOpenAICompat(opts, provider, apiKey) {
     throw new Error(`${provider.name} ${res.status}: ${detail}`);
   }
   const data = await res.json();
-  const text = data.choices?.[0]?.message?.content ?? "";
-  if (!text.trim()) throw new Error(`${provider.name} returned empty content`);
+  const message = data.choices?.[0]?.message;
+  const text = message?.content?.trim() || message?.reasoning_content?.trim() || "";
+  if (!text) throw new Error(`${provider.name} returned empty content`);
   return text;
 }
 async function callGemini(opts, model, apiKey) {
@@ -213,7 +214,12 @@ async function testKey(input) {
   const opts = {
     system: "Reply with exactly one word: OK",
     messages: [{ role: "user", content: "ping" }],
-    maxTokens: 16
+    // Reasoning models (gpt-oss and similar) spend tokens on hidden
+    // chain-of-thought before ever reaching the actual answer — 16 wasn't
+    // enough room for that to complete even in the best case, regardless of
+    // which field the answer landed in. 200 gives real reasoning room while
+    // still keeping the test fast.
+    maxTokens: 200
   };
   try {
     if (input.provider === "gemini") {
@@ -654,7 +660,9 @@ async function runJarvisTurn(history, context, tools) {
       needsClarification: obj.needsClarification === true
     };
   } catch {
-    return { reply: raw || "Systems glitch. Say that again?", toolCalls: [], needsClarification: false };
+    const salvaged = raw.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)/);
+    const reply = salvaged ? salvaged[1].replace(/\\n/g, "\n").replace(/\\"/g, '"').replace(/\\\\/g, "\\") : raw;
+    return { reply: reply || "Systems glitch. Say that again?", toolCalls: [], needsClarification: false };
   }
 }
 jarvisRouter.post("/", async (req, res) => {
@@ -1386,6 +1394,17 @@ function markdownToTelegramHtml(text) {
   working = working.replace(/^[ \t]*[-*][ \t]+/gm, "\u2022 ");
   return working.replace(/ (\d+) /g, (_m, i) => blocks[Number(i)]);
 }
+async function sendTyping(token, chatId) {
+  try {
+    await fetch(`${TELEGRAM_API}/bot${token}/sendChatAction`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, action: "typing" }),
+      signal: AbortSignal.timeout(5e3)
+    });
+  } catch {
+  }
+}
 async function sendTelegramMessage(token, chatId, text) {
   const body = markdownToTelegramHtml((text || "(no reply)").slice(0, 4096));
   const res = await fetch(`${TELEGRAM_API}/bot${token}/sendMessage`, {
@@ -1749,16 +1768,23 @@ telegramRouter.post("/webhook", async (req, res) => {
     const threadSnap = await threadRef?.get();
     const priorHistory = threadSnap?.exists ? threadSnap.data()?.messages : [];
     const history = [...priorHistory ?? [], { role: "user", content: text }];
+    void sendTyping(token, chatId);
+    const typingTimer = setInterval(() => void sendTyping(token, chatId), 4e3);
     const appContext = await buildTelegramContext(uid);
-    const turn = await runJarvisTurn(
-      history,
-      {
-        now: (/* @__PURE__ */ new Date()).toString(),
-        surface: "Telegram (phone, text-only). You can set reminders and add/tick habits from here.",
-        ...appContext
-      },
-      TELEGRAM_TOOLS
-    );
+    let turn;
+    try {
+      turn = await runJarvisTurn(
+        history,
+        {
+          now: (/* @__PURE__ */ new Date()).toString(),
+          surface: "Telegram (phone, text-only). You can set reminders and add/tick habits from here.",
+          ...appContext
+        },
+        TELEGRAM_TOOLS
+      );
+    } finally {
+      clearInterval(typingTimer);
+    }
     logEvent({
       level: "info",
       scope: "telegram",

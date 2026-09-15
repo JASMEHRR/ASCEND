@@ -35,7 +35,7 @@ import { runJarvisTurn } from './jarvis-routes';
 import { logEvent } from './server-log';
 import { TELEGRAM_TOOLS, runTelegramTool } from './telegram-tools';
 import { runTelegramCron } from './telegram-cron';
-import { sendTelegramMessage } from './telegram-send';
+import { sendTelegramMessage, sendTyping } from './telegram-send';
 
 export const telegramRouter = Router();
 
@@ -130,16 +130,28 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
       | undefined;
     const history = [...(priorHistory ?? []), { role: 'user', content: text }];
 
+    // Telegram clears its own "typing…" indicator after ~5s, and the model
+    // call plus tool execution below routinely runs longer than that — so
+    // this re-fires every 4s until the real reply is ready, instead of the
+    // chat just sitting there looking dead the whole time.
+    void sendTyping(token, chatId);
+    const typingTimer = setInterval(() => void sendTyping(token, chatId), 4_000);
+
     const appContext = await buildTelegramContext(uid);
-    const turn = await runJarvisTurn(
-      history,
-      {
-        now: new Date().toString(),
-        surface: 'Telegram (phone, text-only). You can set reminders and add/tick habits from here.',
-        ...appContext,
-      },
-      TELEGRAM_TOOLS,
-    );
+    let turn: Awaited<ReturnType<typeof runJarvisTurn>>;
+    try {
+      turn = await runJarvisTurn(
+        history,
+        {
+          now: new Date().toString(),
+          surface: 'Telegram (phone, text-only). You can set reminders and add/tick habits from here.',
+          ...appContext,
+        },
+        TELEGRAM_TOOLS,
+      );
+    } finally {
+      clearInterval(typingTimer);
+    }
 
     // Executed here rather than client-side, because this surface has no
     // client. Same one-shot shape every other Ascend surface uses: the reply

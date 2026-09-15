@@ -151,7 +151,17 @@ export async function runJarvisTurn(
       needsClarification: obj.needsClarification === true,
     };
   } catch {
-    return { reply: raw || 'Systems glitch. Say that again?', toolCalls: [], needsClarification: false };
+    // JSON.parse failed — usually a reasoning-model reply cut off mid-string
+    // by maxTokens (see llm.ts's reasoning_content note), never a clean
+    // sentence. Dumping `raw` straight to the user showed them literal
+    // `{"reply":"...` syntax with the closing brace missing. A regex pull of
+    // just the reply string's contents is readable even when the JSON around
+    // it isn't valid; only fall back to the full raw text if even that fails.
+    const salvaged = raw.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)/);
+    const reply = salvaged
+      ? salvaged[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+      : raw;
+    return { reply: reply || 'Systems glitch. Say that again?', toolCalls: [], needsClarification: false };
   }
 }
 
