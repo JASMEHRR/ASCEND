@@ -20,6 +20,7 @@ import {
   Bell,
   PanelRightClose,
   PanelRightOpen,
+  CalendarDays,
 } from 'lucide-react';
 import type { OSState } from '../../../types';
 import { readStore, writeStore } from '../../../lib/storage';
@@ -36,6 +37,10 @@ import PlanApprovalCard from '../../planning/PlanApprovalCard';
 import HabitsPanel from '../../arena/panels/HabitsPanel';
 import { useArenaOptional } from '../../arena/ArenaContext';
 import { activeHabits, isDone } from '../../arena/logic/tiles';
+import { isFeatureEnabled } from '../../registry';
+import { getTimetable } from '../../timetable/timetableClient';
+import { nextLesson } from '../../timetable/nextLesson';
+import type { Lesson } from '../../timetable/types';
 
 interface Props {
   state: OSState;
@@ -116,6 +121,22 @@ export default function JarvisDashboard({ state, updateState, setView, openSetti
     : undefined;
   const score = disciplineScore(state, arenaProgress);
   const streak = effectiveStreak(state);
+
+  // Next lesson, front and center on the home screen — the whole point of
+  // the Timetable module is that you shouldn't have to go looking for it.
+  const [timetableLessons, setTimetableLessons] = useState<Lesson[] | null>(null);
+  const timetableOn = isFeatureEnabled(state, 'timetable');
+  useEffect(() => {
+    if (!user || !timetableOn) return;
+    let cancelled = false;
+    getTimetable(user.uid).then((tt) => {
+      if (!cancelled) setTimetableLessons(tt?.lessons ?? []);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user, timetableOn]);
+  const upNext = timetableLessons ? nextLesson(timetableLessons) : null;
   const openTasks = state.tasks.filter((t) => !t.done).length;
   // The name from setup wins; the email's local part is only the fallback.
   const name = state.displayName?.trim() || (user?.email ?? 'there').split('@')[0];
@@ -250,6 +271,20 @@ export default function JarvisDashboard({ state, updateState, setView, openSetti
             onClick={() => togglePanel('rituals')}
           />
         </div>
+      )}
+
+      {/* Next lesson — visible on the home screen, not buried in a module. */}
+      {!conversationStarted && upNext && (
+        <button
+          onClick={() => setView('timetable')}
+          className="liquid-glass-panel mt-3 flex items-center gap-2.5 rounded-2xl border border-white/8 px-4 py-2.5 text-left transition-all hover:border-white/20 cursor-pointer"
+        >
+          <CalendarDays size={15} className="shrink-0 text-brand-400" />
+          <span className="min-w-0 flex-1 truncate text-[12.5px] text-white/75">
+            <span className="font-bold text-white">{upNext.lesson.subject || '(untitled)'}</span> — {upNext.label}
+            {upNext.lesson.room ? ` · ${upNext.lesson.room}` : ''}
+          </span>
+        </button>
       )}
 
       {/* A staged day plan interrupts the calm — it needs a decision. */}

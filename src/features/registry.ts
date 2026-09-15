@@ -12,6 +12,8 @@ import {
   LineChart,
   Puzzle,
   Blocks,
+  CalendarDays,
+  CalendarCheck,
 } from 'lucide-react';
 import type { OSState } from '../types';
 
@@ -36,6 +38,8 @@ export type FeatureId =
   | 'gmail'
   | 'stocks'
   | 'arena'
+  | 'timetable'
+  | 'attendance'
   | 'custom';
 
 export interface FeatureModule {
@@ -182,6 +186,27 @@ export const FEATURES: FeatureModule[] = [
     nav: true,
     mobile: true,
     short: 'Stocks',
+    defaultEnabled: true,
+    status: 'active',
+  },
+  {
+    id: 'timetable',
+    label: 'Timetable',
+    description: 'Weekly class schedule — Jarvis texts you 5 minutes before each lesson.',
+    icon: CalendarDays,
+    nav: true,
+    // Not in the mobile bar: it's already at 8 items split evenly either side
+    // of the Settings disc (see the Journal entry above) — reachable via the
+    // sidebar/desktop nav and from Settings → Connections instead.
+    defaultEnabled: true,
+    status: 'active',
+  },
+  {
+    id: 'attendance',
+    label: 'Attendance',
+    description: 'Mark each timetable lesson attended or missed, track per-subject percentage.',
+    icon: CalendarCheck,
+    nav: true,
     defaultEnabled: true,
     status: 'active',
   },

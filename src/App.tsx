@@ -44,8 +44,21 @@ const StocksHub = lazy(() => import('./features/stocks/StocksHub'));
 const JournalHub = lazy(() => import('./features/journal/JournalHub'));
 const ArenaHub = lazy(() => import('./features/arena/ArenaHub'));
 const CustomModulesHub = lazy(() => import('./features/custom/CustomModulesHub'));
+const TimetableHub = lazy(() => import('./features/timetable/TimetableHub'));
+const AttendanceHub = lazy(() => import('./features/attendance/AttendanceHub'));
 
-type View = 'dashboard' | 'business' | 'vision' | 'buy_list' | 'physio' | 'stocks' | 'journal' | 'arena' | 'custom';
+type View =
+  | 'dashboard'
+  | 'business'
+  | 'vision'
+  | 'buy_list'
+  | 'physio'
+  | 'stocks'
+  | 'journal'
+  | 'arena'
+  | 'timetable'
+  | 'attendance'
+  | 'custom';
 
 const REWARDS_LIST = [
   'Take a 5-minute break outside.',
@@ -379,6 +392,8 @@ export default function App() {
                 {view === 'stocks' && <StocksHub state={state} updateState={updateState} />}
                 {view === 'journal' && <JournalHub state={state} updateState={updateState} />}
                 {view === 'arena' && <ArenaHub state={state} updateState={updateState} />}
+                {view === 'timetable' && <TimetableHub />}
+                {view === 'attendance' && <AttendanceHub />}
                 {view === 'custom' && <CustomModulesHub />}
               </Suspense>
           </motion.div>

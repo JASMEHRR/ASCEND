@@ -6,6 +6,7 @@ import { useJarvis } from '../jarvis/engine/JarvisProvider';
 import { useGoogle } from '../google/GoogleContext';
 import { createEvent, todayAt } from '../google/calendarClient';
 import { usePlanning } from './PlanningContext';
+import { to12h } from '../../lib/time';
 
 interface Props {
   updateState: (updater: (prev: OSState) => OSState) => void;
@@ -97,7 +98,7 @@ export default function PlanApprovalCard({ updateState }: Props) {
         {pending.blocks.map((b, i) => (
           <li key={i} className="flex items-baseline gap-2.5 text-[12.5px]">
             <span className="shrink-0 font-mono text-[11px] text-white/45">
-              {b.start}–{b.end}
+              {to12h(b.start)}–{to12h(b.end)}
             </span>
             <span className="font-semibold text-white/85">{b.title}</span>
             {b.notes && <span className="truncate text-[11px] text-white/35">{b.notes}</span>}

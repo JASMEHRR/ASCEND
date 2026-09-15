@@ -1,12 +1,11 @@
 import { useState } from 'react';
-import { X, Settings2, Lock, Volume2, Blocks, Bot, Palette, Plug, LifeBuoy, GripVertical, Eye, EyeOff, RotateCcw, ChevronUp, ChevronDown, ChevronRight } from 'lucide-react';
+import { X, Settings2, Lock, Volume2, Blocks, Bot, Palette, Plug, LifeBuoy, GripVertical, Eye, EyeOff, RotateCcw, ChevronUp, ChevronDown, ChevronRight, CalendarDays } from 'lucide-react';
 import { OSState } from '../types';
 import SanctuaryBackgrounds from './SanctuaryBackgrounds';
 import { useDialog } from '../context/DialogContext';
 import { useJarvis } from '../features/jarvis/engine/JarvisProvider';
 import ObsidianSettings from '../features/obsidian/ObsidianSettings';
 import RemindersSettings from '../features/reminders/RemindersSettings';
-import TimetableSettings from '../features/timetable/TimetableSettings';
 import KiteSettings from '../features/kite/KiteSettings';
 import LlmKeysSettings from '../features/llmKeys/LlmKeysSettings';
 import GoogleSettings from '../features/google/GoogleSettings';
@@ -468,8 +467,9 @@ export default function SettingsModal({ isOpen, onClose, state, updateState, fea
               <p className="text-[11px] text-white/35 leading-snug">External services Ascend can read from. Each is optional.</p>
             </div>
             <RemindersSettings />
-            <div className="border-t border-white/8 pt-4">
-              <TimetableSettings />
+            <div className="border-t border-white/8 pt-4 flex items-center gap-2 text-[11px] text-white/40">
+              <CalendarDays size={13} className="shrink-0 text-white/30" />
+              Manage your class schedule in the <span className="font-semibold text-white/60">Timetable</span> module (sidebar).
             </div>
             <div className="border-t border-white/8 pt-4">
               <GoogleSettings />

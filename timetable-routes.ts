@@ -32,10 +32,18 @@ Rules:
 - Skip a cell entirely rather than guessing if it's genuinely unreadable — a missing lesson is better than a wrong one.
 - If the image isn't a timetable at all, return {"lessons":[]}.`;
 
+// Vercel kills the whole function at 60s (vercel.json maxDuration) and returns
+// its own bare 504 — too late for our catch block to send a real error. Each
+// model attempt gets its own hard budget so two attempts (50s) always leave
+// headroom to respond with a proper JSON error instead of an infra timeout.
+const PER_MODEL_TIMEOUT_MS = 25_000;
+
 async function parseWithGemini(imageB64: string, mime: string): Promise<unknown> {
   const ai = await getGemini();
   let lastErr: unknown;
   for (const model of GEMINI_CHAIN) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), PER_MODEL_TIMEOUT_MS);
     try {
       const response = await ai.models.generateContent({
         model,
@@ -45,15 +53,18 @@ async function parseWithGemini(imageB64: string, mime: string): Promise<unknown>
             parts: [{ inlineData: { mimeType: mime, data: imageB64 } }, { text: PROMPT }],
           },
         ],
-        config: { maxOutputTokens: 4096 },
+        config: { maxOutputTokens: 4096, abortSignal: controller.signal },
       });
       return JSON.parse(extractJson(response.text ?? '{}'));
     } catch (err) {
       lastErr = err;
-      // Only worth trying the next model in the chain for exactly the
-      // failures that chain exists for; anything else (bad prompt, malformed
-      // JSON) will fail identically on every model, so don't burn the quota.
-      if (!isQuotaError(err) && !isOverloadError(err)) throw err;
+      const timedOut = controller.signal.aborted;
+      // A stalled model is worth retrying on the next one, same as overload/
+      // quota — anything else (bad prompt, malformed JSON) fails identically
+      // on every model, so don't burn the remaining budget on it.
+      if (!timedOut && !isQuotaError(err) && !isOverloadError(err)) throw err;
+    } finally {
+      clearTimeout(timer);
     }
   }
   throw lastErr;
