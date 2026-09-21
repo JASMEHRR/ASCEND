@@ -49,7 +49,7 @@ import { collectEmailAlerts } from './gmail-alerts';
 import { collectNudges } from './nudges';
 import { isQuietTime } from './src/features/telegram/prefs';
 import { hhmmToMinutes, to12h } from './src/lib/time';
-import { loadScheduleInputs } from './telegram-schedule';
+import { loadScheduleInputs, planReminder, type ReminderDoc } from './telegram-schedule';
 
 type AdminDb = NonNullable<Awaited<ReturnType<typeof getAdminDb>>>;
 
@@ -149,43 +149,28 @@ async function runPass(
   const { prefs, hasTimetable, lessons, clock } = await loadScheduleInputs(db, uid);
 
   // ── reminders that have come due ────────────────────────────────────────
-  // The desktop app fires these too, but only while it's open. Both paths
-  // respect the same `notified` flag, so whichever gets there first wins and
-  // the other stays quiet rather than double-buzzing.
+  // Telegram gets every reminder, even one the browser or desktop app already
+  // popped up; see planReminder for why `notified` can't decide that.
   try {
     const snap = await db.collection(`users/${uid}/reminders`).get();
     const now = Date.now();
-    console.warn(`[telegram-cron] reminders: ${snap.docs.length} doc(s) in collection`);
+    let fired = 0;
     for (const d of snap.docs) {
-      const r = d.data() as {
-        text?: string;
-        dueAt?: string;
-        done?: boolean;
-        notified?: boolean;
-        repeatMinutes?: number;
-      };
-      if (r.done || r.notified) {
-        console.warn(`[telegram-cron] ${d.id} skipped: done=${r.done} notified=${r.notified}`);
-        continue;
+      const r = d.data() as Omit<ReminderDoc, 'id'> & { text?: string };
+      const plan = planReminder({ id: d.id, ...r }, now, seen);
+      if (!plan) continue;
+      if (plan.send) {
+        messages.push(`⏰ **Reminder:** ${r.text ?? '(untitled)'}`);
+        newlySeen.push(plan.key);
+        fired += 1;
       }
-      if (!r.dueAt || Date.parse(r.dueAt) > now) {
-        console.warn(`[telegram-cron] ${d.id} skipped: dueAt=${r.dueAt} parsed=${Date.parse(r.dueAt ?? '')} now=${now} notYetDue=${Date.parse(r.dueAt ?? '') > now}`);
-        continue;
-      }
-      console.warn(`[telegram-cron] ${d.id} FIRING: ${r.text}`);
-      messages.push(`⏰ **Reminder:** ${r.text ?? '(untitled)'}`);
-      // Recurring reminders reschedule instead of staying fired — same
-      // behavior as jarvis-desktop's own timer, so whichever surface catches
-      // a given firing advances it identically rather than one path leaving
-      // it dead.
-      if (r.repeatMinutes && r.repeatMinutes > 0) {
-        const nextDue = new Date(now + r.repeatMinutes * 60000).toISOString();
-        await db.doc(`users/${uid}/reminders/${d.id}`).update({ dueAt: nextDue, notified: false });
-      } else {
-        await db.doc(`users/${uid}/reminders/${d.id}`).update({ notified: true });
-      }
+      const ref = db.doc(`users/${uid}/reminders/${d.id}`);
+      if (plan.nextDue) await ref.update({ dueAt: plan.nextDue, notified: false });
+      // Marks it for the browser too, so opening Ascend later doesn't pop an
+      // old reminder up a second time.
+      else if (!r.notified) await ref.update({ notified: true });
     }
-    checked.push('reminders');
+    checked.push(`reminders (${fired} due)`);
   } catch (err) {
     console.warn('[telegram-cron] reminders failed:', (err as Error).message);
   }
@@ -351,14 +336,25 @@ export async function getTelegramStatus(uid: string): Promise<Record<string, unk
     db.collection(`users/${uid}/reminders`).get(),
     loadScheduleInputs(db, uid),
   ]);
-  const local = (iso: string) =>
-    new Date(iso).toLocaleString('en-IN', { timeZone: schedule.timeZone, dateStyle: 'medium', timeStyle: 'short' });
-  const pendingReminders = remindersSnap.docs
-    .map((d) => d.data() as { text?: string; dueAt?: string; done?: boolean; notified?: boolean })
-    .filter((r) => !r.done && !r.notified && r.dueAt)
-    .map((r) => ({ text: r.text, dueAt: local(String(r.dueAt)), overdue: Date.parse(String(r.dueAt)) <= Date.now() }));
   const state = (stateSnap.exists ? stateSnap.data() : {}) as NotifyState;
   const lastRunAt = state.lastRunAt ? Date.parse(state.lastRunAt) : NaN;
+  const local = (iso: string) =>
+    new Date(iso).toLocaleString('en-IN', { timeZone: schedule.timeZone, dateStyle: 'medium', timeStyle: 'short' });
+  // Upcoming, plus anything due in the last day, with both delivery channels
+  // shown: the browser/desktop popup (`notified`) and the Telegram text.
+  const seen = new Set(state.seen ?? []);
+  const dayAgo = Date.now() - 24 * 60 * 60_000;
+  const reminders = remindersSnap.docs
+    .map((d) => ({ id: d.id, ...(d.data() as { text?: string; dueAt?: string; done?: boolean; notified?: boolean }) }))
+    .filter((r) => !r.done && r.dueAt && Date.parse(r.dueAt) >= dayAgo)
+    .sort((a, b) => String(a.dueAt).localeCompare(String(b.dueAt)))
+    .map((r) => ({
+      text: r.text,
+      dueAt: local(String(r.dueAt)),
+      overdue: Date.parse(String(r.dueAt)) <= Date.now(),
+      shownInApp: !!r.notified,
+      sentToTelegram: seen.has(`reminder:${r.id}:${r.dueAt}`),
+    }));
 
   const priceAlerts = await Promise.all(
     alertsSnap.docs
@@ -382,7 +378,7 @@ export async function getTelegramStatus(uid: string): Promise<Record<string, unk
     minutesSinceLastRun: Number.isFinite(lastRunAt) ? Math.round((Date.now() - lastRunAt) / 60000) : null,
     recentRuns: [...(state.recentRuns ?? [])].reverse(),
     timeZone: schedule.timeZone,
-    pendingReminders,
+    reminders,
     activePriceAlerts: priceAlerts,
   };
 }

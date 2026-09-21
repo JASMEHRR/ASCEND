@@ -10,6 +10,7 @@ import { localClock, parseInZone, type LocalClock } from './src/lib/time';
 import type { Habit } from './src/features/arena/logic/types';
 import { attendanceSubject } from './src/features/attendance/subjectRules';
 import { acquireLock } from './telegram-cron';
+import { planReminder } from './telegram-schedule';
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -208,6 +209,37 @@ test('offset-less reminder times are read in the user zone, not the server UTC',
   // DST zone: 09:00 in New York in September is EDT (UTC-4).
   assert.equal(parseInZone('2026-09-21T09:00:00', 'America/New_York')?.toISOString(), '2026-09-21T13:00:00.000Z');
   assert.equal(parseInZone('tomorrow at ten', 'Asia/Kolkata'), null);
+});
+
+test('reminders reach Telegram even when the app already showed them', () => {
+  const now = Date.parse('2026-09-21T05:20:00Z');
+  const due = '2026-09-21T04:55:00.000Z'; // 25 min ago
+  // Browser popped it up (notified) but Telegram never sent it: send now.
+  assert.deepEqual(planReminder({ id: 'a', dueAt: due, notified: true }, now, new Set()), {
+    send: true,
+    key: `reminder:a:${due}`,
+  });
+  // Already texted: nothing.
+  assert.equal(planReminder({ id: 'a', dueAt: due, notified: true }, now, new Set([`reminder:a:${due}`])), null);
+  // Not due yet, or done: nothing.
+  assert.equal(planReminder({ id: 'a', dueAt: '2026-09-21T06:00:00Z' }, now, new Set()), null);
+  assert.equal(planReminder({ id: 'a', dueAt: due, done: true }, now, new Set()), null);
+});
+
+test('old reminders the app already showed are not dumped on Telegram', () => {
+  const now = Date.parse('2026-09-21T05:20:00Z');
+  const old = '2026-09-19T08:00:00.000Z';
+  assert.equal(planReminder({ id: 'b', dueAt: old, notified: true }, now, new Set()), null);
+  // Never shown anywhere: still delivered, late, once.
+  assert.equal(planReminder({ id: 'b', dueAt: old }, now, new Set())?.send, true);
+});
+
+test('a repeating reminder the browser stalled restarts on its own cadence', () => {
+  const now = Date.parse('2026-09-21T05:20:00Z');
+  // Every 2 hours from 00:00 UTC, fired by the browser at 00:00 and never rescheduled.
+  const plan = planReminder({ id: 'w', dueAt: '2026-09-21T00:00:00.000Z', notified: true, repeatMinutes: 120 }, now, new Set());
+  assert.equal(plan?.send, false, 'too old to be worth a text');
+  assert.equal(plan?.nextDue, '2026-09-21T06:00:00.000Z', 'next slot on the original 2-hour grid');
 });
 
 /** A document that behaves like Firestore's for create/get/set. */

@@ -52,6 +52,54 @@ export async function loadScheduleInputs(db: ScheduleDb, uid: string): Promise<S
   return { prefs, hasTimetable: timetable !== null, lessons: timetable?.lessons ?? [], timeZone, clock };
 }
 
+/**
+ * How far back a reminder another surface already showed (the browser or the
+ * desktop app set `notified`) still gets its Telegram copy. Beyond this it's
+ * history, and sending it now would be noise.
+ */
+export const REMINDER_CATCHUP_MIN = 60;
+
+export interface ReminderDoc {
+  id: string;
+  dueAt?: string;
+  done?: boolean;
+  notified?: boolean;
+  repeatMinutes?: number;
+}
+
+/**
+ * What the cron should do with one reminder, or null for nothing.
+ *
+ * Telegram tracks its own deliveries (the `key`, kept in the cron's seen
+ * list) instead of reading `notified`. `notified` belongs to the browser and
+ * desktop popups: when Ascend was open at the due time, the browser used to
+ * set it first, and the cron then skipped the reminder, so it never reached
+ * Telegram. The browser also never reschedules repeating reminders, so one it
+ * fired first stopped for good; `nextDue` restarts those on their original
+ * cadence, silently if the missed slot is too old to be worth a text.
+ */
+export function planReminder(
+  r: ReminderDoc,
+  now: number,
+  seen: Set<string>,
+): { send: boolean; key: string; nextDue?: string } | null {
+  if (r.done || !r.dueAt) return null;
+  const due = Date.parse(r.dueAt);
+  if (!Number.isFinite(due) || due > now) return null;
+
+  const key = `reminder:${r.id}:${r.dueAt}`;
+  const recent = now - due <= REMINDER_CATCHUP_MIN * 60_000;
+  const send = !seen.has(key) && (!r.notified || recent);
+
+  const repeatMs = r.repeatMinutes && r.repeatMinutes > 0 ? r.repeatMinutes * 60_000 : 0;
+  const nextDue = repeatMs
+    ? new Date(due + (Math.floor((now - due) / repeatMs) + 1) * repeatMs).toISOString()
+    : undefined;
+
+  if (!send && !nextDue) return null;
+  return { send, key, ...(nextDue ? { nextDue } : {}) };
+}
+
 /** One day's lessons in start order, formatted for the chat model to read out. */
 export function lessonsForDay(lessons: NudgeLesson[], weekday: number): { time: string; subject: string; room?: string }[] {
   return lessons
