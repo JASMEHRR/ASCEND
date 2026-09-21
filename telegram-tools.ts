@@ -18,7 +18,7 @@ import { getAdminDb } from './admin-db';
 import type { Habit } from './src/features/arena/logic/types';
 import { parseInZone } from './src/lib/time';
 import { fetchQuote } from './stocks-routes';
-import { loadScheduleInputs } from './telegram-schedule';
+import { MIN_REPEAT_MINUTES, loadScheduleInputs } from './telegram-schedule';
 
 /** Same ToolDecl shape jarvis-routes.ts declares — flat key -> description. */
 export const TELEGRAM_TOOLS = [
@@ -30,7 +30,7 @@ export const TELEGRAM_TOOLS = [
     parameters: {
       text: 'what to remind them about, in their own words',
       time: 'ISO 8601 local datetime of the FIRST occurrence, e.g. 2026-09-15T18:30:00',
-      repeatMinutes: 'optional: repeat every N minutes after that (e.g. 120 for every 2 hours), for things like "remind me to drink water". Omit for a one-time reminder.',
+      repeatMinutes: `optional: repeat interval in MINUTES, not hours: every hour = 60, every 2 hours = 120, every 30 min = 30. Minimum ${MIN_REPEAT_MINUTES}. For things like "remind me to drink water". Omit for a one-time reminder.`,
     },
   },
   {
@@ -67,7 +67,7 @@ export const TELEGRAM_TOOLS = [
       match: 'words from the current reminder text to find it',
       text: 'optional new text',
       time: 'optional new ISO 8601 local datetime',
-      repeatMinutes: 'optional: set to repeat every N minutes, or 0 to stop it repeating',
+      repeatMinutes: `optional: repeat interval in MINUTES (every hour = 60), minimum ${MIN_REPEAT_MINUTES}, or 0 to stop it repeating`,
     },
   },
   {
@@ -138,6 +138,32 @@ export async function runTelegramTool(
         if (!text) return 'reminder needs something to say';
         if (!time || !due) return 'reminder failed (bad time)';
         const repeatMinutes = Math.round(Number(args.repeatMinutes) || 0);
+        if (repeatMinutes > 0 && repeatMinutes < MIN_REPEAT_MINUTES) {
+          return `not set: a repeat must be at least ${MIN_REPEAT_MINUTES} minutes (every hour is 60)`;
+        }
+
+        // One copy per thing. A repeating reminder asked for twice (or the
+        // model calling the tool three times in one turn) updates the one
+        // that exists instead of stacking copies that each text separately.
+        // One-off reminders only merge when they are exact duplicates: two
+        // "Alarm"s at different times are meant to be two.
+        const key = text.toLowerCase();
+        const existing = (await db.collection(`users/${uid}/reminders`).get()).docs.find((d) => {
+          const r = d.data() as { text?: string; done?: boolean; repeatMinutes?: number; dueAt?: string };
+          if (r.done || String(r.text ?? '').trim().toLowerCase() !== key) return false;
+          return repeatMinutes > 0 ? (r.repeatMinutes ?? 0) > 0 : r.dueAt === due.toISOString();
+        });
+        if (existing) {
+          await db.doc(`users/${uid}/reminders/${existing.id}`).update({
+            dueAt: due.toISOString(),
+            notified: false,
+            repeatMinutes: repeatMinutes > 0 ? repeatMinutes : null,
+          });
+          return repeatMinutes > 0
+            ? `updated your existing "${text}" reminder: next at ${toIST(due)} IST, then every ${repeatMinutes} min`
+            : `you already had that one: "${text}" at ${toIST(due)} IST`;
+        }
+
         // Same shape jarvis-desktop writes, so its existing listener picks
         // this up and schedules the notification with no changes there.
         await db.collection(`users/${uid}/reminders`).add({
@@ -246,6 +272,9 @@ export async function runTelegramTool(
         }
         if (args.repeatMinutes !== undefined) {
           const n = Math.round(Number(args.repeatMinutes) || 0);
+          if (n > 0 && n < MIN_REPEAT_MINUTES) {
+            return `not changed: a repeat must be at least ${MIN_REPEAT_MINUTES} minutes (every hour is 60)`;
+          }
           fields.repeatMinutes = n > 0 ? n : null; // null reads as falsy everywhere this field is checked
         }
         if (!Object.keys(fields).length) return 'nothing to change';

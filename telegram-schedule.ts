@@ -59,6 +59,13 @@ export async function loadScheduleInputs(db: ScheduleDb, uid: string): Promise<S
  */
 export const REMINDER_CATCHUP_MIN = 60;
 
+/**
+ * Floor for a repeating reminder's interval. Anything shorter is almost
+ * always a units mistake: "every hour" stored as 1 became a text every
+ * cron pass (every 5 minutes), three times over.
+ */
+export const MIN_REPEAT_MINUTES = 15;
+
 export interface ReminderDoc {
   id: string;
   dueAt?: string;
@@ -91,7 +98,9 @@ export function planReminder(
   const recent = now - due <= REMINDER_CATCHUP_MIN * 60_000;
   const send = !seen.has(key) && (!r.notified || recent);
 
-  const repeatMs = r.repeatMinutes && r.repeatMinutes > 0 ? r.repeatMinutes * 60_000 : 0;
+  // Clamped here too, so a reminder already saved with a tiny interval can't
+  // flood the chat no matter how it got written.
+  const repeatMs = r.repeatMinutes && r.repeatMinutes > 0 ? Math.max(r.repeatMinutes, MIN_REPEAT_MINUTES) * 60_000 : 0;
   const nextDue = repeatMs
     ? new Date(due + (Math.floor((now - due) / repeatMs) + 1) * repeatMs).toISOString()
     : undefined;

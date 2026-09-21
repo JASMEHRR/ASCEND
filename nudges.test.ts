@@ -242,6 +242,14 @@ test('a repeating reminder the browser stalled restarts on its own cadence', () 
   assert.equal(plan?.nextDue, '2026-09-21T06:00:00.000Z', 'next slot on the original 2-hour grid');
 });
 
+test('a reminder saved with a 1-minute repeat cannot text more than every 15 minutes', () => {
+  // The bug that sent three "Drink water" texts every cron pass.
+  const now = Date.parse('2026-09-21T05:55:00Z');
+  const plan = planReminder({ id: 'd', dueAt: '2026-09-21T05:54:00.000Z', repeatMinutes: 1 }, now, new Set());
+  assert.equal(plan?.send, true);
+  assert.equal(plan?.nextDue, '2026-09-21T06:09:00.000Z', 'next text 15 min after the last, not 1');
+});
+
 /** A document that behaves like Firestore's for create/get/set. */
 function fakeDoc(initial?: Record<string, unknown>) {
   let data = initial;
