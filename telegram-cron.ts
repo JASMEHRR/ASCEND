@@ -345,10 +345,18 @@ export async function getTelegramStatus(uid: string): Promise<Record<string, unk
   const db = await getAdminDb();
   if (!db) return { error: 'storage unavailable' };
 
-  const [stateSnap, alertsSnap] = await Promise.all([
+  const [stateSnap, alertsSnap, remindersSnap, schedule] = await Promise.all([
     db.doc(statePath(uid)).get(),
     db.collection(`users/${uid}/priceAlerts`).get(),
+    db.collection(`users/${uid}/reminders`).get(),
+    loadScheduleInputs(db, uid),
   ]);
+  const local = (iso: string) =>
+    new Date(iso).toLocaleString('en-IN', { timeZone: schedule.timeZone, dateStyle: 'medium', timeStyle: 'short' });
+  const pendingReminders = remindersSnap.docs
+    .map((d) => d.data() as { text?: string; dueAt?: string; done?: boolean; notified?: boolean })
+    .filter((r) => !r.done && !r.notified && r.dueAt)
+    .map((r) => ({ text: r.text, dueAt: local(String(r.dueAt)), overdue: Date.parse(String(r.dueAt)) <= Date.now() }));
   const state = (stateSnap.exists ? stateSnap.data() : {}) as NotifyState;
   const lastRunAt = state.lastRunAt ? Date.parse(state.lastRunAt) : NaN;
 
@@ -373,6 +381,8 @@ export async function getTelegramStatus(uid: string): Promise<Record<string, unk
     lastRunAt: state.lastRunAt ?? null,
     minutesSinceLastRun: Number.isFinite(lastRunAt) ? Math.round((Date.now() - lastRunAt) / 60000) : null,
     recentRuns: [...(state.recentRuns ?? [])].reverse(),
+    timeZone: schedule.timeZone,
+    pendingReminders,
     activePriceAlerts: priceAlerts,
   };
 }

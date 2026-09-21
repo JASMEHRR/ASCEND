@@ -15,9 +15,10 @@
  * step this surface doesn't have.
  */
 import { getAdminDb } from './admin-db';
-import { todayStr } from './src/features/arena/logic/dates';
 import type { Habit } from './src/features/arena/logic/types';
+import { parseInZone } from './src/lib/time';
 import { fetchQuote } from './stocks-routes';
+import { loadScheduleInputs } from './telegram-schedule';
 
 /** Same ToolDecl shape jarvis-routes.ts declares — flat key -> description. */
 export const TELEGRAM_TOOLS = [
@@ -131,9 +132,11 @@ export async function runTelegramTool(
       case 'setReminder': {
         const text = String(args.text ?? '').trim();
         const time = String(args.time ?? '').trim();
-        const due = new Date(time);
+        // The model sends local wall-clock time with no offset; read it in the
+        // user's zone, not the server's UTC.
+        const due = parseInZone(time, (await loadScheduleInputs(db, uid)).timeZone);
         if (!text) return 'reminder needs something to say';
-        if (!time || Number.isNaN(due.getTime())) return 'reminder failed (bad time)';
+        if (!time || !due) return 'reminder failed (bad time)';
         const repeatMinutes = Math.round(Number(args.repeatMinutes) || 0);
         // Same shape jarvis-desktop writes, so its existing listener picks
         // this up and schedules the notification with no changes there.
@@ -162,7 +165,7 @@ export async function runTelegramTool(
           color: '#10b981',
           ...(target > 1 ? { target } : {}),
           ...(args.unit ? { unit: String(args.unit) } : {}),
-          startsAt: todayStr(),
+          startsAt: (await loadScheduleInputs(db, uid)).clock.dateKey,
           createdAt: new Date().toISOString(),
         });
         return `added "${label}" — starts counting tomorrow`;
@@ -180,7 +183,9 @@ export async function runTelegramTool(
 
         // Day docs hold every habit's value for that date, so this is a
         // read-modify-write of one map rather than a per-habit document.
-        const today = todayStr();
+        // The user's own date: the server's is UTC, which put anything ticked
+        // between midnight and 5:30 AM IST on the previous day.
+        const today = (await loadScheduleInputs(db, uid)).clock.dateKey;
         const dayRef = db.doc(`users/${uid}/arenaDays/${today}`);
         const daySnap = await dayRef.get();
         const values = ((daySnap.exists ? daySnap.data()?.values : {}) ?? {}) as Record<string, number>;
@@ -232,8 +237,8 @@ export async function runTelegramTool(
         const fields: Record<string, unknown> = {};
         if (args.text) fields.text = String(args.text).trim();
         if (args.time) {
-          const due = new Date(String(args.time));
-          if (Number.isNaN(due.getTime())) return 'that time did not parse';
+          const due = parseInZone(String(args.time), (await loadScheduleInputs(db, uid)).timeZone);
+          if (!due) return 'that time did not parse';
           fields.dueAt = due.toISOString();
           // Re-arm it: the desktop app skips anything already notified, so a
           // rescheduled reminder that kept notified:true would never fire.

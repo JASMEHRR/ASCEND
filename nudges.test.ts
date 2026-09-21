@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { planNudges, type NudgeInput, type NudgeLesson } from './nudges';
 import { DEFAULT_TELEGRAM_PREFS, isQuietTime, resolvePrefs } from './src/features/telegram/prefs';
-import { localClock, type LocalClock } from './src/lib/time';
+import { localClock, parseInZone, type LocalClock } from './src/lib/time';
 import type { Habit } from './src/features/arena/logic/types';
 import { attendanceSubject } from './src/features/attendance/subjectRules';
 import { acquireLock } from './telegram-cron';
@@ -194,6 +194,20 @@ test('attendance subjects: real SIP names merge, Free and Field Work drop out', 
   assert.equal(attendanceSubject('QTM'), 'QTM');
   // "Sip" inside another word must not match.
   assert.equal(attendanceSubject('Gossip Club'), 'Gossip Club');
+});
+
+test('offset-less reminder times are read in the user zone, not the server UTC', () => {
+  // "remind me at 10:25" from India: 10:25 IST is 04:55 UTC.
+  assert.equal(parseInZone('2026-09-21T10:25:00', 'Asia/Kolkata')?.toISOString(), '2026-09-21T04:55:00.000Z');
+  assert.equal(parseInZone('2026-09-21 10:25', 'Asia/Kolkata')?.toISOString(), '2026-09-21T04:55:00.000Z');
+  // Just after midnight IST is still the previous day in UTC.
+  assert.equal(parseInZone('2026-09-22T00:15:00', 'Asia/Kolkata')?.toISOString(), '2026-09-21T18:45:00.000Z');
+  // An explicit offset or Z is respected as given.
+  assert.equal(parseInZone('2026-09-21T10:25:00Z', 'Asia/Kolkata')?.toISOString(), '2026-09-21T10:25:00.000Z');
+  assert.equal(parseInZone('2026-09-21T10:25:00+05:30', 'Asia/Kolkata')?.toISOString(), '2026-09-21T04:55:00.000Z');
+  // DST zone: 09:00 in New York in September is EDT (UTC-4).
+  assert.equal(parseInZone('2026-09-21T09:00:00', 'America/New_York')?.toISOString(), '2026-09-21T13:00:00.000Z');
+  assert.equal(parseInZone('tomorrow at ten', 'Asia/Kolkata'), null);
 });
 
 /** A document that behaves like Firestore's for create/get/set. */
