@@ -10,8 +10,17 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == userId;
     }
 
-    match /users/{userId}/{document=**} {
+    match /users/{userId} {
       allow read, write: if isOwner(userId);
+    }
+
+    // Every subcollection of your own tree, except googleTokens: it holds the
+    // Google refresh token (Calendar + Gmail read), written and read only by
+    // the server through the Admin SDK, which bypasses these rules. No browser
+    // code touches it, so nothing breaks, and a script injected into the page
+    // can't lift a long-lived token to someone's inbox.
+    match /users/{userId}/{collection}/{rest=**} {
+      allow read, write: if isOwner(userId) && collection != 'googleTokens';
     }
 
     // --- Arena: shared habit rooms -------------------------------------

@@ -60,9 +60,22 @@ two more things in the same Cloud Console project:
 3. Set on your deployment: `GOOGLE_CLIENT_SECRET` (the secret from step 2) and
    `GOOGLE_OAUTH_REDIRECT_URI` (the URL from step 1, exactly as entered). See
    `.env.example` for the full list.
-4. In Ascend: **Settings → Connections → Connect Calendar for Telegram
-   alerts**. Approve the consent screen once — this is a one-time setup, not a
-   per-session login like the flow above.
+4. **APIs & Services → Library**: enable both the **Google Calendar API** and
+   the **Gmail API** in this project. Email alerts need the Gmail one; without
+   it the cron reports `gmail: forbidden`.
+5. In Ascend: **Settings → Connections → Connect Calendar + Gmail for Telegram
+   alerts**. Approve the consent screen once and tick both boxes. This is a
+   one-time setup, not a per-session login like the flow above. If you
+   connected before email alerts existed, connect again: the old grant only
+   covers Calendar.
+
+   Gmail read access is a restricted scope, so while the app is in Testing
+   mode Google shows an "unverified app" warning. That is expected for a
+   personal project: choose *Advanced → Go to (app)* to continue.
+
+What Telegram texts about on its own (important email, habit nudges, study
+reminders) and at what times is set in **Settings → Connections → Telegram
+alerts**.
 
 **Important — the cron interval.** Vercel's free/Hobby plan only allows one
 cron run per day (see `telegram-cron.ts`'s own header comment), which is

@@ -34,7 +34,7 @@ import { buildTelegramContext } from './telegram-context';
 import { runJarvisTurn } from './jarvis-routes';
 import { logEvent } from './server-log';
 import { TELEGRAM_TOOLS, runTelegramTool } from './telegram-tools';
-import { runTelegramCron } from './telegram-cron';
+import { getTelegramStatus, runTelegramCron } from './telegram-cron';
 import { sendTelegramMessage, sendTyping } from './telegram-send';
 
 export const telegramRouter = Router();
@@ -56,10 +56,27 @@ interface TelegramUpdate {
  *
  * GET because that's what Vercel Cron issues.
  */
+/**
+ * Fails closed: an unset CRON_SECRET must not turn these into public URLs
+ * that anyone can hit to make the bot text the user.
+ */
+function cronAuthorized(req: Request): boolean {
+  const secret = process.env.CRON_SECRET;
+  return !!secret && req.header('Authorization') === `Bearer ${secret}`;
+}
+
+/** Which scheduler made this call, from its User-Agent, for the run history. */
+function runSource(req: Request): string {
+  const ua = req.header('User-Agent') ?? '';
+  if (/vercel-cron/i.test(ua)) return 'vercel-cron';
+  if (/cron-job\.org/i.test(ua)) return 'cron-job.org';
+  if (/github/i.test(ua)) return 'github-actions';
+  return ua.slice(0, 40) || 'unknown';
+}
+
 telegramRouter.get('/cron', async (req: Request, res: Response) => {
   try {
-    const secret = process.env.CRON_SECRET;
-    if (secret && req.header('Authorization') !== `Bearer ${secret}`) {
+    if (!cronAuthorized(req)) {
       res.status(401).end();
       return;
     }
@@ -72,13 +89,35 @@ telegramRouter.get('/cron', async (req: Request, res: Response) => {
       return;
     }
 
-    const result = await runTelegramCron(uid, token, chatId);
+    const result = await runTelegramCron(uid, token, chatId, runSource(req));
     logEvent({ level: 'info', scope: 'telegram-cron', message: `sent ${result.sent}`, meta: result });
     res.json(result);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'cron failed';
     logEvent({ level: 'error', scope: 'telegram-cron', message });
     res.status(500).json({ error: message });
+  }
+});
+
+/**
+ * Read-only health check: when the scheduler last ran and who triggered it,
+ * plus each active price alert against its live price. Sends nothing and
+ * runs no pass, so checking it can't mask a scheduler that has stopped.
+ */
+telegramRouter.get('/status', async (req: Request, res: Response) => {
+  try {
+    if (!cronAuthorized(req)) {
+      res.status(401).end();
+      return;
+    }
+    const uid = process.env.ASCEND_UID;
+    if (!uid) {
+      res.status(503).json({ error: 'ASCEND_UID is not set.' });
+      return;
+    }
+    res.json(await getTelegramStatus(uid));
+  } catch (err: unknown) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'status failed' });
   }
 });
 
@@ -143,6 +182,8 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
       turn = await runJarvisTurn(
         history,
         {
+          // Overridden by appContext.now (the user's own zone) when the
+          // schedule loaded; this UTC string is only the fallback.
           now: new Date().toString(),
           surface: 'Telegram (phone, text-only). You can set reminders and add/tick habits from here.',
           ...appContext,

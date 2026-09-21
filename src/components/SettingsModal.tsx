@@ -6,6 +6,7 @@ import { useDialog } from '../context/DialogContext';
 import { useJarvis } from '../features/jarvis/engine/JarvisProvider';
 import ObsidianSettings from '../features/obsidian/ObsidianSettings';
 import RemindersSettings from '../features/reminders/RemindersSettings';
+import TelegramAlertsSettings from '../features/telegram/TelegramAlertsSettings';
 import KiteSettings from '../features/kite/KiteSettings';
 import LlmKeysSettings from '../features/llmKeys/LlmKeysSettings';
 import GoogleSettings from '../features/google/GoogleSettings';
@@ -467,6 +468,9 @@ export default function SettingsModal({ isOpen, onClose, state, updateState, fea
               <p className="text-[11px] text-white/35 leading-snug">External services Ascend can read from. Each is optional.</p>
             </div>
             <RemindersSettings />
+            <div className="border-t border-white/8 pt-4">
+              <TelegramAlertsSettings />
+            </div>
             <div className="border-t border-white/8 pt-4 flex items-center gap-2 text-[11px] text-white/40">
               <CalendarDays size={13} className="shrink-0 text-white/30" />
               Manage your class schedule in the <span className="font-semibold text-white/60">Timetable</span> module (sidebar).

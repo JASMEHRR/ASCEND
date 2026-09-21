@@ -31,7 +31,11 @@ export const googleOAuthRouter = Router();
 
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
-const SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
+// Read-only on both. Gmail is what lets telegram-cron.ts flag important mail
+// with no desktop app running (see gmail-alerts.ts). Adding a scope means the
+// user must reconnect once; a token granted before this change only has
+// Calendar, and gmail-alerts.ts reports that instead of failing silently.
+const SCOPE = ['https://www.googleapis.com/auth/calendar.readonly', 'https://www.googleapis.com/auth/gmail.readonly'].join(' ');
 
 function clientId(): string | undefined {
   return process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID;
@@ -65,7 +69,10 @@ googleOAuthRouter.get('/callback', async (req: Request, res: Response) => {
   const code = typeof req.query.code === 'string' ? req.query.code : null;
   const error = typeof req.query.error === 'string' ? req.query.error : null;
   if (error) {
-    res.status(400).send(`Google declined: ${error}`);
+    // Plain text, not Express's default text/html: `error` comes straight
+    // from the query string, and this route is served on the app's own origin
+    // (where Firebase keeps its auth tokens), so echoing it as HTML is XSS.
+    res.status(400).type('text/plain').send(`Google declined: ${error}`);
     return;
   }
   if (!code) {
@@ -94,13 +101,20 @@ googleOAuthRouter.get('/callback', async (req: Request, res: Response) => {
         grant_type: 'authorization_code',
       }),
     });
-    const data = (await tokenRes.json()) as { refresh_token?: string; access_token?: string; error?: string; error_description?: string };
+    const data = (await tokenRes.json()) as {
+      refresh_token?: string;
+      access_token?: string;
+      scope?: string;
+      error?: string;
+      error_description?: string;
+    };
     if (!tokenRes.ok || !data.refresh_token) {
       // The common failure: re-approving without `prompt=consent` having
       // taken effect, or an account that already granted this app access
       // once before and Google is reusing the old (revoked) grant silently.
       res
         .status(400)
+        .type('text/plain')
         .send(
           `Google didn't return a refresh token (${data.error ?? tokenRes.status}: ${data.error_description ?? 'unknown'}). ` +
             'If you\'ve connected this app before, revoke access at myaccount.google.com/permissions first, then try again.',
@@ -113,15 +127,24 @@ googleOAuthRouter.get('/callback', async (req: Request, res: Response) => {
       res.status(500).send('Firestore admin access is not configured (FIREBASE_SERVICE_ACCOUNT).');
       return;
     }
+    // The user can untick a scope on the consent screen, so record what was
+    // actually granted rather than assuming both.
+    const granted = data.scope ?? '';
     await db.doc(`users/${uid}/googleTokens/main`).set({
       refreshToken: data.refresh_token,
+      scope: granted,
       connectedAt: new Date().toISOString(),
     });
 
-    logEvent({ level: 'info', scope: 'google-oauth', message: 'calendar connected for telegram alerts' });
+    const gmailOk = granted.includes('gmail.readonly');
+    logEvent({ level: 'info', scope: 'google-oauth', message: 'google connected for telegram alerts', meta: { gmail: gmailOk } });
     res.send(
-      '<html><body style="font-family:sans-serif;padding:2rem"><h2>Calendar connected.</h2>' +
-        '<p>Telegram will now text you before upcoming events. You can close this tab.</p></body></html>',
+      '<html><body style="font-family:sans-serif;padding:2rem"><h2>Google connected.</h2>' +
+        '<p>Telegram will now text you before calendar events' +
+        (gmailOk
+          ? ' and when important email arrives.'
+          : '. Gmail access was not granted, so email alerts stay off. Connect again and tick the Gmail box to turn them on.') +
+        ' You can close this tab.</p></body></html>',
     );
   } catch (err) {
     logEvent({ level: 'error', scope: 'google-oauth', message: (err as Error).message });
@@ -155,6 +178,23 @@ async function refreshAccessToken(refreshToken: string): Promise<string | null> 
   if (!res.ok) return null;
   const data = (await res.json()) as { access_token?: string };
   return data.access_token ?? null;
+}
+
+/**
+ * A fresh access token from the stored refresh token, plus the scopes that
+ * were granted at connect time. `status` distinguishes "never connected" from
+ * "refresh failed" so callers can report which one it was.
+ */
+export async function getGoogleAccess(
+  db: AdminFirestoreLike,
+  uid: string,
+): Promise<{ status: 'ok'; token: string; scope: string } | { status: 'not-connected' | 'refresh-failed' }> {
+  const snap = await db.doc(`users/${uid}/googleTokens/main`).get();
+  const stored = snap.exists ? (snap.data() as { refreshToken?: string; scope?: string }) : null;
+  if (!stored?.refreshToken) return { status: 'not-connected' };
+  const token = await refreshAccessToken(stored.refreshToken);
+  if (!token) return { status: 'refresh-failed' };
+  return { status: 'ok', token, scope: stored.scope ?? '' };
 }
 
 /**

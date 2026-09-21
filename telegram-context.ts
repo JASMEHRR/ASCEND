@@ -16,6 +16,7 @@ import { todayStr } from './src/features/arena/logic/dates';
 import { activeHabits, isDone, tilesEarnedOn } from './src/features/arena/logic/tiles';
 import type { Habit, Entry } from './src/features/arena/logic/types';
 import { fetchUpcomingEvents } from './google-oauth-routes';
+import { describeAutomaticAlerts, lessonsForDay, loadScheduleInputs } from './telegram-schedule';
 
 /** Same shape ArenaRegistrar.tsx sends under context.arena — see jarvis-routes.ts's persona prompt. */
 export interface ArenaContext {
@@ -37,7 +38,24 @@ export interface TelegramAppContext {
   postStudio: (Record<string, unknown> & { staleness?: string }) | null;
   /** null = Calendar was never connected (see google-oauth-routes.ts /start), not "no events". */
   calendar: { summary: string; start: string }[] | null;
+  /** null = no timetable uploaded yet, not "no classes". */
+  timetable: { today: TimetableRow[]; tomorrow: TimetableRow[] } | null;
+  /** What the background check already texts about, so the model never offers to set these up. */
+  automaticAlerts: string[];
+  /** The user's local date and time — the server's own clock is UTC. */
+  now?: string;
 }
+
+type TimetableRow = { time: string; subject: string; room?: string };
+
+const EMPTY: TelegramAppContext = {
+  arena: null,
+  pendingReminders: [],
+  postStudio: null,
+  calendar: null,
+  timetable: null,
+  automaticAlerts: [],
+};
 
 /**
  * Fetches one user's Arena + reminders snapshot via the Admin SDK. Returns
@@ -48,9 +66,36 @@ export interface TelegramAppContext {
  */
 export async function buildTelegramContext(uid: string): Promise<TelegramAppContext> {
   const db = await getAdminDb();
-  if (!db) return { arena: null, pendingReminders: [], postStudio: null, calendar: null };
+  if (!db) return EMPTY;
 
   const today = todayStr();
+
+  // The timetable was previously missing from this context entirely, which is
+  // why the bot told the user it couldn't see their classes.
+  let timetable: TelegramAppContext['timetable'] = null;
+  let automaticAlerts: string[] = [];
+  let now: string | undefined;
+  try {
+    const schedule = await loadScheduleInputs(db, uid);
+    if (schedule.hasTimetable) {
+      timetable = {
+        today: lessonsForDay(schedule.lessons, schedule.clock.weekday),
+        tomorrow: lessonsForDay(schedule.lessons, (schedule.clock.weekday + 1) % 7),
+      };
+    }
+    automaticAlerts = describeAutomaticAlerts(schedule.prefs, schedule.hasTimetable);
+    now = new Date().toLocaleString('en-IN', {
+      timeZone: schedule.timeZone,
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+  } catch (err) {
+    console.warn('[telegram-context] schedule fetch failed:', (err as Error).message);
+  }
 
   let arena: ArenaContext | null = null;
   try {
@@ -124,5 +169,5 @@ export async function buildTelegramContext(uid: string): Promise<TelegramAppCont
     console.warn('[telegram-context] calendar fetch failed:', (err as Error).message);
   }
 
-  return { arena, pendingReminders, postStudio, calendar };
+  return { arena, pendingReminders, postStudio, calendar, timetable, automaticAlerts, ...(now ? { now } : {}) };
 }
