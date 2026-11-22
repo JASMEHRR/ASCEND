@@ -136,6 +136,34 @@ export function failsStipendFloor(item: Pick<Internship, 'floorCheck'>): boolean
   return /[❌⚠]/.test(item.floorCheck) || /^\s*no\b/i.test(item.floorCheck);
 }
 
+const fmtK = (n: number): string => `${+(n / 1000).toFixed(1)}k`;
+
+/**
+ * Compact stipend for the one-line row: "₹35,000/mo" → "₹35k",
+ * "₹20,000 - 30,000/mo" → "₹20k-30k", "Fully funded" → "Funded". Anything it
+ * doesn't recognise is returned as written; the full text is in the details.
+ */
+export function shortStipend(text: string): string {
+  const t = text.trim();
+  if (/fully\s+funded/i.test(t)) return 'Funded';
+  const range = t.match(/₹\s*([\d,]+)\s*(?:[-–—]|to)\s*₹?\s*([\d,]+)/i);
+  if (range) {
+    const [a, b] = [Number(range[1].replace(/,/g, '')), Number(range[2].replace(/,/g, ''))];
+    if (a >= 1000 && b >= 1000) return `₹${fmtK(a)}-${fmtK(b)}`;
+  }
+  const one = t.match(/₹\s*([\d,]+)/);
+  if (one) {
+    const n = Number(one[1].replace(/,/g, ''));
+    if (Number.isFinite(n)) return n >= 1000 ? `₹${fmtK(n)}` : `₹${n}`;
+  }
+  return t;
+}
+
+/** The place before any detail: "Gurgaon, hybrid (relocation)" → "Gurgaon". */
+export function shortPlace(locationMode: string): string {
+  return locationMode.split(/[,(/|]/)[0].trim();
+}
+
 /**
  * Only real web links become a button. Muse pulls links from scraped pages,
  * so anything else (javascript:, data:, a bare word) is treated as missing.

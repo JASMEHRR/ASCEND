@@ -37,6 +37,8 @@ import {
   matchesFilters,
   parseDeadline,
   safeLink,
+  shortPlace,
+  shortStipend,
   SOON_DAYS,
   type InternshipFilters,
   type SectionId,
@@ -69,11 +71,11 @@ const STATUS_LABEL: Record<InternshipStatus, string> = {
   closed: 'Closed',
 };
 
-const ACTIONS: { status: InternshipStatus; label: string; activeLabel: string; full: string; icon: typeof Send }[] = [
-  { status: 'apply-queue', label: 'Apply', activeLabel: 'Queued', full: 'Apply to this', icon: Send },
-  { status: 'applied', label: 'Applied', activeLabel: 'Applied', full: 'Mark applied', icon: CheckCheck },
-  { status: 'done', label: 'Done', activeLabel: 'Done', full: 'Done', icon: Check },
-  { status: 'skipped', label: 'Skip', activeLabel: 'Skipped', full: 'Skip', icon: SkipForward },
+const ACTIONS: { status: InternshipStatus; full: string; icon: typeof Send }[] = [
+  { status: 'apply-queue', full: 'Apply to this', icon: Send },
+  { status: 'applied', full: 'Mark applied', icon: CheckCheck },
+  { status: 'done', full: 'Done', icon: Check },
+  { status: 'skipped', full: 'Skip', icon: SkipForward },
 ];
 
 const STAGE_STYLE: Record<EmailStage, string> = {
@@ -181,7 +183,7 @@ export function InternshipsView({
 
   const setStatus = (item: Internship, to: InternshipStatus) => {
     if (item.status === to) return;
-    setUndo({ id: item.id, title: item.title, from: item.status, to });
+    setUndo({ id: item.id, title: item.org || item.title, from: item.status, to });
     void write(item.id, { status: to });
   };
 
@@ -297,7 +299,7 @@ export function InternshipsView({
           const list = sections[section.id];
           const isCollapsed = collapsed.has(section.id);
           return (
-            <section key={section.id} className="flex flex-col gap-2">
+            <section key={section.id} className="flex flex-col gap-1.5">
               <button
                 onClick={() => toggleSet(setCollapsed, section.id)}
                 aria-expanded={!isCollapsed}
@@ -313,7 +315,7 @@ export function InternshipsView({
               </button>
               {!isCollapsed &&
                 list.map((item) => (
-                  <InternshipCard
+                  <InternshipRow
                     key={item.id}
                     item={item}
                     expanded={expanded.has(item.id)}
@@ -402,7 +404,14 @@ function deadlineInfo(text: string): { label: string; tone: 'soon' | 'passed' | 
   return { label: `${text} · ${when}`, tone: days <= SOON_DAYS ? 'soon' : 'normal' };
 }
 
-function InternshipCard({
+const ICON_BTN = 'flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-lg border transition-colors';
+
+/**
+ * One line per internship: score, company, place, stipend, then the link and
+ * the four actions as small icons. Tapping the text opens the details
+ * (role, deadline, badges, flags, score reason, last email, notes) below it.
+ */
+function InternshipRow({
   item,
   expanded,
   onToggleExpand,
@@ -421,126 +430,136 @@ function InternshipCard({
   const deadline = deadlineInfo(item.deadlineText);
   const lowStipend = failsStipendFloor(item);
   const muted = item.status === 'skipped' || item.status === 'closed' || deadline?.tone === 'passed';
+  const name = item.org || item.title;
+  const place = shortPlace(item.locationMode);
+  const stipend = shortStipend(item.stipendText);
+  // The row's border doubles as the save indicator: green once saved, red if it failed.
+  const border =
+    save === 'saved' ? 'border-emerald-400/50' : save === 'error' ? 'border-red-400/60' : expanded ? 'border-white/20' : 'border-white/10';
 
   return (
-    <article className={`rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 ${muted ? 'opacity-60' : ''}`}>
-      <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <h3 className="text-[16px] font-bold leading-snug text-white">{item.title}</h3>
-          <p className="mt-0.5 text-[14px] leading-snug text-white/60">
-            {item.org}
-            {item.org && item.locationMode ? ' · ' : ''}
-            {item.locationMode}
-          </p>
-        </div>
-        {item.score !== null && (
-          <span className="shrink-0 rounded-xl border border-white/12 bg-white/[0.05] px-2 py-1 font-mono text-[13px] font-bold text-white/85">
-            {item.score}/10
+    <article className={`rounded-xl border bg-white/[0.03] transition-colors ${border} ${muted ? 'opacity-60' : ''}`}>
+      <div className="flex items-center gap-1 py-1.5 pl-1.5 pr-1">
+        <button
+          onClick={onToggleExpand}
+          aria-expanded={expanded}
+          title={item.title}
+          className="flex min-h-8 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-lg text-left"
+        >
+          <span className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-md bg-brand-500/15 px-1 font-mono text-[12.5px] font-bold text-brand-300">
+            {item.score ?? '-'}
           </span>
-        )}
-      </div>
+          {/* The company shortens first so the place stays visible on a narrow phone. */}
+          <span className="flex min-w-0 flex-1 items-center text-[13px] text-white/55">
+            {deadline?.tone === 'soon' && (
+              <span
+                role="img"
+                aria-label="Closes within 7 days"
+                title="Closes within 7 days"
+                className="mr-1 h-1.5 w-1.5 shrink-0 rounded-full bg-red-400"
+              />
+            )}
+            <span className="min-w-0 truncate">
+              <span className="font-semibold text-white">{name}</span>
+              {item.org && <span className="hidden sm:inline"> · {item.title}</span>}
+            </span>
+            {place && <span className="ml-1 max-w-[50%] shrink-0 truncate">· {place}</span>}
+          </span>
+        </button>
 
-      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-        {item.stipendText && (
+        {stipend && (
           <span
-            title={item.floorCheck ? `Stipend floor: ${item.floorCheck}` : undefined}
-            className={`rounded-full border px-2.5 py-1 text-[13px] font-semibold ${
-              lowStipend ? 'border-red-400/40 bg-red-500/15 text-red-300' : 'border-white/10 bg-white/[0.05] text-white/75'
-            }`}
+            title={item.floorCheck ? `${item.stipendText} · floor: ${item.floorCheck}` : item.stipendText}
+            className={`max-w-[5rem] shrink-0 truncate pl-1 text-[12.5px] font-semibold ${lowStipend ? 'text-red-300' : 'text-white/75'}`}
           >
-            {lowStipend && <AlertTriangle size={11} className="-mt-0.5 mr-1 inline" />}
-            {item.stipendText}
+            {stipend}
           </span>
         )}
-        {deadline && (
-          <span
-            className={`rounded-full border px-2.5 py-1 text-[13px] font-semibold ${
-              deadline.tone === 'soon'
-                ? 'border-red-400/40 bg-red-500/15 text-red-300'
-                : 'border-white/10 bg-white/[0.05] text-white/60'
-            }`}
-          >
-            {deadline.label}
-          </span>
-        )}
-        {item.status === 'closed' && <Badge className="border-white/15 bg-white/[0.06] text-white/55">Closed</Badge>}
-        {item.autoApply && <Badge className="border-brand-400/35 bg-brand-500/10 text-brand-300">One-click</Badge>}
-        {item.fullyFunded && <Badge className="border-emerald-400/35 bg-emerald-500/10 text-emerald-300">Fully funded</Badge>}
-        {isMayJulWindow(item) && <Badge className="border-amber-400/40 bg-amber-500/10 text-amber-300">May-Jul</Badge>}
-        {item.emailStage && (
-          <Badge className={STAGE_STYLE[item.emailStage]}>
-            <Mail size={10} /> {item.emailStage}
-          </Badge>
-        )}
-      </div>
 
-      {item.flags && (
-        <p className={`mt-2 text-[13px] leading-snug text-amber-300/90 ${expanded ? '' : 'line-clamp-1'}`}>{item.flags}</p>
-      )}
-      {!expanded && item.notes && <p className="mt-1.5 line-clamp-1 text-[13px] italic text-white/45">Note: {item.notes}</p>}
-
-      <div className="mt-3">
         {link ? (
           <a
             href={link}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-brand-400/35 bg-brand-500/15 py-2.5 text-[14px] font-bold text-brand-300 hover:bg-brand-500/25"
+            aria-label={`Open ${name} listing`}
+            title="Open listing"
+            className={`${ICON_BTN} border-brand-400/30 text-brand-300 hover:bg-brand-500/15`}
           >
-            Open listing <ExternalLink size={13} />
+            <ExternalLink size={14} />
           </a>
         ) : (
-          <div className="rounded-xl border border-dashed border-white/15 px-3 py-2">
-            <Badge className="border-red-400/40 bg-red-500/10 text-red-300">
-              <Link2Off size={10} /> Link missing
-            </Badge>
-            {item.linkNote && <p className="mt-1.5 text-[13px] leading-snug text-white/60">{item.linkNote}</p>}
-          </div>
+          <span role="img" aria-label="Link missing" title="Link missing" className={`${ICON_BTN} border-white/8 text-white/25`}>
+            <Link2Off size={14} />
+          </span>
         )}
-      </div>
 
-      <div className="mt-2.5 grid grid-cols-4 gap-1.5">
-        {ACTIONS.map((a) => {
-          const active = item.status === a.status;
-          const Icon = a.icon;
-          return (
-            <button
-              key={a.status}
-              onClick={() => onStatus(active ? 'to-review' : a.status)}
-              aria-pressed={active}
-              aria-label={active ? `${a.full} (on). Tap to move back to review` : a.full}
-              title={active ? 'Tap to move back to review' : a.full}
-              className={`flex min-h-11 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl border text-[12px] font-bold transition-colors ${
-                active
-                  ? a.status === 'skipped'
-                    ? 'border-white/25 bg-white/15 text-white/85'
-                    : 'border-brand-400/45 bg-brand-500/20 text-brand-300'
-                  : 'border-white/10 bg-white/[0.04] text-white/55 hover:text-white'
-              }`}
-            >
-              <Icon size={14} />
-              {active ? a.activeLabel : a.label}
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="mt-2 flex items-center justify-between gap-2">
-        <button
-          onClick={onToggleExpand}
-          aria-expanded={expanded}
-          className="flex cursor-pointer items-center gap-1 py-1.5 text-[13px] font-semibold text-white/50 hover:text-white"
-        >
-          <ChevronDown size={13} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
-          {expanded ? 'Less' : 'Why this score, notes'}
-        </button>
-        <SaveIndicator save={save} />
+        <div className="flex shrink-0 gap-0.5 border-l border-white/10 pl-1">
+          {ACTIONS.map((a) => {
+            const active = item.status === a.status;
+            const Icon = a.icon;
+            return (
+              <button
+                key={a.status}
+                onClick={() => onStatus(active ? 'to-review' : a.status)}
+                aria-pressed={active}
+                aria-label={active ? `${a.full} (on). Tap to move back to review` : a.full}
+                title={active ? `${a.full}: on. Tap to move back to review` : a.full}
+                className={`${ICON_BTN} cursor-pointer ${
+                  active
+                    ? a.status === 'skipped'
+                      ? 'border-white/25 bg-white/15 text-white/85'
+                      : 'border-brand-400/45 bg-brand-500/20 text-brand-300'
+                    : 'border-white/10 text-white/45 hover:bg-white/[0.06] hover:text-white'
+                }`}
+              >
+                <Icon size={14} />
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {expanded && (
-        <div className="mt-2 flex flex-col gap-2.5 border-t border-white/8 pt-3">
+        <div className="flex flex-col gap-2.5 border-t border-white/8 px-3 pb-3 pt-2.5">
+          <div>
+            <p className="text-[14px] font-semibold leading-snug text-white">{item.title}</p>
+            <p className="mt-0.5 text-[13px] leading-snug text-white/55">
+              {[item.org, item.locationMode, item.stipendText].filter(Boolean).join(' · ')}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            {deadline && (
+              <span
+                className={`rounded-full border px-2.5 py-0.5 text-[12.5px] font-semibold ${
+                  deadline.tone === 'soon' ? 'border-red-400/40 bg-red-500/15 text-red-300' : 'border-white/10 bg-white/[0.05] text-white/60'
+                }`}
+              >
+                {deadline.label}
+              </span>
+            )}
+            {lowStipend && <Badge className="border-red-400/40 bg-red-500/10 text-red-300">Below floor</Badge>}
+            {item.status === 'closed' && <Badge className="border-white/15 bg-white/[0.06] text-white/55">Closed</Badge>}
+            {item.autoApply && <Badge className="border-brand-400/35 bg-brand-500/10 text-brand-300">One-click</Badge>}
+            {item.fullyFunded && <Badge className="border-emerald-400/35 bg-emerald-500/10 text-emerald-300">Fully funded</Badge>}
+            {isMayJulWindow(item) && <Badge className="border-amber-400/40 bg-amber-500/10 text-amber-300">May-Jul</Badge>}
+            {item.emailStage && (
+              <Badge className={STAGE_STYLE[item.emailStage]}>
+                <Mail size={10} /> {item.emailStage}
+              </Badge>
+            )}
+          </div>
+
+          {item.flags && <p className="text-[13px] leading-snug text-amber-300/90">{item.flags}</p>}
+          {!link && (
+            <p className="text-[13px] leading-snug text-white/60">
+              <span className="font-bold text-red-300">Link missing. </span>
+              {item.link ? 'The saved link was not a normal web address, so it is not opened. ' : ''}
+              {item.linkNote}
+            </p>
+          )}
           {item.scoreReason && (
-            <p className="text-[14px] leading-relaxed text-white/75">
+            <p className="text-[13.5px] leading-relaxed text-white/75">
               <span className="font-bold text-white/85">Score: </span>
               {item.scoreReason}
             </p>
@@ -552,11 +571,14 @@ function InternshipCard({
               {item.lastEmailAt ? ` · ${formatWhen(item.lastEmailAt)}` : ''}
             </p>
           )}
-          <p className="font-mono text-[12px] text-white/40">
-            {STATUS_LABEL[item.status]}
-            {item.ref ? ` · ${item.ref}` : ''}
-            {item.updatedAt ? ` · updated ${formatWhen(item.updatedAt)}` : ''}
-          </p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="min-w-0 truncate font-mono text-[12px] text-white/40">
+              {STATUS_LABEL[item.status]}
+              {item.ref ? ` · ${item.ref}` : ''}
+              {item.updatedAt ? ` · updated ${formatWhen(item.updatedAt)}` : ''}
+            </p>
+            <SaveIndicator save={save} />
+          </div>
           <NotesField value={item.notes} onSave={onNotes} />
         </div>
       )}

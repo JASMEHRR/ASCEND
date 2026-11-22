@@ -16,6 +16,8 @@ import {
   normalizeInternship,
   parseDeadline,
   safeLink,
+  shortPlace,
+  shortStipend,
   sectionOf,
 } from './logic';
 import type { Internship } from './types';
@@ -122,3 +124,16 @@ console.log('internships logic: all tests passed');
 const ts = normalizeInternship('t', { lastEmailAt: { toDate: () => new Date('2026-11-20T05:00:00Z') } });
 assert.equal(ts.lastEmailAt, '2026-11-20T05:00:00.000Z');
 console.log('internships timestamp normalisation: passed');
+
+// Compact row text
+assert.equal(shortStipend('₹35,000/mo'), '₹35k');
+assert.equal(shortStipend('₹22,500/month'), '₹22.5k');
+assert.equal(shortStipend('₹20,000 - 30,000/mo'), '₹20k-30k');
+assert.equal(shortStipend('₹800/day'), '₹800');
+assert.equal(shortStipend('Fully funded + travel'), 'Funded');
+assert.equal(shortStipend('Unpaid'), 'Unpaid');
+assert.equal(shortStipend(''), '');
+assert.equal(shortPlace('Gurgaon, hybrid (relocation)'), 'Gurgaon');
+assert.equal(shortPlace('Remote (India)'), 'Remote');
+assert.equal(shortPlace('Tokyo'), 'Tokyo');
+console.log('internships compact row helpers: passed');
