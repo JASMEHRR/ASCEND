@@ -165,26 +165,42 @@ export function failsStipendFloor(item: Pick<Internship, 'floorCheck'>): boolean
   return /[❌⚠]/.test(item.floorCheck) || /^\s*no\b/i.test(item.floorCheck);
 }
 
-const fmtK = (n: number): string => `${+(n / 1000).toFixed(1)}k`;
+const UNIT_RUPEES: Record<string, number> = { k: 1e3, l: 1e5, lakh: 1e5, lakhs: 1e5, cr: 1e7, crore: 1e7 };
+// A rupee amount: digits (commas, decimals) plus an optional k / L / lakh / Cr unit.
+const AMOUNT = '(\\d[\\d,]*(?:\\.\\d+)?)\\s*(k|l|lakhs?|cr|crore)?(?![a-z])';
+const RANGE_RE = new RegExp(`([\\u2248~]\\s*)?\\u20B9\\s*${AMOUNT}\\s*(?:[-\\u2013\\u2014]|to)\\s*\\u20B9?\\s*${AMOUNT}`, 'i');
+const SINGLE_RE = new RegExp(`([\\u2248~]\\s*)?\\u20B9\\s*${AMOUNT}`, 'i');
+
+function toRupees(num: string, unit: string | undefined, fallbackUnit?: string): number {
+  return Number(num.replace(/,/g, '')) * (UNIT_RUPEES[(unit || fallbackUnit || '').toLowerCase()] ?? 1);
+}
+
+function fmtRupees(n: number): string {
+  if (n >= 1e7) return `${+(n / 1e7).toFixed(2)}Cr`;
+  if (n >= 1e5) return `${+(n / 1e5).toFixed(2)}L`;
+  if (n >= 1e3) return `${+(n / 1e3).toFixed(1)}k`;
+  return `${Math.round(n)}`;
+}
 
 /**
- * Compact stipend for the one-line row: "₹35,000/mo" → "₹35k",
- * "₹20,000 - 30,000/mo" → "₹20k-30k", "Fully funded" → "Funded". Anything it
- * doesn't recognise is returned as written; the full text is in the details.
+ * Compact stipend for the one-line row, from the first rupee amount in
+ * Muse's text: "₹35,000/mo" → "₹35k", "₹10–20k base + ..." → "₹10k-20k",
+ * "₹1.2L–1.8L" → "₹1.2L-1.8L", "AED 5,000/mo (≈₹1.23L)" → "≈₹1.23L",
+ * "Fully funded ..." → "Funded". Text with no rupee amount is returned as
+ * written; the full text is always in the details.
  */
 export function shortStipend(text: string): string {
   const t = text.trim();
   if (/fully\s+funded/i.test(t)) return 'Funded';
-  const range = t.match(/₹\s*([\d,]+)\s*(?:[-–—]|to)\s*₹?\s*([\d,]+)/i);
+  const range = t.match(RANGE_RE);
   if (range) {
-    const [a, b] = [Number(range[1].replace(/,/g, '')), Number(range[2].replace(/,/g, ''))];
-    if (a >= 1000 && b >= 1000) return `₹${fmtK(a)}-${fmtK(b)}`;
+    // "₹10–20k": the low end borrows the high end's unit.
+    const low = toRupees(range[2], range[3], range[5]);
+    const high = toRupees(range[4], range[5]);
+    return `${range[1] ? '≈' : ''}₹${fmtRupees(low)}-${fmtRupees(high)}`;
   }
-  const one = t.match(/₹\s*([\d,]+)/);
-  if (one) {
-    const n = Number(one[1].replace(/,/g, ''));
-    if (Number.isFinite(n)) return n >= 1000 ? `₹${fmtK(n)}` : `₹${n}`;
-  }
+  const one = t.match(SINGLE_RE);
+  if (one) return `${one[1] ? '≈' : ''}₹${fmtRupees(toRupees(one[2], one[3]))}`;
   return t;
 }
 

@@ -149,3 +149,17 @@ assert.deepEqual(splitCompanyRole('Marketing Intern', 'Coy', 'Solid'), { company
 assert.deepEqual(splitCompanyRole('Coy — Marketing Intern', 'Coy'), { company: 'Coy', role: 'Marketing Intern', orgTier: '' });
 assert.equal(normalizeInternship('n', { title: 'Buildrik — AI & Growth Marketing Intern', org: 'Unknown/small' }).company, 'Buildrik');
 console.log('internships company/role split: passed');
+
+// Real stipend formats from Muse's seed
+assert.equal(shortStipend('₹30,000–50,000/mo'), '₹30k-50k');
+assert.equal(shortStipend('₹1.2L–1.8L (period unstated — likely total/annual, verify)'), '₹1.2L-1.8L');
+assert.equal(shortStipend('₹2,000–4,000'), '₹2k-4k');
+assert.equal(shortStipend('₹10–20k base + ₹30–50k incentives'), '₹10k-20k');
+assert.equal(shortStipend('AED 5,000/mo (≈₹1.23L) + accommodation/flights/visa/medical'), '≈₹1.23L');
+assert.equal(shortStipend('Up to US$125,000 / 12 mo (≈₹1.1 Cr total)'), '≈₹1.1Cr');
+assert.equal(shortStipend('~€1,538/mo (≈₹1.46L) + travel & visa reimbursed'), '≈₹1.46L');
+assert.equal(shortStipend('UNDP stipend; recent home-based posts ~US$500/mo (≈₹45k)'), '≈₹45k');
+assert.equal(shortStipend('US$1,472 biweekly (≈₹2.65L/mo full-time equiv.)'), '≈₹2.65L');
+assert.equal(shortStipend('CHF 900/mo lump sum (≈₹99k nominal, below Geneva living cost)'), '≈₹99k');
+assert.equal(shortStipend('"$0k–$10k" — possibly unpaid'), '"$0k–$10k" — possibly unpaid');
+console.log('internships real stipend formats: passed');
