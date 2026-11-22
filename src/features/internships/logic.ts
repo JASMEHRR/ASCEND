@@ -165,6 +165,9 @@ export function failsStipendFloor(item: Pick<Internship, 'floorCheck'>): boolean
   return /[❌⚠]/.test(item.floorCheck) || /^\s*no\b/i.test(item.floorCheck);
 }
 
+/** What the row shows when Muse couldn't find the pay. */
+export const UNKNOWN_PAY = 'Pay ?';
+
 const UNIT_RUPEES: Record<string, number> = { k: 1e3, l: 1e5, lakh: 1e5, lakhs: 1e5, cr: 1e7, crore: 1e7 };
 // A rupee amount: digits (commas, decimals) plus an optional k / L / lakh / Cr unit.
 const AMOUNT = '(\\d[\\d,]*(?:\\.\\d+)?)\\s*(k|l|lakhs?|cr|crore)?(?![a-z])';
@@ -192,6 +195,7 @@ function fmtRupees(n: number): string {
 export function shortStipend(text: string): string {
   const t = text.trim();
   if (/fully\s+funded/i.test(t)) return 'Funded';
+  if (/^(not\s+(stated|disclosed|verified|mentioned)|unstated|undisclosed|unknown)\b/i.test(t)) return UNKNOWN_PAY;
   const range = t.match(RANGE_RE);
   if (range) {
     // "₹10–20k": the low end borrows the high end's unit.
@@ -206,7 +210,10 @@ export function shortStipend(text: string): string {
 
 /** The place before any detail: "Gurgaon, hybrid (relocation)" → "Gurgaon". */
 export function shortPlace(locationMode: string): string {
-  return locationMode.split(/[,(/|]/)[0].trim();
+  const first = locationMode.split(/[,(/|]/)[0].trim();
+  if (/^(work\s+from\s+home|wfh)$/i.test(first)) return 'WFH';
+  if (/^remote\b/i.test(first)) return 'Remote';
+  return first;
 }
 
 /**
@@ -299,12 +306,24 @@ export interface InternshipFilters {
   remoteOnly: boolean;
   fundedOnly: boolean;
   autoOnly: boolean;
+  /** Still open (to review or queued) and closing within 7 days: same rule as the counter. */
+  dueSoon: boolean;
 }
 
-export const EMPTY_FILTERS: InternshipFilters = { search: '', status: 'all', remoteOnly: false, fundedOnly: false, autoOnly: false };
+export const EMPTY_FILTERS: InternshipFilters = {
+  search: '',
+  status: 'all',
+  remoteOnly: false,
+  fundedOnly: false,
+  autoOnly: false,
+  dueSoon: false,
+};
 
-export function matchesFilters(item: Internship, f: InternshipFilters): boolean {
+const isOpen = (item: Pick<Internship, 'status'>): boolean => item.status === 'to-review' || item.status === 'apply-queue';
+
+export function matchesFilters(item: Internship, f: InternshipFilters, now: Date = new Date()): boolean {
   if (f.status !== 'all' && item.status !== f.status) return false;
+  if (f.dueSoon && !(isOpen(item) && isClosingSoon(item, now))) return false;
   if (f.remoteOnly && !/remote/i.test(item.locationMode)) return false;
   if (f.fundedOnly && !item.fullyFunded) return false;
   if (f.autoOnly && !item.autoApply) return false;
@@ -328,7 +347,7 @@ export function countInternships(items: Internship[], now: Date = new Date()): I
   for (const i of items) {
     if (i.status === 'apply-queue') queued += 1;
     if (i.status === 'applied') applied += 1;
-    if ((i.status === 'to-review' || i.status === 'apply-queue') && isClosingSoon(i, now)) closingSoon += 1;
+    if (isOpen(i) && isClosingSoon(i, now)) closingSoon += 1;
   }
   return { total: items.length, queued, applied, closingSoon };
 }

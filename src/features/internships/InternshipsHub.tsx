@@ -39,6 +39,7 @@ import {
   safeLink,
   shortPlace,
   shortStipend,
+  UNKNOWN_PAY,
   SOON_DAYS,
   type InternshipFilters,
   type SectionId,
@@ -211,7 +212,7 @@ export function InternshipsView({
   const revealHidden = showHidden || filters.status === 'skipped' || filters.status === 'closed';
   const visibleSections = SECTION_ORDER.filter((s) => sections[s.id].length > 0 && (s.id !== 'hidden' || revealHidden));
   const filtersActive =
-    filters.search.trim() !== '' || filters.status !== 'all' || filters.remoteOnly || filters.fundedOnly || filters.autoOnly;
+    filters.search.trim() !== '' || filters.status !== 'all' || filters.remoteOnly || filters.fundedOnly || filters.autoOnly || filters.dueSoon;
 
   const toggleSet = <T,>(setter: (fn: (prev: Set<T>) => Set<T>) => void, key: T) =>
     setter((prev) => {
@@ -232,11 +233,29 @@ export function InternshipsView({
         </p>
       </div>
 
+      {/* The counters double as quick filters; Total clears everything. */}
       <div className="grid grid-cols-4 gap-2">
-        <StatTile label="Total" value={counts.total} />
-        <StatTile label="Queued" value={counts.queued} accent={counts.queued > 0} />
-        <StatTile label="Applied" value={counts.applied} />
-        <StatTile label={`Due in ${SOON_DAYS}d`} value={counts.closingSoon} danger={counts.closingSoon > 0} />
+        <StatTile label="Total" value={counts.total} on={!filtersActive} onClick={() => setFilters(EMPTY_FILTERS)} />
+        <StatTile
+          label="Queued"
+          value={counts.queued}
+          accent={counts.queued > 0}
+          on={filters.status === 'apply-queue'}
+          onClick={() => setFilters((f) => ({ ...EMPTY_FILTERS, status: f.status === 'apply-queue' ? 'all' : 'apply-queue' }))}
+        />
+        <StatTile
+          label="Applied"
+          value={counts.applied}
+          on={filters.status === 'applied'}
+          onClick={() => setFilters((f) => ({ ...EMPTY_FILTERS, status: f.status === 'applied' ? 'all' : 'applied' }))}
+        />
+        <StatTile
+          label={`Due in ${SOON_DAYS}d`}
+          value={counts.closingSoon}
+          danger={counts.closingSoon > 0}
+          on={filters.dueSoon}
+          onClick={() => setFilters((f) => ({ ...EMPTY_FILTERS, dueSoon: !f.dueSoon }))}
+        />
       </div>
 
       <div className="flex flex-col gap-2">
@@ -360,14 +379,34 @@ export function InternshipsView({
   );
 }
 
-function StatTile({ label, value, accent = false, danger = false }: { label: string; value: number; accent?: boolean; danger?: boolean }) {
+function StatTile({
+  label,
+  value,
+  on,
+  onClick,
+  accent = false,
+  danger = false,
+}: {
+  label: string;
+  value: number;
+  on: boolean;
+  onClick: () => void;
+  accent?: boolean;
+  danger?: boolean;
+}) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] px-1 py-2.5">
+    <button
+      onClick={onClick}
+      aria-pressed={on}
+      className={`flex cursor-pointer flex-col items-center justify-center rounded-2xl border px-1 py-2.5 transition-colors ${
+        on ? 'border-brand-400/45 bg-brand-500/10' : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.06]'
+      }`}
+    >
       <span className={`text-xl font-extrabold leading-none ${danger ? 'text-red-300' : accent ? 'text-brand-300' : 'text-white'}`}>
         {value}
       </span>
       <span className="mt-1 truncate text-[12px] font-semibold text-white/50">{label}</span>
-    </div>
+    </button>
   );
 }
 
@@ -478,7 +517,7 @@ function InternshipRow({
         {stipend && (
           <span
             title={item.floorCheck ? `${item.stipendText} · floor: ${item.floorCheck}` : item.stipendText}
-            className={`max-w-[5rem] shrink-0 truncate pl-1 text-[12.5px] font-semibold ${lowStipend ? 'text-red-300' : 'text-white/75'}`}
+            className={`max-w-[5rem] shrink-0 truncate pl-1 text-[12.5px] font-semibold ${lowStipend ? 'text-red-300' : stipend === UNKNOWN_PAY ? 'text-white/35' : 'text-white/75'}`}
           >
             {stipend}
           </span>

@@ -163,3 +163,18 @@ assert.equal(shortStipend('US$1,472 biweekly (≈₹2.65L/mo full-time equiv.)')
 assert.equal(shortStipend('CHF 900/mo lump sum (≈₹99k nominal, below Geneva living cost)'), '≈₹99k');
 assert.equal(shortStipend('"$0k–$10k" — possibly unpaid'), '"$0k–$10k" — possibly unpaid');
 console.log('internships real stipend formats: passed');
+
+// Improvements: due-soon filter, short places, unknown pay
+const soonOpen = item({ id: 's1', deadlineText: '25 Nov 2026' });
+const soonApplied = item({ id: 's2', status: 'applied', deadlineText: '25 Nov 2026' });
+const later = item({ id: 's3', deadlineText: '25 Dec 2026' });
+assert.equal(matchesFilters(soonOpen, { ...EMPTY_FILTERS, dueSoon: true }, now), true);
+assert.equal(matchesFilters(soonApplied, { ...EMPTY_FILTERS, dueSoon: true }, now), false, 'applied no longer due');
+assert.equal(matchesFilters(later, { ...EMPTY_FILTERS, dueSoon: true }, now), false);
+assert.equal(shortPlace('Work from home'), 'WFH');
+assert.equal(shortPlace('Remote only'), 'Remote');
+assert.equal(shortPlace('India'), 'India');
+assert.equal(shortStipend('Not stated'), 'Pay ?');
+assert.equal(shortStipend('Not verified'), 'Pay ?');
+assert.equal(shortStipend('Stipend reported ₹20,000/mo'), '₹20k');
+console.log('internships improvements: passed');
