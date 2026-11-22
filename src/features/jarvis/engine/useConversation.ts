@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { classifyMuseTask, museContextNote, withMuseAck } from '../museTasks';
+import { mirrorToMuse } from '../museInbox';
 import { callJarvis } from './jarvisClient';
 import {
   deleteChat as deleteChatDoc,
@@ -259,8 +261,14 @@ export function useConversation(deps: ConversationDeps): Conversation {
       thinkingRef.current = true;
       setThinking(true);
 
+      // Tasks (reminders, research, notes, "send to Muse") are also copied to
+      // Muse; Gemini still answers, told Muse has it so it doesn't do it twice.
+      const museKind = classifyMuseTask(text);
+      const mirrored = museKind && uid ? mirrorToMuse(uid, text, origin === 'voice' ? 'app-voice' : 'app-text') : null;
+      const ack = async (reply: string) => (mirrored ? withMuseAck(reply, await mirrored) : reply);
+
       const tools = deps.getTools();
-      const context = deps.buildContext();
+      const context = museKind ? { ...deps.buildContext(), muse: museContextNote(museKind) } : deps.buildContext();
       const decls: ToolDeclaration[] = tools.map((t) => ({
         name: t.name,
         description: t.description,
@@ -272,9 +280,10 @@ export function useConversation(deps: ConversationDeps): Conversation {
         const plan = await callJarvis(toModelHistory(history), context, decls, ctrl.signal);
 
         if (plan.needsClarification || plan.toolCalls.length === 0) {
-          push({ role: 'assistant', content: plan.reply });
-          speak(spokenOf(plan));
-          if (isNew && uid) void titleChat(uid, chatId, [userMsg, { role: 'assistant', content: plan.reply }]);
+          const reply = await ack(plan.reply);
+          push({ role: 'assistant', content: reply });
+          speak(await ack(spokenOf(plan)));
+          if (isNew && uid) void titleChat(uid, chatId, [userMsg, { role: 'assistant', content: reply }]);
           return;
         }
 
@@ -342,12 +351,13 @@ export function useConversation(deps: ConversationDeps): Conversation {
           ...skipped.map((s): StatusLine => ({ kind: 'info', text: s })),
         ];
 
+        reply = await ack(reply);
         push({ role: 'assistant', content: reply, status });
-        speak(spoken);
+        speak(await ack(spoken));
         if (isNew && uid) void titleChat(uid, chatId, [userMsg, { role: 'assistant', content: reply }]);
       } catch (e) {
         if ((e as Error).name === 'AbortError') return;
-        push({ role: 'assistant', content: `Connection issue: ${(e as Error).message}. Try again.` });
+        push({ role: 'assistant', content: await ack(`Connection issue: ${(e as Error).message}. Try again.`) });
       } finally {
         thinkingRef.current = false;
         setThinking(false);

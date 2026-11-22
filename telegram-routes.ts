@@ -37,8 +37,8 @@ import { TELEGRAM_TOOLS, runTelegramTool } from './telegram-tools';
 import { getTelegramStatus, runTelegramCron } from './telegram-cron';
 import { downloadTelegramFile, sendTelegramMessage, sendTyping } from './telegram-send';
 import { transcribeAudio } from './transcribe-routes';
-import { deliverCoachReplies, handleCoachMessage } from './coach-bridge';
-import { jarvisCommand, museBridgeOn, type CoachChannel } from './coach-inbox';
+import { mirrorTaskToMuse, speakOnTelegram, type TelegramChannel } from './telegram-voice';
+import { classifyMuseTask, museContextNote, withMuseAck } from './src/features/jarvis/museTasks';
 
 export const telegramRouter = Router();
 
@@ -129,36 +129,7 @@ telegramRouter.get('/status', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * Speaks any Muse replies that arrived since the last pass, and sends the
- * 10-minute "no reply yet" notice. The scheduled /cron pass does the same;
- * this route exists so Muse (or a pinger) can trigger delivery right after
- * writing a reply instead of waiting for the next pass. Same CRON_SECRET.
- */
-telegramRouter.all('/coach-deliver', async (req: Request, res: Response) => {
-  try {
-    if (!cronAuthorized(req)) {
-      res.status(401).end();
-      return;
-    }
-    const token = process.env.TELEGRAM_BOT_TOKEN;
-    const chatId = Number(process.env.TELEGRAM_CHAT_ID);
-    const uid = process.env.ASCEND_UID;
-    const db = await getAdminDb();
-    if (!token || !chatId || !uid || !db) {
-      res.status(503).json({ error: 'Telegram integration is not configured.' });
-      return;
-    }
-    res.json({ sent: await deliverCoachReplies(db, uid, token, chatId) });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'coach delivery failed';
-    logEvent({ level: 'error', scope: 'coach', message });
-    res.status(500).json({ error: message });
-  }
-});
-
 telegramRouter.post('/webhook', async (req: Request, res: Response) => {
-  const startedAt = Date.now();
   // Ack Telegram immediately in every branch below — it isn't waiting on our
   // outbound sendMessage call, only on this response, and a slow/failed ack
   // makes Telegram retry the same update.
@@ -194,7 +165,7 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
     }
 
     // Voice notes are transcribed first, then treated exactly like typed text.
-    let channel: CoachChannel = 'telegram-text';
+    let channel: TelegramChannel = 'telegram-text';
     const voice = update.message?.voice ?? update.message?.audio;
     if (!text && voice?.file_id) {
       void sendTyping(token, chatId);
@@ -213,28 +184,14 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
       return;
     }
 
-    // Muse answers by default. "/j ..." still reaches Jarvis and its tools
-    // (reminders, habits, email); MUSE_BRIDGE=off sends everything to Jarvis.
-    const forJarvis = jarvisCommand(text);
-    if (museBridgeOn() && forJarvis === null) {
-      const coachDb = await getAdminDb();
-      if (!coachDb) throw new Error("Storage isn't reachable, so this couldn't be passed to Muse.");
-      await handleCoachMessage({
-        db: coachDb,
-        uid,
-        token,
-        chatId,
-        updateId: update.update_id ?? startedAt,
-        text,
-        channel,
-        startedAt,
-      });
-      res.status(200).end();
-      return;
-    }
-    if (forJarvis !== null) text = forJarvis;
-
     const db = await getAdminDb();
+
+    // Two brains: Jarvis (Gemini) answers everything as before; a task
+    // (reminder, research, note, "send to Muse") is also copied to Muse's
+    // inbox, in parallel, and Jarvis is told so it doesn't do it twice.
+    const museKind = classifyMuseTask(text);
+    const mirrored = museKind ? mirrorTaskToMuse(db, uid, update.update_id, text, channel) : null;
+
     const threadRef = db?.doc(`users/${uid}/telegramThread/main`);
     const threadSnap = await threadRef?.get();
     const priorHistory = (threadSnap?.exists ? threadSnap.data()?.messages : []) as
@@ -260,6 +217,7 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
           now: new Date().toString(),
           surface: 'Telegram (phone, text-only). You can set reminders and add/tick habits from here.',
           ...appContext,
+          ...(museKind ? { muse: museContextNote(museKind) } : {}),
         },
         TELEGRAM_TOOLS,
       );
@@ -283,11 +241,14 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
       logEvent({ level: 'info', scope: 'telegram', message: `${call.tool} -> ${result}` });
       results.push(result);
     }
-    const replyText = results.length ? `${turn.reply}
+    const answer = results.length ? `${turn.reply}
 
 ✓ ${results.join(' · ')}` : turn.reply;
+    const replyText = mirrored ? withMuseAck(answer, await mirrored) : answer;
 
-    await sendTelegramMessage(token, chatId, replyText);
+    // A voice note gets a spoken answer; typed text gets text, as before.
+    if (channel === 'telegram-voice') await speakOnTelegram(token, chatId, replyText);
+    else await sendTelegramMessage(token, chatId, replyText);
 
     // Admin SDK writes bypass firestore.rules entirely — this collection was
     // never meant to be client-readable, same reasoning as _logs in server-log.ts.

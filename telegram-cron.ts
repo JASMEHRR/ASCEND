@@ -44,7 +44,6 @@
 import { getAdminDb } from './admin-db';
 import { fetchQuote } from './stocks-routes';
 import { sendTelegramMessage as send } from './telegram-send';
-import { deliverCoachReplies } from './coach-bridge';
 import { collectCalendarAlerts } from './google-oauth-routes';
 import { collectEmailAlerts } from './gmail-alerts';
 import { collectNudges } from './nudges';
@@ -120,21 +119,10 @@ export async function runTelegramCron(
   const db = await getAdminDb();
   if (!db) return { sent: 0, checked: ['storage unavailable'] };
 
-  // Muse's replies go out even when another pass holds the lock below: each
-  // one is claimed on its own (see coach-bridge.ts), so overlap is safe here.
-  let coachSent = 0;
-  try {
-    coachSent = await deliverCoachReplies(db, uid, token, chatId);
-  } catch (err) {
-    console.warn('[telegram-cron] coach inbox failed:', (err as Error).message);
-  }
-  const coachLine = `coach inbox (${coachSent} sent)`;
-
   const lock = db.doc(`users/${uid}/telegramNotifyState/lock`);
-  if (!(await acquireLock(lock))) return { sent: coachSent, checked: [coachLine, 'skipped: another pass is still running'] };
+  if (!(await acquireLock(lock))) return { sent: 0, checked: ['skipped: another pass is still running'] };
   try {
-    const pass = await runPass(db, uid, token, chatId, source);
-    return { sent: pass.sent + coachSent, checked: [coachLine, ...pass.checked] };
+    return await runPass(db, uid, token, chatId, source);
   } finally {
     await lock.delete().catch(() => undefined);
   }
