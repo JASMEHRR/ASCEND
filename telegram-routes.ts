@@ -35,16 +35,24 @@ import { runJarvisTurn } from './jarvis-routes';
 import { logEvent } from './server-log';
 import { TELEGRAM_TOOLS, runTelegramTool } from './telegram-tools';
 import { getTelegramStatus, runTelegramCron } from './telegram-cron';
-import { sendTelegramMessage, sendTyping } from './telegram-send';
+import { downloadTelegramFile, sendTelegramMessage, sendTyping } from './telegram-send';
+import { transcribeAudio } from './transcribe-routes';
+import { deliverCoachReplies, handleCoachMessage } from './coach-bridge';
+import { jarvisCommand, museBridgeOn, type CoachChannel } from './coach-inbox';
 
 export const telegramRouter = Router();
 
 const MAX_HISTORY = 20; // messages kept, not turns — matches jarvis-routes' own history.slice(-24)
 
 interface TelegramUpdate {
+  update_id?: number;
   message?: {
     chat?: { id?: number };
     text?: string;
+    /** A recorded voice note (ogg/opus). */
+    voice?: { file_id?: string; mime_type?: string };
+    /** An audio file sent as a file rather than recorded. */
+    audio?: { file_id?: string; mime_type?: string };
   };
 }
 
@@ -121,7 +129,36 @@ telegramRouter.get('/status', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * Speaks any Muse replies that arrived since the last pass, and sends the
+ * 10-minute "no reply yet" notice. The scheduled /cron pass does the same;
+ * this route exists so Muse (or a pinger) can trigger delivery right after
+ * writing a reply instead of waiting for the next pass. Same CRON_SECRET.
+ */
+telegramRouter.all('/coach-deliver', async (req: Request, res: Response) => {
+  try {
+    if (!cronAuthorized(req)) {
+      res.status(401).end();
+      return;
+    }
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    const chatId = Number(process.env.TELEGRAM_CHAT_ID);
+    const uid = process.env.ASCEND_UID;
+    const db = await getAdminDb();
+    if (!token || !chatId || !uid || !db) {
+      res.status(503).json({ error: 'Telegram integration is not configured.' });
+      return;
+    }
+    res.json({ sent: await deliverCoachReplies(db, uid, token, chatId) });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'coach delivery failed';
+    logEvent({ level: 'error', scope: 'coach', message });
+    res.status(500).json({ error: message });
+  }
+});
+
 telegramRouter.post('/webhook', async (req: Request, res: Response) => {
+  const startedAt = Date.now();
   // Ack Telegram immediately in every branch below — it isn't waiting on our
   // outbound sendMessage call, only on this response, and a slow/failed ack
   // makes Telegram retry the same update.
@@ -146,7 +183,7 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
 
     const update = req.body as TelegramUpdate;
     const chatId = update.message?.chat?.id;
-    const text = update.message?.text;
+    let text = update.message?.text?.trim();
 
     // Ack and silently drop anything not from the one authorized chat —
     // this app is single-user, and a stranger finding the bot should get
@@ -155,11 +192,47 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
       res.status(200).end();
       return;
     }
+
+    // Voice notes are transcribed first, then treated exactly like typed text.
+    let channel: CoachChannel = 'telegram-text';
+    const voice = update.message?.voice ?? update.message?.audio;
+    if (!text && voice?.file_id) {
+      void sendTyping(token, chatId);
+      const audio = await downloadTelegramFile(token, voice.file_id);
+      text = (await transcribeAudio(audio, voice.mime_type || 'audio/ogg')).trim();
+      channel = 'telegram-voice';
+      if (!text) {
+        await sendTelegramMessage(token, chatId, "I couldn't make out any words in that voice note.");
+        res.status(200).end();
+        return;
+      }
+    }
     if (!text) {
-      await sendTelegramMessage(token, chatId, "I can only read text messages right now.");
+      await sendTelegramMessage(token, chatId, 'I can read text and voice notes, not that kind of message.');
       res.status(200).end();
       return;
     }
+
+    // Muse answers by default. "/j ..." still reaches Jarvis and its tools
+    // (reminders, habits, email); MUSE_BRIDGE=off sends everything to Jarvis.
+    const forJarvis = jarvisCommand(text);
+    if (museBridgeOn() && forJarvis === null) {
+      const coachDb = await getAdminDb();
+      if (!coachDb) throw new Error("Storage isn't reachable, so this couldn't be passed to Muse.");
+      await handleCoachMessage({
+        db: coachDb,
+        uid,
+        token,
+        chatId,
+        updateId: update.update_id ?? startedAt,
+        text,
+        channel,
+        startedAt,
+      });
+      res.status(200).end();
+      return;
+    }
+    if (forJarvis !== null) text = forJarvis;
 
     const db = await getAdminDb();
     const threadRef = db?.doc(`users/${uid}/telegramThread/main`);

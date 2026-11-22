@@ -16,6 +16,36 @@ export const ttsRouter = Router();
 const ELEVEN_URL = 'https://api.elevenlabs.io/v1/text-to-speech';
 const MAX_CHARS = 500;
 
+export type SpeechResult = { ok: true; audio: Buffer } | { ok: false; quota: boolean };
+
+/**
+ * ElevenLabs text to mp3, shared by the route below and the Telegram bot
+ * (which speaks Muse's replies in the same voice). Never throws on an
+ * upstream refusal; `quota` tells a spent or rejected key from an outage.
+ */
+export async function synthesizeSpeech(text: string, voiceId: string, key: string, maxChars = MAX_CHARS): Promise<SpeechResult> {
+  const upstream = await fetch(`${ELEVEN_URL}/${voiceId}?output_format=mp3_44100_64`, {
+    method: 'POST',
+    headers: { 'xi-api-key': key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text: text.slice(0, maxChars),
+      model_id: 'eleven_flash_v2_5',
+      voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+    }),
+    signal: AbortSignal.timeout(20_000),
+  });
+
+  if (!upstream.ok) {
+    const detail = (await upstream.text().catch(() => '')).slice(0, 300);
+    const quota =
+      upstream.status === 401 || upstream.status === 429 || /quota_exceeded|character_limit/i.test(detail);
+    if (!quota) console.error('[tts] upstream', upstream.status, detail);
+    logEvent({ level: quota ? 'warn' : 'error', scope: 'tts', message: 'upstream failed', meta: { status: upstream.status } });
+    return { ok: false, quota };
+  }
+  return { ok: true, audio: Buffer.from(await upstream.arrayBuffer()) };
+}
+
 ttsRouter.post('/', async (req: Request, res: Response) => {
   try {
     const key = process.env.ELEVENLABS_API_KEY;
@@ -31,30 +61,14 @@ ttsRouter.post('/', async (req: Request, res: Response) => {
       return;
     }
 
-    const upstream = await fetch(`${ELEVEN_URL}/${voiceId}?output_format=mp3_44100_64`, {
-      method: 'POST',
-      headers: { 'xi-api-key': key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text,
-        model_id: 'eleven_flash_v2_5',
-        voice_settings: { stability: 0.5, similarity_boost: 0.75 },
-      }),
-      signal: AbortSignal.timeout(20_000),
-    });
-
-    if (!upstream.ok) {
-      const detail = (await upstream.text().catch(() => '')).slice(0, 300);
-      const quota =
-        upstream.status === 401 || upstream.status === 429 || /quota_exceeded|character_limit/i.test(detail);
-      if (!quota) console.error('[tts] upstream', upstream.status, detail);
-      logEvent({ level: quota ? 'warn' : 'error', scope: 'tts', message: 'upstream failed', meta: { status: upstream.status } });
+    const result = await synthesizeSpeech(text, voiceId, key);
+    if ('quota' in result) {
       res
-        .status(quota ? 429 : 502)
-        .json({ error: quota ? 'ElevenLabs quota reached.' : 'TTS failed upstream.', code: quota ? 'quota' : 'upstream' });
+        .status(result.quota ? 429 : 502)
+        .json({ error: result.quota ? 'ElevenLabs quota reached.' : 'TTS failed upstream.', code: result.quota ? 'quota' : 'upstream' });
       return;
     }
-
-    const audio = Buffer.from(await upstream.arrayBuffer());
+    const audio = result.audio;
     res.setHeader('Content-Type', 'audio/mpeg');
     res.setHeader('Cache-Control', 'no-store');
     res.send(audio);

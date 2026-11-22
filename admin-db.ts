@@ -9,10 +9,14 @@
  * unset means every caller here gets null and must degrade, never throw.
  */
 
+type AdminQuerySnapshot = { docs: { id: string; data: () => Record<string, unknown> }[] };
+
 interface AdminFirestoreLike {
   collection: (path: string) => {
-    get: () => Promise<{ docs: { id: string; data: () => Record<string, unknown> }[] }>;
+    get: () => Promise<AdminQuerySnapshot>;
     add: (data: Record<string, unknown>) => Promise<{ id: string }>;
+    /** Equality filter only; that's all the callers need. */
+    where: (field: string, op: '==', value: unknown) => { get: () => Promise<AdminQuerySnapshot> };
   };
   doc: (path: string) => {
     get: () => Promise<{ exists: boolean; data: () => Record<string, unknown> | undefined }>;
@@ -50,6 +54,21 @@ async function initAdminDb(): Promise<AdminFirestoreLike | null> {
   } catch (err) {
     console.warn('[admin-db] init failed:', (err as Error).message);
     return null;
+  }
+}
+
+/**
+ * Firestore's server timestamp sentinel, for fields that must be the
+ * server's clock rather than this function's. Falls back to an ISO string if
+ * the package can't load, so a write never fails over a timestamp.
+ */
+export async function serverTimestamp(): Promise<unknown> {
+  try {
+    const firestorePkg = 'firebase-admin/firestore';
+    const { FieldValue } = (await import(firestorePkg)) as { FieldValue: { serverTimestamp: () => unknown } };
+    return FieldValue.serverTimestamp();
+  } catch {
+    return new Date().toISOString();
   }
 }
 

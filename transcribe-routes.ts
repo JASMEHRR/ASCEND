@@ -75,6 +75,26 @@ async function transcribeWithGemini(audioB64: string, mime: string): Promise<str
   return (response.text ?? '').trim();
 }
 
+/**
+ * Same provider chain as the route below (Groq first, Gemini as fallback),
+ * callable from the server itself: the Telegram webhook transcribes voice
+ * notes with it. Throws when every provider fails.
+ */
+export async function transcribeAudio(audioBuf: Buffer, mimeType: string): Promise<string> {
+  const mime = mimeType.split(';')[0];
+  if (!ALLOWED_MIME.has(mime)) throw new Error(`Unsupported mimeType "${mime}".`);
+  const groqKey = process.env.GROQ_API_KEY;
+  if (groqKey) {
+    try {
+      return await transcribeWithGroq(audioBuf, mime, groqKey);
+    } catch (err) {
+      console.warn('[transcribe] groq failed, falling back to gemini:', (err as Error).message);
+      logEvent({ level: 'warn', scope: 'transcribe', message: 'groq failed, falling back to gemini' });
+    }
+  }
+  return transcribeWithGemini(audioBuf.toString('base64'), mime);
+}
+
 transcribeRouter.post('/', async (req: Request, res: Response) => {
   try {
     const { audio, mimeType } = req.body ?? {};
