@@ -20,7 +20,25 @@ service cloud.firestore {
     // code touches it, so nothing breaks, and a script injected into the page
     // can't lift a long-lived token to someone's inbox.
     match /users/{userId}/{collection}/{rest=**} {
-      allow read, write: if isOwner(userId) && collection != 'googleTokens';
+      allow read, write: if isOwner(userId)
+        && collection != 'googleTokens'
+        && collection != 'internships';
+    }
+
+    // Internships are written by Muse (a separate agent) through the Admin
+    // SDK, which bypasses these rules. The owner's browser may read them and
+    // move each one along, but only by changing status, notes and updatedAt:
+    // no create, no delete (nothing is ever deleted), and Muse's descriptive
+    // fields (title, score, link, flags...) can't be overwritten from a page.
+    match /users/{userId}/internships/{slug} {
+      allow read: if isOwner(userId);
+      allow update: if isOwner(userId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'notes', 'updatedAt'])
+        && (request.resource.data.status == resource.data.status
+            || request.resource.data.status in ['to-review', 'apply-queue', 'applied', 'done', 'skipped', 'closed'])
+        && (!('notes' in request.resource.data)
+            || (request.resource.data.notes is string && request.resource.data.notes.size() <= 5000))
+        && request.resource.data.updatedAt is string;
     }
 
     // --- Arena: shared habit rooms -------------------------------------

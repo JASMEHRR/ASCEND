@@ -46,6 +46,7 @@ const ArenaHub = lazy(() => import('./features/arena/ArenaHub'));
 const CustomModulesHub = lazy(() => import('./features/custom/CustomModulesHub'));
 const TimetableHub = lazy(() => import('./features/timetable/TimetableHub'));
 const AttendanceHub = lazy(() => import('./features/attendance/AttendanceHub'));
+const InternshipsHub = lazy(() => import('./features/internships/InternshipsHub'));
 
 type View =
   | 'dashboard'
@@ -58,6 +59,7 @@ type View =
   | 'arena'
   | 'timetable'
   | 'attendance'
+  | 'internships'
   | 'custom';
 
 const REWARDS_LIST = [
@@ -394,6 +396,7 @@ export default function App() {
                 {view === 'arena' && <ArenaHub state={state} updateState={updateState} />}
                 {view === 'timetable' && <TimetableHub />}
                 {view === 'attendance' && <AttendanceHub />}
+                {view === 'internships' && <InternshipsHub />}
                 {view === 'custom' && <CustomModulesHub />}
               </Suspense>
           </motion.div>

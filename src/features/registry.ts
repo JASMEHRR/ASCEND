@@ -14,6 +14,7 @@ import {
   Blocks,
   CalendarDays,
   CalendarCheck,
+  Briefcase,
 } from 'lucide-react';
 import type { OSState } from '../types';
 
@@ -40,6 +41,7 @@ export type FeatureId =
   | 'arena'
   | 'timetable'
   | 'attendance'
+  | 'internships'
   | 'custom';
 
 export interface FeatureModule {
@@ -207,6 +209,21 @@ export const FEATURES: FeatureModule[] = [
     description: 'Mark each timetable lesson attended or missed, track per-subject percentage.',
     icon: CalendarCheck,
     nav: true,
+    defaultEnabled: true,
+    status: 'active',
+  },
+  {
+    id: 'internships',
+    label: 'Internships',
+    description: 'The internship hunt Muse runs: review, queue for applying, track replies.',
+    icon: Briefcase,
+    nav: true,
+    // In the mobile bar because it's used mostly from a phone. That makes the
+    // bar nine wide (five left of the Settings disc, four right); the halves
+    // are still equal width, so the disc stays centred. Hide any module from
+    // Settings → navigation to bring it back to eight.
+    mobile: true,
+    short: 'Jobs',
     defaultEnabled: true,
     status: 'active',
   },

@@ -13,6 +13,7 @@ export type View =
   | 'arena'
   | 'timetable'
   | 'attendance'
+  | 'internships'
   | 'custom';
 
 export const VIEW_LABELS: Record<View, string> = {
@@ -26,6 +27,7 @@ export const VIEW_LABELS: Record<View, string> = {
   arena: 'Arena',
   timetable: 'Timetable',
   attendance: 'Attendance',
+  internships: 'Internships',
   custom: 'My Modules',
 };
 
