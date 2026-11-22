@@ -18,6 +18,32 @@ function isoOrNull(v: unknown): string | null {
   return null;
 }
 
+/** Size ratings Muse has used in place of a company name. */
+const ORG_TIER_RE = /^(top[\s-]?tier|mid[\s-]?tier|solid|unknown(\s*\/\s*small)?|small)$/i;
+
+/**
+ * Works out the company, the role and the company's size rating from Muse's
+ * fields. `org` holding a rating (not a name) means the company is the part
+ * of `title` before " — "; a title with no separator is a programme name
+ * ("RBI Summer Internship") and stands as the name on its own. Muse's
+ * "(#8)" list numbers are dropped from what's shown.
+ */
+export function splitCompanyRole(title: string, org: string, orgTier = ''): { company: string; role: string; orgTier: string } {
+  const cleanTitle = title.replace(/\s*\(#\d+\)\s*$/, '').trim();
+  const orgName = org.trim();
+  const orgIsTier = ORG_TIER_RE.test(orgName);
+  const tier = orgTier.trim() || (orgIsTier ? orgName : '');
+  const parts = cleanTitle.match(/^(.+?)\s+[—–-]\s+(.+)$/);
+
+  if (orgName && !orgIsTier) {
+    // A real company name: drop it from the front of the title if Muse repeated it there.
+    const role = parts && parts[1].toLowerCase() === orgName.toLowerCase() ? parts[2] : cleanTitle;
+    return { company: orgName, role, orgTier: tier };
+  }
+  if (parts) return { company: parts[1], role: parts[2], orgTier: tier };
+  return { company: cleanTitle, role: '', orgTier: tier };
+}
+
 /**
  * Turns a raw Firestore doc into a fully-typed entry. Muse writes these from
  * scraped data, so any field may be missing or the wrong type; a bad field
@@ -27,12 +53,15 @@ export function normalizeInternship(id: string, raw: Record<string, unknown>): I
   const status = INTERNSHIP_STATUSES.includes(raw.status as InternshipStatus) ? (raw.status as InternshipStatus) : 'to-review';
   const emailStage = EMAIL_STAGES.includes(raw.emailStage as EmailStage) ? (raw.emailStage as EmailStage) : null;
   const score = typeof raw.score === 'number' && Number.isFinite(raw.score) ? raw.score : null;
+  const title = str(raw.title) || '(untitled)';
+  const org = str(raw.org);
   return {
     id,
     ref: str(raw.ref),
     section: str(raw.section),
-    title: str(raw.title) || '(untitled)',
-    org: str(raw.org),
+    title,
+    org,
+    ...splitCompanyRole(title, org, str(raw.orgTier)),
     locationMode: str(raw.locationMode),
     stipendText: str(raw.stipendText),
     floorCheck: str(raw.floorCheck),
@@ -264,7 +293,7 @@ export function matchesFilters(item: Internship, f: InternshipFilters): boolean 
   if (f.fundedOnly && !item.fullyFunded) return false;
   if (f.autoOnly && !item.autoApply) return false;
   const q = f.search.trim().toLowerCase();
-  if (q && !`${item.title} ${item.org}`.toLowerCase().includes(q)) return false;
+  if (q && !`${item.title} ${item.org} ${item.company}`.toLowerCase().includes(q)) return false;
   return true;
 }
 

@@ -19,6 +19,16 @@ export interface Internship {
   section: string;
   title: string;
   org: string;
+  /**
+   * Display-only, derived in normalizeInternship and never written back.
+   * Muse's first seed put a size rating ("Top-tier", "Solid",
+   * "Unknown/small") in `org` and the company inside `title` as
+   * "Company — Role"; these three untangle that, and also read the clean
+   * shape (`org` = company, `orgTier` = rating, `title` = role).
+   */
+  company: string;
+  role: string;
+  orgTier: string;
   locationMode: string;
   stipendText: string;
   floorCheck: string;

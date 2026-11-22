@@ -18,6 +18,7 @@ import {
   safeLink,
   shortPlace,
   shortStipend,
+  splitCompanyRole,
   sectionOf,
 } from './logic';
 import type { Internship } from './types';
@@ -137,3 +138,14 @@ assert.equal(shortPlace('Gurgaon, hybrid (relocation)'), 'Gurgaon');
 assert.equal(shortPlace('Remote (India)'), 'Remote');
 assert.equal(shortPlace('Tokyo'), 'Tokyo');
 console.log('internships compact row helpers: passed');
+
+// Company / role / size rating untangling (Muse's first seed put the rating in org)
+assert.deepEqual(splitCompanyRole('Ekatra — Founding Generalist Intern', 'Solid'), { company: 'Ekatra', role: 'Founding Generalist Intern', orgTier: 'Solid' });
+assert.deepEqual(splitCompanyRole('InterviewBuddies — Digital Marketing Intern (#8)', 'Unknown/small'), { company: 'InterviewBuddies', role: 'Digital Marketing Intern', orgTier: 'Unknown/small' });
+assert.deepEqual(splitCompanyRole('RBI Summer Internship', 'Top-tier'), { company: 'RBI Summer Internship', role: '', orgTier: 'Top-tier' });
+assert.deepEqual(splitCompanyRole('Mozilla Foundation Fellowship 2027–28', 'Top-tier'), { company: 'Mozilla Foundation Fellowship 2027–28', role: '', orgTier: 'Top-tier' });
+// Clean shape: org is the company, rating in orgTier
+assert.deepEqual(splitCompanyRole('Marketing Intern', 'Coy', 'Solid'), { company: 'Coy', role: 'Marketing Intern', orgTier: 'Solid' });
+assert.deepEqual(splitCompanyRole('Coy — Marketing Intern', 'Coy'), { company: 'Coy', role: 'Marketing Intern', orgTier: '' });
+assert.equal(normalizeInternship('n', { title: 'Buildrik — AI & Growth Marketing Intern', org: 'Unknown/small' }).company, 'Buildrik');
+console.log('internships company/role split: passed');

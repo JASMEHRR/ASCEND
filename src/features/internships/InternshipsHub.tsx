@@ -86,6 +86,14 @@ const STAGE_STYLE: Record<EmailStage, string> = {
   rejected: 'border-red-400/40 bg-red-500/15 text-red-300',
 };
 
+/** Company size rating badge: top-tier stands out, unknown stays quiet. */
+const TIER_STYLE = (tier: string): string =>
+  /top/i.test(tier)
+    ? 'border-emerald-400/35 bg-emerald-500/10 text-emerald-300'
+    : /solid|mid/i.test(tier)
+      ? 'border-brand-400/35 bg-brand-500/10 text-brand-300'
+      : 'border-white/15 bg-white/[0.06] text-white/55';
+
 const formatWhen = (iso: string | null): string => {
   if (!iso) return '';
   const d = new Date(iso);
@@ -183,7 +191,7 @@ export function InternshipsView({
 
   const setStatus = (item: Internship, to: InternshipStatus) => {
     if (item.status === to) return;
-    setUndo({ id: item.id, title: item.org || item.title, from: item.status, to });
+    setUndo({ id: item.id, title: item.company, from: item.status, to });
     void write(item.id, { status: to });
   };
 
@@ -430,7 +438,7 @@ function InternshipRow({
   const deadline = deadlineInfo(item.deadlineText);
   const lowStipend = failsStipendFloor(item);
   const muted = item.status === 'skipped' || item.status === 'closed' || deadline?.tone === 'passed';
-  const name = item.org || item.title;
+  const name = item.company;
   const place = shortPlace(item.locationMode);
   const stipend = shortStipend(item.stipendText);
   // The row's border doubles as the save indicator: green once saved, red if it failed.
@@ -461,7 +469,7 @@ function InternshipRow({
             )}
             <span className="min-w-0 truncate">
               <span className="font-semibold text-white">{name}</span>
-              {item.org && <span className="hidden sm:inline"> · {item.title}</span>}
+              {item.role && <span className="hidden sm:inline"> · {item.role}</span>}
             </span>
             {place && <span className="ml-1 max-w-[50%] shrink-0 truncate">· {place}</span>}
           </span>
@@ -522,9 +530,9 @@ function InternshipRow({
       {expanded && (
         <div className="flex flex-col gap-2.5 border-t border-white/8 px-3 pb-3 pt-2.5">
           <div>
-            <p className="text-[14px] font-semibold leading-snug text-white">{item.title}</p>
+            <p className="text-[14px] font-semibold leading-snug text-white">{item.role || item.company}</p>
             <p className="mt-0.5 text-[13px] leading-snug text-white/55">
-              {[item.org, item.locationMode, item.stipendText].filter(Boolean).join(' · ')}
+              {[item.role ? item.company : '', item.locationMode, item.stipendText].filter(Boolean).join(' · ')}
             </p>
           </div>
 
@@ -538,6 +546,7 @@ function InternshipRow({
                 {deadline.label}
               </span>
             )}
+            {item.orgTier && <Badge className={TIER_STYLE(item.orgTier)}>{item.orgTier}</Badge>}
             {lowStipend && <Badge className="border-red-400/40 bg-red-500/10 text-red-300">Below floor</Badge>}
             {item.status === 'closed' && <Badge className="border-white/15 bg-white/[0.06] text-white/55">Closed</Badge>}
             {item.autoApply && <Badge className="border-brand-400/35 bg-brand-500/10 text-brand-300">One-click</Badge>}
