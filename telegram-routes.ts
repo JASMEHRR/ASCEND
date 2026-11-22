@@ -38,7 +38,7 @@ import { getTelegramStatus, runTelegramCron } from './telegram-cron';
 import { downloadTelegramFile, sendTelegramMessage, sendTyping } from './telegram-send';
 import { transcribeAudio } from './transcribe-routes';
 import { mirrorTaskToMuse, speakOnTelegram, type TelegramChannel } from './telegram-voice';
-import { classifyMuseTask, museContextNote, withMuseAck } from './src/features/jarvis/museTasks';
+import { SEND_TO_MUSE_TOOL, classifyMuseTask, museContextNote, withMuseAck } from './src/features/jarvis/museTasks';
 
 export const telegramRouter = Router();
 
@@ -189,14 +189,18 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
     // Two brains: Jarvis (Gemini) answers everything as before; a task
     // (reminder, research, note, "send to Muse") is also copied to Muse's
     // inbox, in parallel, and Jarvis is told so it doesn't do it twice.
-    const museKind = classifyMuseTask(text);
-    const mirrored = museKind ? mirrorTaskToMuse(db, uid, update.update_id, text, channel) : null;
-
     const threadRef = db?.doc(`users/${uid}/telegramThread/main`);
     const threadSnap = await threadRef?.get();
     const priorHistory = (threadSnap?.exists ? threadSnap.data()?.messages : []) as
       | { role: string; content: string }[]
       | undefined;
+    const previousUserText = [...(priorHistory ?? [])].reverse().find((m) => m.role === 'user')?.content;
+    const museKind = classifyMuseTask(text, previousUserText);
+    // A follow-up ("set another one") goes with the message it follows, so Muse can read it.
+    const followUpOf = museKind && !classifyMuseTask(text) ? previousUserText : undefined;
+    let mirrored: Promise<boolean> | null = museKind
+      ? mirrorTaskToMuse(db, uid, update.update_id, text, channel, { context: followUpOf })
+      : null;
     const history = [...(priorHistory ?? []), { role: 'user', content: text }];
 
     // Telegram clears its own "typing…" indicator after ~5s, and the model
@@ -219,7 +223,7 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
           ...appContext,
           ...(museKind ? { muse: museContextNote(museKind) } : {}),
         },
-        TELEGRAM_TOOLS,
+        [...TELEGRAM_TOOLS, SEND_TO_MUSE_TOOL],
       );
     } finally {
       clearInterval(typingTimer);
@@ -237,6 +241,15 @@ telegramRouter.post('/webhook', async (req: Request, res: Response) => {
     });
     const results: string[] = [];
     for (const call of turn.toolCalls) {
+      // Gemini handing Muse a task the rules missed; never sent twice for one message.
+      if (call.tool === SEND_TO_MUSE_TOOL.name) {
+        const task = typeof call.args?.task === 'string' ? call.args.task.trim() : '';
+        mirrored ??= mirrorTaskToMuse(db, uid, update.update_id, text, channel, {
+          task: task || undefined,
+          context: previousUserText,
+        });
+        continue;
+      }
       const result = await runTelegramTool(uid, call);
       logEvent({ level: 'info', scope: 'telegram', message: `${call.tool} -> ${result}` });
       results.push(result);

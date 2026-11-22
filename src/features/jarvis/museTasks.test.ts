@@ -47,3 +47,12 @@ assert.equal(withMuseAck('   ', true), MUSE_ACK);
 assert.ok(withMuseAck('Okay.', false).startsWith("Couldn't send this to Muse"));
 
 console.log(`muse task classifier: ${cases.length} cases passed`);
+
+// Follow-ups to a task are the same task; follow-ups to chat stay chat
+assert.equal(classifyMuseTask('set anothero one', 'remind me at 1 to set an alarm'), 'reminder', 'the real typo from the first test');
+assert.equal(classifyMuseTask('set another one', 'remind me at 1 to set an alarm'), 'reminder');
+assert.equal(classifyMuseTask('do it again for 2am', 'set a reminder for 1am'), 'reminder');
+assert.equal(classifyMuseTask('one more for tomorrow', 'research flights to Tokyo'), 'research');
+assert.equal(classifyMuseTask('another one', 'tell me a joke'), null);
+assert.equal(classifyMuseTask('set another one'), null, 'no previous message: no guess');
+console.log('muse follow-ups: passed');

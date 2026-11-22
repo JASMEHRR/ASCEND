@@ -39,15 +39,43 @@ const RULES: { kind: MuseTaskKind; re: RegExp; unless?: RegExp }[] = [
   },
 ];
 
-/** The kind of task this message is for Muse, or null when it's ordinary chat. */
-export function classifyMuseTask(text: string): MuseTaskKind | null {
-  const t = text.trim();
-  if (!t) return null;
+/** A short follow-up that only makes sense next to the previous message: "set another one", "do it again". */
+const FOLLOW_UP_RE = /\b(?:anoth\w*|again|one\s+more|same|also|too|as\s+well|that\s+one|it\s+too)\b/i;
+const FOLLOW_UP_MAX_WORDS = 12;
+
+function classifyOne(t: string): MuseTaskKind | null {
   for (const rule of RULES) {
     if (rule.re.test(t) && !(rule.unless && rule.unless.test(t))) return rule.kind;
   }
   return null;
 }
+
+/**
+ * The kind of task this message is for Muse, or null when it's ordinary chat.
+ * Pass the user's previous message too: a short follow-up to a task ("set
+ * another one" right after "remind me at 1") is the same kind of task.
+ */
+export function classifyMuseTask(text: string, previousUserText?: string): MuseTaskKind | null {
+  const t = text.trim();
+  if (!t) return null;
+  const direct = classifyOne(t);
+  if (direct) return direct;
+  const prev = previousUserText?.trim();
+  if (prev && FOLLOW_UP_RE.test(t) && t.split(/\s+/).length <= FOLLOW_UP_MAX_WORDS) return classifyOne(prev);
+  return null;
+}
+
+/**
+ * The tool Gemini can call to hand Muse a task the rules above missed (an
+ * odd phrasing, a follow-up). Same shape on every surface.
+ */
+export const SEND_TO_MUSE_TOOL = {
+  name: 'send_to_muse',
+  module: 'Muse',
+  description:
+    "Hand a task to Muse, the user's personal agent, which does it on its own side. Call this when the user asks to set or repeat a reminder, research or look something up, remember or note something, or says to give it to Muse, including follow-ups like 'set another one'. Muse does the task, so do not also call another tool for the same thing. Reply in one short sentence.",
+  parameters: { task: 'the complete task in plain words, filling in details from earlier in the conversation (e.g. "remind me at 1:30 AM to set an alarm")' },
+};
 
 /** Said first in the reply when a task was copied to Muse. */
 export const MUSE_ACK = 'Sent to Muse.';

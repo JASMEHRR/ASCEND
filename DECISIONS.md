@@ -8,3 +8,4 @@
 - 2026-11-23 Muse mirror: Jarvis is told in its context that Muse has the task, so it replies in one line and doesn't also set the same reminder. Undo: drop museContextNote from useConversation.ts and telegram-routes.ts.
 - 2026-11-23 Muse mirror: in-app copies use channel "app-voice" / "app-text", Telegram uses "telegram-voice" / "telegram-text".
 - 2026-11-23 Telegram voice notes are transcribed and answered as a voice message (ElevenLabs Daniel, override with TELEGRAM_VOICE_ID); typed messages still get text.
+- 2026-11-23 Muse mirror: short follow-ups to a task ("set another one", typos included) count as the same task and carry the previous message as `context`; Gemini can also call send_to_muse for tasks the rules miss (adds `task`). Rules in src/features/jarvis/museTasks.ts.

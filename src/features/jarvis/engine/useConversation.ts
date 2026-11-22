@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { classifyMuseTask, museContextNote, withMuseAck } from '../museTasks';
+import { SEND_TO_MUSE_TOOL, classifyMuseTask, museContextNote, withMuseAck } from '../museTasks';
 import { mirrorToMuse } from '../museInbox';
 import { callJarvis } from './jarvisClient';
 import {
@@ -263,11 +263,28 @@ export function useConversation(deps: ConversationDeps): Conversation {
 
       // Tasks (reminders, research, notes, "send to Muse") are also copied to
       // Muse; Gemini still answers, told Muse has it so it doesn't do it twice.
-      const museKind = classifyMuseTask(text);
-      const mirrored = museKind && uid ? mirrorToMuse(uid, text, origin === 'voice' ? 'app-voice' : 'app-text') : null;
+      const previousUserText = [...messagesRef.current].reverse().find((m) => m.role === 'user')?.content;
+      const museKind = classifyMuseTask(text, previousUserText);
+      const channel = origin === 'voice' ? 'app-voice' : 'app-text';
+      // A follow-up ("set another one") goes with the message it follows, so Muse can read it.
+      const followUpOf = museKind && !classifyMuseTask(text) ? previousUserText : undefined;
+      let mirrored: Promise<boolean> | null =
+        museKind && uid ? mirrorToMuse(uid, text, channel, { context: followUpOf }) : null;
       const ack = async (reply: string) => (mirrored ? withMuseAck(reply, await mirrored) : reply);
 
-      const tools = deps.getTools();
+      // Gemini's own way to hand Muse a task the rules missed. Never sends the same message twice.
+      const sendToMuseTool: JarvisTool = {
+        ...SEND_TO_MUSE_TOOL,
+        execute: async (a) => {
+          if (!uid) return { ok: false, message: 'not signed in, so Muse could not be reached' };
+          const task = typeof a.task === 'string' ? a.task.trim() : '';
+          mirrored ??= mirrorToMuse(uid, text, channel, { task: task || undefined, context: previousUserText });
+          return (await mirrored)
+            ? { ok: true, message: 'sent to Muse' }
+            : { ok: false, message: 'could not reach Muse' };
+        },
+      };
+      const tools = [...deps.getTools(), sendToMuseTool];
       const context = museKind ? { ...deps.buildContext(), muse: museContextNote(museKind) } : deps.buildContext();
       const decls: ToolDeclaration[] = tools.map((t) => ({
         name: t.name,

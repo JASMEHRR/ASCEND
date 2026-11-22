@@ -57,11 +57,19 @@ export async function mirrorTaskToMuse(
   updateId: number | undefined,
   text: string,
   channel: TelegramChannel,
+  extra: { task?: string; context?: string } = {},
 ): Promise<boolean> {
   if (!db) return false;
   const ref = db.doc(`users/${uid}/coach-inbox/tg-${updateId ?? Date.now()}`);
   try {
-    await ref.create({ text, createdAt: await serverTimestamp(), status: 'pending', channel });
+    await ref.create({
+      text,
+      createdAt: await serverTimestamp(),
+      status: 'pending',
+      channel,
+      ...(extra.task ? { task: extra.task } : {}),
+      ...(extra.context ? { context: extra.context } : {}),
+    });
     return true;
   } catch (err) {
     try {
