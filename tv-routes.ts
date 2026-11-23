@@ -14,6 +14,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { runJarvisTurn } from './jarvis-routes';
 import { GeminiError, type LlmAttempt } from './llm';
 import { logEvent } from './server-log';
+import { synthesizeSpeech } from './tts-routes';
 
 export const tvRouter = Router();
 
@@ -70,5 +71,34 @@ tvRouter.post('/jarvis', async (req: Request, res: Response) => {
     const message = err instanceof Error ? err.message : 'Jarvis request failed';
     logEvent({ level: status >= 500 ? 'error' : 'warn', scope: 'tv-jarvis', message, meta: { status } });
     res.status(status).json({ error: message });
+  }
+});
+
+/** Jarvis's voice for the TV: the same ElevenLabs voice as Ascend (Daniel by default), as mp3. */
+const TV_VOICE = process.env.TV_JARVIS_VOICE || 'onwK4e9ZLuTAKqWW03F9';
+
+tvRouter.post('/speak', async (req: Request, res: Response) => {
+  const { key, text } = (req.body ?? {}) as { key?: unknown; text?: unknown };
+  if (!keyOk(key)) {
+    res.status(401).json({ error: 'TV key not accepted.' });
+    return;
+  }
+  const words = String(text ?? '').trim().slice(0, 400);
+  const eleven = process.env.ELEVENLABS_API_KEY;
+  if (!words || !eleven) {
+    res.status(words ? 503 : 400).json({ error: words ? 'No voice configured.' : '`text` is required.', code: words ? 'not_configured' : 'bad_request' });
+    return;
+  }
+  try {
+    const out = await synthesizeSpeech(words, TV_VOICE, eleven, 400);
+    if (!('audio' in out)) {
+      const quota = 'quota' in out && out.quota;
+      res.status(quota ? 429 : 502).json({ error: 'Voice unavailable.', code: quota ? 'quota' : 'upstream' });
+      return;
+    }
+    res.set('Content-Type', 'audio/mpeg').send(out.audio);
+  } catch (err: unknown) {
+    logEvent({ level: 'error', scope: 'tv-speak', message: err instanceof Error ? err.message : 'speak failed' });
+    res.status(502).json({ error: 'Voice unavailable.', code: 'upstream' });
   }
 });
