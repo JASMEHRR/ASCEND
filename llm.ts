@@ -135,9 +135,51 @@ export interface ChatOptions {
   trace?: LlmAttempt[];
 }
 
+/**
+ * Providers retire models (Groq's llama-3.3-70b-versatile now 404s, NIM's gpt-oss-20b 410s),
+ * which silently left Jarvis on Gemini alone. When a provider says the model is gone, ask it
+ * which models it has now, take the first match from this list, and remember it per instance.
+ * GROQ_MODEL / NIM_MODEL_OVERRIDE env vars pin a model outright.
+ */
+const MODEL_PREFS: Record<string, RegExp[]> = {
+  // fast, non-reasoning chat models first (Jarvis is spoken and must answer quickly)
+  groq: [/^llama-3\.3-70b/, /llama-4-maverick/, /llama-4-scout/, /^openai\/gpt-oss-120b$/, /^qwen\/qwen3-32b$/, /^openai\/gpt-oss-20b$/, /llama.*70b/, /llama/],
+  nim: [/^meta\/llama-3\.3-70b-instruct$/, /llama-4-maverick/, /^meta\/llama-3\.1-70b-instruct$/, /^openai\/gpt-oss-120b$/, /nemotron.*super/, /^openai\/gpt-oss-20b$/, /llama.*70b/],
+};
+const liveModel = new Map<string, string>();
+
+function modelFor(provider: ResolvedKey['provider']): string {
+  const pinned = provider.name === 'groq' ? process.env.GROQ_MODEL : provider.name === 'nim' ? process.env.NIM_MODEL_OVERRIDE : undefined;
+  return pinned || liveModel.get(provider.name) || provider.model;
+}
+
+async function pickLiveModel(provider: ResolvedKey['provider'], apiKey: string): Promise<string | null> {
+  const prefs = MODEL_PREFS[provider.name];
+  if (!prefs) return null;
+  try {
+    const res = await fetch(provider.url.replace(/\/chat\/completions$/, '/models'), {
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) return null;
+    const ids = (((await res.json()) as { data?: { id?: string }[] }).data ?? []).map((m) => String(m.id ?? ''));
+    for (const want of prefs) {
+      const hit = ids.find((id) => want.test(id));
+      if (hit) {
+        liveModel.set(provider.name, hit);
+        console.warn(`[llm] ${provider.name}: ${provider.model} is gone, using ${hit}`);
+        return hit;
+      }
+    }
+  } catch {
+    // no list: leave the provider to fail over as before
+  }
+  return null;
+}
+
 async function callOpenAICompat(opts: ChatOptions, provider: ResolvedKey['provider'], apiKey: string): Promise<string> {
   const body: Record<string, unknown> = {
-    model: provider.model,
+    model: modelFor(provider),
     messages: [
       { role: 'system', content: opts.system },
       ...opts.messages.map((m) => ({ role: m.role, content: m.content })),
@@ -162,6 +204,17 @@ async function callOpenAICompat(opts: ChatOptions, provider: ResolvedKey['provid
     });
 
   let res = await post(body);
+  // The model was retired: switch to one this provider still serves, once.
+  if (res.status === 404 || res.status === 410) {
+    const detail = await res.clone().text().catch(() => '');
+    if (/model/i.test(detail)) {
+      const next = await pickLiveModel(provider, apiKey);
+      if (next && next !== body.model) {
+        body.model = next;
+        res = await post(body);
+      }
+    }
+  }
   // Some models reject response_format; the prompt + extractJson are the real
   // JSON guarantee, so retry once without it rather than failing the turn.
   if (res.status === 400 && opts.json) {
@@ -260,7 +313,7 @@ export async function generateChat(opts: ChatOptions): Promise<string> {
     const started = Date.now();
     try {
       const text = await callOpenAICompat(opts, provider, apiKey);
-      opts.trace?.push({ provider: provider.name, ms: Date.now() - started, ok: true });
+      opts.trace?.push({ provider: provider.name + ':' + modelFor(provider), ms: Date.now() - started, ok: true });
       return text;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
