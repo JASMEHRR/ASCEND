@@ -153,7 +153,7 @@ function modelFor(provider: ResolvedKey['provider']): string {
   return pinned || liveModel.get(provider.name) || provider.model;
 }
 
-async function pickLiveModel(provider: ResolvedKey['provider'], apiKey: string): Promise<string | null> {
+async function pickLiveModel(provider: ResolvedKey['provider'], apiKey: string, failed: string): Promise<string | null> {
   const prefs = MODEL_PREFS[provider.name];
   if (!prefs) return null;
   try {
@@ -164,7 +164,7 @@ async function pickLiveModel(provider: ResolvedKey['provider'], apiKey: string):
     if (!res.ok) return null;
     const ids = (((await res.json()) as { data?: { id?: string }[] }).data ?? []).map((m) => String(m.id ?? ''));
     for (const want of prefs) {
-      const hit = ids.find((id) => want.test(id));
+      const hit = ids.find((id) => id !== failed && want.test(id));
       if (hit) {
         liveModel.set(provider.name, hit);
         console.warn(`[llm] ${provider.name}: ${provider.model} is gone, using ${hit}`);
@@ -208,7 +208,7 @@ async function callOpenAICompat(opts: ChatOptions, provider: ResolvedKey['provid
   if (res.status === 404 || res.status === 410) {
     const detail = await res.clone().text().catch(() => '');
     if (/model/i.test(detail)) {
-      const next = await pickLiveModel(provider, apiKey);
+      const next = await pickLiveModel(provider, apiKey, String(body.model));
       if (next && next !== body.model) {
         body.model = next;
         res = await post(body);
