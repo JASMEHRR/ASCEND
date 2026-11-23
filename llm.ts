@@ -45,7 +45,9 @@ const PROVIDER_SHAPE = {
     // Groq no longer hosts Llama 4 Maverick; 3.3-70b is the best
     // conversational fit there (non-reasoning, strong JSON, ~300 tok/s).
     model: 'llama-3.3-70b-versatile',
-    timeoutMs: 30_000,
+    // At ~300 tok/s a full Jarvis reply takes a few seconds. 30s let one stalled request
+    // hold every answer for half a minute before NIM/Gemini were even tried.
+    timeoutMs: 10_000,
   },
   nvidia: {
     name: 'nim',
@@ -55,9 +57,33 @@ const PROVIDER_SHAPE = {
     // A healthy NIM answers in 1-5s; when its edge drops the request
     // (observed from Vercel: /v1/models 200 in 13ms, chat POST never
     // returns, streamed or not) fail over fast instead of stalling.
-    timeoutMs: 15_000,
+    timeoutMs: 10_000,
   },
 } as const;
+
+/** One provider attempt, for callers that want to see where a slow answer spent its time. */
+export interface LlmAttempt { provider: string; ms: number; ok: boolean; error?: string }
+
+/**
+ * Keys that just timed out or stalled sit out for a few minutes, so the next question goes
+ * straight to a provider that is answering. Pool keys also get the Firestore cooldown on quota
+ * errors (below); this in-memory list also covers env keys and timeouts, per warm instance.
+ */
+const STALLED_MS = 5 * 60_000;
+const stalledUntil = new Map<string, number>();
+function stallId(provider: string, keyId?: string, apiKey?: string): string {
+  return provider + ':' + (keyId ?? (apiKey ? apiKey.slice(-6) : 'env'));
+}
+function isStalled(id: string): boolean {
+  const until = stalledUntil.get(id);
+  if (!until) return false;
+  if (Date.now() > until) { stalledUntil.delete(id); return false; }
+  return true;
+}
+function isTimeout(err: unknown): boolean {
+  const e = err as { name?: string; message?: string } | null;
+  return !!e && (e.name === 'TimeoutError' || e.name === 'AbortError' || /timed? ?out|aborted|ETIMEDOUT|UND_ERR/i.test(String(e.message)));
+}
 
 interface ResolvedKey {
   keyId?: string; // present only for pool-sourced keys — cooldown targets these
@@ -105,6 +131,8 @@ export interface ChatOptions {
   json?: boolean;
   maxTokens?: number;
   temperature?: number;
+  /** Filled with one entry per provider tried (no keys), when given. */
+  trace?: LlmAttempt[];
 }
 
 async function callOpenAICompat(opts: ChatOptions, provider: ResolvedKey['provider'], apiKey: string): Promise<string> {
@@ -226,27 +254,34 @@ export async function generateChat(opts: ChatOptions): Promise<string> {
   // shaped failure puts that specific key on a 15-minute cooldown and moves
   // to the next one, so one exhausted key degrades the pool by one rather
   // than taking the whole provider down.
+  const attempt = async (provider: ResolvedKey['provider'], keyId: string | undefined, apiKey: string): Promise<string | null> => {
+    const id = stallId(provider.name, keyId, apiKey);
+    if (isStalled(id)) return null;
+    const started = Date.now();
+    try {
+      const text = await callOpenAICompat(opts, provider, apiKey);
+      opts.trace?.push({ provider: provider.name, ms: Date.now() - started, ok: true });
+      return text;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      opts.trace?.push({ provider: provider.name, ms: Date.now() - started, ok: false, error: msg.slice(0, 160) });
+      console.warn(`[llm] ${provider.name} (${keyId ?? 'env'}) failed, trying next:`, msg);
+      if (isTimeout(err) || isQuotaError(err)) stalledUntil.set(id, Date.now() + STALLED_MS);
+      if (keyId && isQuotaError(err)) void coolDownKey(keyId, msg, 15);
+      return null;
+    }
+  };
+
   for (const name of ['groq', 'nvidia'] as const) {
-    const keys = await resolveKeys(name);
-    for (const { keyId, apiKey, provider } of keys) {
-      try {
-        return await callOpenAICompat(opts, provider, apiKey);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`[llm] ${provider.name} (${keyId ?? 'env'}) failed, trying next:`, msg);
-        if (keyId && isQuotaError(err)) void coolDownKey(keyId, msg, 15);
-      }
+    for (const { keyId, apiKey, provider } of await resolveKeys(name)) {
+      const text = await attempt(provider, keyId, apiKey);
+      if (text !== null) return text;
     }
   }
 
   for (const { keyId, apiKey, provider } of await resolveCustomKeys()) {
-    try {
-      return await callOpenAICompat(opts, provider, apiKey);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[llm] ${provider.name} failed, trying next:`, msg);
-      if (keyId && isQuotaError(err)) void coolDownKey(keyId, msg, 15);
-    }
+    const text = await attempt(provider, keyId, apiKey);
+    if (text !== null) return text;
   }
 
   // Gemini: every pooled key (or the env fallback) crossed against every
@@ -259,10 +294,14 @@ export async function generateChat(opts: ChatOptions): Promise<string> {
   for (const { keyId, apiKey } of geminiKeys) {
     if (!apiKey) continue;
     for (const model of GEMINI_CHAIN) {
+      const started = Date.now();
       try {
-        return await callGemini(opts, model, apiKey);
+        const text = await callGemini(opts, model, apiKey);
+        opts.trace?.push({ provider: 'gemini:' + model, ms: Date.now() - started, ok: true });
+        return text;
       } catch (err) {
         lastErr = err;
+        opts.trace?.push({ provider: 'gemini:' + model, ms: Date.now() - started, ok: false, error: String((err as Error)?.message ?? err).slice(0, 160) });
         if (!isQuotaError(err) && !isOverloadError(err)) throw err;
         console.warn(`[llm] gemini ${model} (${keyId ?? 'env'}) unavailable, trying next:`, (err as Error).message.slice(0, 120));
         if (keyId && isQuotaError(err)) { void coolDownKey(keyId, (err as Error).message, 60); break; }

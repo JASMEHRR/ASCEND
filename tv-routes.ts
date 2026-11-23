@@ -12,7 +12,7 @@
 import { Router, type Request, type Response } from 'express';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { runJarvisTurn } from './jarvis-routes';
-import { GeminiError } from './llm';
+import { GeminiError, type LlmAttempt } from './llm';
 import { logEvent } from './server-log';
 
 export const tvRouter = Router();
@@ -59,8 +59,12 @@ tvRouter.post('/jarvis', async (req: Request, res: Response) => {
   }));
   const extra = context && typeof context === 'object' ? (context as Record<string, unknown>) : {};
   const ctx = { ...extra, user: 'JasMehr', surface: 'tv', now: new Date().toISOString(), tv: TV_NOTE };
+  const trace: LlmAttempt[] = [];
+  const started = Date.now();
   try {
-    res.json(await runJarvisTurn(history, ctx, TV_TOOLS));
+    const out = await runJarvisTurn(history, ctx, TV_TOOLS, trace);
+    // which providers were tried and how long each took (no keys): shows where a slow answer went
+    res.json({ ...out, timing: { totalMs: Date.now() - started, attempts: trace } });
   } catch (err: unknown) {
     const status = err instanceof GeminiError ? err.status : 500;
     const message = err instanceof Error ? err.message : 'Jarvis request failed';

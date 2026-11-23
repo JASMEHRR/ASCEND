@@ -11,7 +11,7 @@
  * Gemini fallback) — same key/deploy shape as the other routes.
  */
 import { Router, type Request, type Response } from 'express';
-import { generateChat, extractJson, GeminiError, type LlmMessage } from './llm';
+import { generateChat, extractJson, GeminiError, type LlmMessage, type LlmAttempt } from './llm';
 import { logEvent } from './server-log';
 
 export const jarvisRouter = Router();
@@ -129,6 +129,7 @@ export async function runJarvisTurn(
   history: ChatMessage[],
   context: unknown,
   tools: ToolDecl[],
+  trace?: LlmAttempt[],
 ): Promise<JarvisReply> {
   const toolDecls: ToolDecl[] = Array.isArray(tools) ? tools.slice(0, 100) : [];
   const messages: LlmMessage[] = history.slice(-24).map((m) => ({
@@ -144,6 +145,7 @@ export async function runJarvisTurn(
     messages,
     json: true,
     maxTokens: 4096,
+    trace,
   });
 
   // Pass the model's JSON through; the client fully validates/normalizes it.
