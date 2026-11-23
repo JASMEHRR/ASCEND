@@ -104,6 +104,16 @@ label { display: block; font-size: 12px; letter-spacing: .16em; font-weight: 700
 
   <section id="t-apps" class="hide">
     <div class="card"><div class="apps" id="apps"></div><div class="hint" id="appsHint"></div></div>
+    <div class="card">
+      <label>INSTALL AN APK</label>
+      <div class="hint" style="margin-top:0">Opens the TV's own page (same Wi-Fi). The first time, your browser warns about the TV's certificate: tap Advanced, then Proceed.</div>
+      <button class="go" id="apkGo">Send an APK to the TV</button>
+    </div>
+    <div class="card">
+      <label>UNINSTALL</label>
+      <div class="apps" id="installed"></div>
+      <div class="hint">The TV asks you to confirm: press OK on it, or OK on the Remote tab.</div>
+    </div>
   </section>
 
   <section id="t-setup" class="hide">
@@ -186,6 +196,17 @@ label { display: block; font-size: 12px; letter-spacing: .16em; font-weight: 700
       });
       $('appsHint').textContent = apps.length ? '' : 'The TV has not sent its apps yet.';
     }
+    var inst = state.installed || [], ig = $('installed');
+    if (ig.getAttribute('data-n') !== JSON.stringify(inst)) {
+      ig.setAttribute('data-n', JSON.stringify(inst));
+      ig.textContent = '';
+      inst.forEach(function (a) {
+        var b = document.createElement('button');
+        b.textContent = a.label;
+        b.onclick = function () { if (confirm('Uninstall ' + a.label + ' from the TV?')) { cmd({ t: 'uninstall', id: a.id }); toast('Confirm on the TV'); } };
+        ig.appendChild(b);
+      });
+    }
     var log = $('log'), lines = state.log || [];
     log.textContent = '';
     lines.slice(-14).forEach(function (l) { var d = document.createElement('div'); d.className = 'msg ' + (l.who === 'you' ? 'you' : 'jarvis'); d.textContent = l.text; log.appendChild(d); });
@@ -207,6 +228,10 @@ label { display: block; font-size: 12px; letter-spacing: .16em; font-weight: 700
     } catch (e) { toast('Could not reach Ascend'); }
   };
   $('repair').onclick = function () { show('pair'); };
+  $('apkGo').onclick = function () {
+    if (!state || !state.apkPage) { toast('The TV has not sent its address yet'); return; }
+    window.open(state.apkPage, '_blank');
+  };
 
   Array.prototype.forEach.call(document.querySelectorAll('[data-k]'), function (b) { b.addEventListener('click', function () { cmd({ t: 'key', k: b.getAttribute('data-k') }); }); });
   $('typeGo').onclick = function () { var t = $('typeText').value; if (!t) return; cmd({ t: 'type', text: t }); $('typeText').value = ''; toast('Typed on the TV'); };
