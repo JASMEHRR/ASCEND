@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#02040a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="TV">
+<link rel="manifest" href="/tv/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/favicon.png">
+<title>Glass Home Remote</title>
+<!--
+  Glass Home's phone remote, on Ascend so it has one fixed https address that works on any network
+  and installs to the home screen. It writes commands to Firestore users/{uid}/tvCmds and reads the
+  TV's users/{uid}/tvState; the TV listens live (see glass-home relay.js and tv-routes.ts).
+-->
+<style>
+:root { --cyan: #67e8f9; --muted: rgba(255,255,255,.62); --card: rgba(255,255,255,.06); --line: rgba(255,255,255,.13); }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; min-height: 100%; background: #02040a; color: #fff; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+body { background: radial-gradient(ellipse at 50% -10%, rgba(56,189,248,.2), transparent 55%), #02040a; padding: max(14px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom)); max-width: 520px; margin: 0 auto; user-select: none; }
+header { display: flex; align-items: center; justify-content: space-between; margin: 4px 2px 14px; }
+header b { font-size: 13px; letter-spacing: .28em; color: var(--cyan); }
+.dot { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); }
+.dot i { width: 9px; height: 9px; border-radius: 50%; background: #f87171; }
+.dot.on i { background: #34d399; box-shadow: 0 0 10px #34d399; }
+.tabs { display: flex; gap: 6px; padding: 5px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); margin-bottom: 14px; }
+.tabs button { flex: 1; padding: 10px 0; border-radius: 999px; border: 0; background: none; color: var(--muted); font: 700 13px system-ui, sans-serif; letter-spacing: .08em; }
+.tabs button.on { background: rgba(255,255,255,.15); color: #fff; }
+.card { background: linear-gradient(135deg, rgba(255,255,255,.08), rgba(255,255,255,.02)); border: 1px solid var(--line); border-radius: 22px; padding: 16px; margin-bottom: 12px; }
+.hide { display: none !important; }
+button { font-family: inherit; }
+.mic { display: block; margin: 2px auto 14px; width: 96px; height: 96px; border-radius: 50%; border: 1px solid rgba(103,232,249,.5); background: radial-gradient(circle, rgba(103,232,249,.25), rgba(103,232,249,.05)); color: #fff; font: 700 13px system-ui; letter-spacing: .12em; }
+.mic.on { background: radial-gradient(circle, rgba(103,232,249,.9), rgba(56,189,248,.4)); color: #02040a; box-shadow: 0 0 0 12px rgba(103,232,249,.14); }
+.pad { position: relative; width: 264px; height: 264px; margin: 0 auto; border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,.1), rgba(255,255,255,.03)); border: 1px solid rgba(255,255,255,.16); touch-action: manipulation; }
+.pad button { position: absolute; width: 88px; height: 88px; border-radius: 50%; border: 0; background: none; color: #fff; font-size: 26px; }
+.pad button:active, .row button:active, .apps button:active { background: rgba(103,232,249,.28); }
+.pad .u { left: 88px; top: 0; } .pad .d { left: 88px; bottom: 0; } .pad .l { left: 0; top: 88px; } .pad .r { right: 0; top: 88px; }
+.pad .ok { left: 80px; top: 80px; width: 104px; height: 104px; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.25); font-size: 17px; font-weight: 700; }
+.row { display: flex; gap: 8px; margin-top: 10px; }
+.row button { flex: 1; padding: 15px 0; border-radius: 16px; background: rgba(255,255,255,.07); border: 1px solid var(--line); color: #fff; font: 600 15px system-ui; }
+input, textarea { width: 100%; font: 17px system-ui; color: #fff; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.16); border-radius: 16px; padding: 14px; outline: none; }
+input:focus { border-color: rgba(103,232,249,.6); }
+.apps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.apps button { padding: 16px 6px; border-radius: 16px; border: 1px solid var(--line); background: rgba(255,255,255,.07); color: #fff; font: 600 14px system-ui; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log { display: flex; flex-direction: column; gap: 8px; max-height: 46vh; overflow-y: auto; }
+.msg { max-width: 88%; padding: 10px 13px; border-radius: 16px; font-size: 15px; line-height: 1.45; user-select: text; }
+.you { align-self: flex-end; background: rgba(6,182,212,.18); border: 1px solid rgba(34,211,238,.35); }
+.jarvis { align-self: flex-start; background: rgba(255,255,255,.06); border: 1px solid var(--line); }
+label { display: block; font-size: 12px; letter-spacing: .16em; font-weight: 700; color: var(--muted); margin: 4px 0 8px; }
+.go { margin-top: 10px; width: 100%; padding: 15px; border: 0; border-radius: 999px; background: #fff; color: #02040a; font: 700 16px system-ui; }
+.hint { font-size: 13px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+.toast { position: fixed; left: 50%; bottom: max(22px, env(safe-area-inset-bottom)); transform: translateX(-50%); background: rgba(20,24,34,.95); border: 1px solid var(--line); padding: 10px 16px; border-radius: 999px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 90vw; }
+.toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header><b>GLASS HOME</b><span class="dot" id="status"><i></i><span id="statusText">Connecting…</span></span></header>
+
+<div id="signin" class="card hide">
+  <label>SIGN IN</label>
+  <div class="hint" style="margin-top:0">Use the same Google account as Ascend. The TV only ever sees its own commands.</div>
+  <button class="go" id="signinBtn">Sign in with Google</button>
+</div>
+
+<div id="pair" class="card hide">
+  <label>PAIR THE TV (ONCE)</label>
+  <div class="hint" style="margin-top:0">On the TV open Glass Home's Jarvis screen: it shows a 6-digit code.</div>
+  <input id="pairCode" inputmode="numeric" maxlength="6" placeholder="6-digit code" autocomplete="off" style="margin-top:10px">
+  <button class="go" id="pairBtn">Pair</button>
+</div>
+
+<div id="app" class="hide">
+  <div class="tabs"><button class="on" data-t="remote">REMOTE</button><button data-t="jarvis">JARVIS</button><button data-t="apps">APPS</button><button data-t="setup">SETUP</button></div>
+
+  <section id="t-remote">
+    <div class="card">
+      <button class="mic" data-mic>TALK</button>
+      <div class="pad">
+        <button class="u" data-k="up" aria-label="Up">&#9650;</button>
+        <button class="l" data-k="left" aria-label="Left">&#9664;</button>
+        <button class="ok" data-k="ok">OK</button>
+        <button class="r" data-k="right" aria-label="Right">&#9654;</button>
+        <button class="d" data-k="down" aria-label="Down">&#9660;</button>
+      </div>
+      <div class="row"><button data-k="back">Back</button><button data-k="home">Home</button><button data-k="menu">Menu</button></div>
+      <div class="row"><button data-k="rew">&#9194;</button><button data-k="play">&#9199;</button><button data-k="ffwd">&#9193;</button></div>
+    </div>
+    <div class="card">
+      <input id="typeText" placeholder="Type into the TV's search box" autocomplete="off">
+      <div class="row"><button id="typeGo">Type on TV</button><button data-k="del">Delete</button></div>
+    </div>
+  </section>
+
+  <section id="t-jarvis" class="hide">
+    <div class="card">
+      <button class="mic" data-mic>TALK</button>
+      <input id="askText" placeholder="Or type to Jarvis" autocomplete="off">
+      <button class="go" id="askGo">Send to Jarvis</button>
+      <div class="hint">Jarvis answers on the TV, out loud, and here.</div>
+    </div>
+    <div class="card log" id="log"></div>
+  </section>
+
+  <section id="t-apps" class="hide">
+    <div class="card"><div class="apps" id="apps"></div><div class="hint" id="appsHint"></div></div>
+  </section>
+
+  <section id="t-setup" class="hide">
+    <div class="card">
+      <label>ANILIST USER NAME</label>
+      <input id="anilist" placeholder="For your next episodes" autocomplete="off">
+      <button class="go" id="anilistGo">Save on TV</button>
+    </div>
+    <div class="card">
+      <label>STREMIO</label>
+      <div class="hint" style="margin-top:0" id="stremioState">For Continue watching.</div>
+      <button class="go" id="stremioGo">Show the link code on the TV</button>
+    </div>
+    <div class="card">
+      <label>THIS PHONE</label>
+      <div class="hint" style="margin-top:0">Add this page to your home screen (browser menu, Add to Home screen). It works on any network.</div>
+      <button class="go" id="repair" style="background:rgba(255,255,255,.12);color:#fff">Pair another TV</button>
+    </div>
+  </section>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+(async function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  function toast(t) { var e = $('toast'); e.textContent = t; e.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(function () { e.classList.remove('show'); }, 2200); }
+  function show(id) { ['signin', 'pair', 'app'].forEach(function (x) { $(x).classList.toggle('hide', x !== id); }); }
+
+  // Ascend's public web config (the same values the main app ships with; Firebase web config is not secret).
+  var cfg = {"apiKey": "AIzaSyCD72xKQAPXBJl3uO783CL-sbRCScK77fE", "authDomain": "ascend-57d4e.firebaseapp.com", "projectId": "ascend-57d4e", "storageBucket": "ascend-57d4e.firebasestorage.app", "messagingSenderId": "632580482199", "appId": "1:632580482199:web:3f071f1be50afcfb1db5d2", "firestoreDatabaseId": ""};
+  firebase.initializeApp(cfg);
+  var auth = firebase.auth(), db = cfg.firestoreDatabaseId ? firebase.app().firestore(cfg.firestoreDatabaseId) : firebase.firestore();
+  var uid = '', state = null, unsub = null;
+
+  function cmd(data) {
+    if (!uid) return;
+    if (navigator.vibrate) navigator.vibrate(12);
+    data.at = firebase.firestore.FieldValue.serverTimestamp();
+    db.collection('users').doc(uid).collection('tvCmds').add(data).catch(function () { toast('Could not reach Ascend'); });
+  }
+
+  auth.onAuthStateChanged(function (u) {
+    if (unsub) { unsub(); unsub = null; }
+    if (!u) { uid = ''; show('signin'); $('statusText').textContent = 'Signed out'; return; }
+    uid = u.uid;
+    unsub = db.collection('users').doc(uid).collection('tvState').doc('main').onSnapshot(function (s) {
+      state = s.exists ? s.data() : null;
+      render();
+    }, function () { toast('Could not read the TV state'); });
+  });
+
+  $('signinBtn').onclick = function () {
+    var p = new firebase.auth.GoogleAuthProvider();
+    auth.signInWithPopup(p).catch(function () { return auth.signInWithRedirect(p); });
+  };
+
+  function online() {
+    var seen = state && state.seen && state.seen.toMillis ? state.seen.toMillis() : 0;
+    return seen && Date.now() - seen < 3 * 60000;
+  }
+  function render() {
+    if (!state) { show('pair'); $('statusText').textContent = 'Not paired'; $('status').classList.remove('on'); return; }
+    show('app');
+    var on = online();
+    $('status').classList.toggle('on', !!on);
+    $('statusText').textContent = on ? (state.label || 'TV online') : 'TV offline';
+    var apps = state.apps || [], g = $('apps');
+    if (g.getAttribute('data-n') !== JSON.stringify(apps)) {
+      g.setAttribute('data-n', JSON.stringify(apps));
+      g.textContent = '';
+      apps.forEach(function (a) {
+        var b = document.createElement('button');
+        b.textContent = a.label;
+        b.onclick = function () { cmd({ t: 'launch', id: a.id }); toast('Opening ' + a.label); };
+        g.appendChild(b);
+      });
+      $('appsHint').textContent = apps.length ? '' : 'The TV has not sent its apps yet.';
+    }
+    var log = $('log'), lines = state.log || [];
+    log.textContent = '';
+    lines.slice(-14).forEach(function (l) { var d = document.createElement('div'); d.className = 'msg ' + (l.who === 'you' ? 'you' : 'jarvis'); d.textContent = l.text; log.appendChild(d); });
+    if (!lines.length) { var e = document.createElement('div'); e.className = 'hint'; e.textContent = 'Nothing yet. Tap TALK and ask Jarvis anything.'; log.appendChild(e); }
+    log.scrollTop = log.scrollHeight;
+    if (document.activeElement !== $('anilist')) $('anilist').value = state.anilist || '';
+    $('stremioState').textContent = state.stremio ? 'Linked. Continue watching follows your Stremio library.' : 'Not linked yet: tap below, then approve the code on your phone.';
+  }
+  setInterval(function () { if (state) render(); }, 30000);
+
+  $('pairBtn').onclick = async function () {
+    var code = $('pairCode').value.replace(/\D/g, '');
+    if (code.length !== 6) { toast('Type the 6 digits from the TV'); return; }
+    try {
+      var token = await auth.currentUser.getIdToken();
+      var r = await fetch('/api/tv/pair', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ code: code }) });
+      var j = await r.json();
+      toast(j.ok ? 'Paired. The TV connects in a few seconds.' : (j.error || 'Could not pair'));
+    } catch (e) { toast('Could not reach Ascend'); }
+  };
+  $('repair').onclick = function () { show('pair'); };
+
+  Array.prototype.forEach.call(document.querySelectorAll('[data-k]'), function (b) { b.addEventListener('click', function () { cmd({ t: 'key', k: b.getAttribute('data-k') }); }); });
+  $('typeGo').onclick = function () { var t = $('typeText').value; if (!t) return; cmd({ t: 'type', text: t }); $('typeText').value = ''; toast('Typed on the TV'); };
+  function ask(t) { t = String(t || '').trim(); if (!t) return; cmd({ t: 'say', text: t }); $('askText').value = ''; toast('Sent to Jarvis'); }
+  $('askGo').onclick = function () { ask($('askText').value); };
+  $('askText').addEventListener('keydown', function (e) { if (e.key === 'Enter') ask($('askText').value); });
+  $('anilistGo').onclick = function () { cmd({ t: 'setting', key: 'anilist.user', value: $('anilist').value.trim() }); toast('Saved on the TV'); };
+  $('stremioGo').onclick = function () { cmd({ t: 'screen', name: 'stremio-link' }); toast('Look at the TV'); };
+
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  Array.prototype.forEach.call(document.querySelectorAll('[data-mic]'), function (btn) {
+    btn.onclick = function () {
+      if (!SR) { toast('This browser has no speech input: type instead'); return; }
+      var r = new SR(), heard = '';
+      r.lang = 'en-IN'; r.interimResults = true;
+      r.onresult = function (e) { heard = Array.prototype.map.call(e.results, function (x) { return x[0].transcript; }).join(''); btn.textContent = heard.slice(-18) || 'TALK'; };
+      r.onend = function () { btn.classList.remove('on'); btn.textContent = 'TALK'; if (heard.trim()) ask(heard); };
+      r.onerror = function () { btn.classList.remove('on'); btn.textContent = 'TALK'; };
+      btn.classList.add('on'); btn.textContent = 'LISTENING'; r.start();
+    };
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function (b) {
+    b.onclick = function () {
+      Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function (x) { x.classList.toggle('on', x === b); });
+      ['remote', 'jarvis', 'apps', 'setup'].forEach(function (t) { $('t-' + t).classList.toggle('hide', b.getAttribute('data-t') !== t); });
+    };
+  });
+})();
+</script>
+</body>
+</html>

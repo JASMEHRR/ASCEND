@@ -1,0 +1,13 @@
+{
+  "name": "Glass Home Remote",
+  "short_name": "TV",
+  "description": "Control the Glass Home Fire TV and talk to Jarvis",
+  "start_url": "/tv/",
+  "scope": "/tv/",
+  "display": "standalone",
+  "background_color": "#02040a",
+  "theme_color": "#02040a",
+  "icons": [
+    { "src": "/favicon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

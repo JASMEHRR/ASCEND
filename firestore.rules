@@ -6,8 +6,24 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // A Glass Home TV signs in as its owner with a tv:true claim (tv-routes.ts). It is not an
+    // owner here: it may only use its own command inbox and status (rules below).
     function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId
+        && request.auth.token.get('tv', false) != true;
+    }
+    function isOwnerOrTv(userId) {
       return request.auth != null && request.auth.uid == userId;
+    }
+
+    // The phone page writes TV commands here and the TV reads, runs and deletes them; the TV
+    // reports its state (apps, screen, Jarvis replies) in tvState.
+    match /users/{userId}/tvCmds/{cmdId} {
+      allow read, delete: if isOwnerOrTv(userId);
+      allow create: if isOwnerOrTv(userId) && request.resource.data.size() <= 8;
+    }
+    match /users/{userId}/tvState/{docId} {
+      allow read, write: if isOwnerOrTv(userId);
     }
 
     match /users/{userId} {

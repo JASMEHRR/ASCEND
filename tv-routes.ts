@@ -10,7 +10,8 @@
  * Rotate it by making a new key on the TV side and replacing the hash.
  */
 import { Router, type Request, type Response } from 'express';
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
+import { getAdminDb } from './admin-db';
 import { runJarvisTurn } from './jarvis-routes';
 import { GeminiError, type LlmAttempt } from './llm';
 import { logEvent } from './server-log';
@@ -101,4 +102,75 @@ tvRouter.post('/speak', async (req: Request, res: Response) => {
     logEvent({ level: 'error', scope: 'tv-speak', message: err instanceof Error ? err.message : 'speak failed' });
     res.status(502).json({ error: 'Voice unavailable.', code: 'upstream' });
   }
+});
+
+// ---- Pairing and the TV's live link ---------------------------------------------------------------
+// The phone page (ascend.../tv) and the TV talk through Firestore: the page writes commands to
+// users/{uid}/tvCmds, the TV listens live and reports users/{uid}/tvState. To do that the TV signs in
+// with a custom token carrying tv:true, which firestore.rules limit to those two collections.
+// Pairing ties a TV key to an account once: the TV shows a 6-digit code, the signed-in page sends it.
+
+function keyHash(key: string): string {
+  return createHash('sha256').update(key).digest('hex');
+}
+
+async function adminAuth(): Promise<{
+  verifyIdToken: (t: string) => Promise<{ uid: string }>;
+  createCustomToken: (uid: string, claims?: Record<string, unknown>) => Promise<string>;
+} | null> {
+  if (!(await getAdminDb())) return null; // also initialises the admin app
+  const authPkg = 'firebase-admin/auth';
+  const { getAuth } = (await import(authPkg)) as { getAuth: () => any }; // eslint-disable-line @typescript-eslint/no-explicit-any
+  return getAuth();
+}
+
+/** TV: a 6-digit pairing code (10 minutes), or paired:true when this TV already belongs to someone. */
+tvRouter.post('/pair-code', async (req: Request, res: Response) => {
+  const { key } = (req.body ?? {}) as { key?: unknown };
+  if (!keyOk(key)) { res.status(401).json({ error: 'TV key not accepted.' }); return; }
+  const db = await getAdminDb();
+  if (!db) { res.status(503).json({ error: 'Pairing is not configured.' }); return; }
+  const h = keyHash(String(key));
+  if ((await db.doc(`tvPairs/${h}`).get()).exists) { res.json({ paired: true }); return; }
+  for (let i = 0; i < 5; i++) {
+    const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+    try {
+      await db.doc(`tvPairCodes/${code}`).create({ keyHash: h, expires: Date.now() + 10 * 60_000 });
+      res.json({ paired: false, code });
+      return;
+    } catch { /* code taken: try another */ }
+  }
+  res.status(503).json({ error: 'Could not make a code. Try again.' });
+});
+
+/** Phone page (signed in to Ascend): claims the TV whose code it was shown. */
+tvRouter.post('/pair', async (req: Request, res: Response) => {
+  const auth = await adminAuth();
+  const db = await getAdminDb();
+  if (!auth || !db) { res.status(503).json({ error: 'Pairing is not configured.' }); return; }
+  let uid = '';
+  try {
+    uid = (await auth.verifyIdToken(String(req.headers.authorization ?? '').replace(/^Bearer /, ''))).uid;
+  } catch { res.status(401).json({ error: 'Sign in to Ascend first.' }); return; }
+  const code = String((req.body ?? {}).code ?? '').replace(/\D/g, '');
+  if (code.length !== 6) { res.status(400).json({ error: 'Type the 6 digits shown on the TV.' }); return; }
+  const snap = await db.doc(`tvPairCodes/${code}`).get();
+  const data = snap.data();
+  if (!snap.exists || !data || Number(data.expires) < Date.now()) { res.status(404).json({ error: 'That code is wrong or expired. Check the TV.' }); return; }
+  await db.doc(`tvPairs/${String(data.keyHash)}`).set({ uid, pairedAt: new Date().toISOString() });
+  await db.doc(`tvPairCodes/${code}`).delete();
+  res.json({ ok: true });
+});
+
+/** TV: a Firebase custom token (tv:true) for its owner's account, once paired. */
+tvRouter.post('/session', async (req: Request, res: Response) => {
+  const { key } = (req.body ?? {}) as { key?: unknown };
+  if (!keyOk(key)) { res.status(401).json({ error: 'TV key not accepted.' }); return; }
+  const auth = await adminAuth();
+  const db = await getAdminDb();
+  if (!auth || !db) { res.status(503).json({ error: 'Pairing is not configured.' }); return; }
+  const pair = (await db.doc(`tvPairs/${keyHash(String(key))}`).get()).data();
+  if (!pair || !pair.uid) { res.json({ paired: false }); return; }
+  const uid = String(pair.uid);
+  res.json({ paired: true, uid, token: await auth.createCustomToken(uid, { tv: true }) });
 });
