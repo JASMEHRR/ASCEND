@@ -15,6 +15,7 @@ import dotenv from "dotenv";
 import { generateChat, GeminiError } from "./llm";
 import { launchRouter } from "./launch-routes";
 import { jarvisRouter } from "./jarvis-routes";
+import { tvRouter } from "./tv-routes";
 import { transcribeRouter } from "./transcribe-routes";
 import { stocksRouter } from "./stocks-routes";
 import { ttsRouter } from "./tts-routes";
@@ -40,6 +41,8 @@ app.use(express.json({ limit: "256kb" }));
 app.use("/api/launch", launchRouter);
 // Jarvis AI command core (tool-registry relay).
 app.use("/api/jarvis", jarvisRouter);
+// Glass Home (Fire TV launcher): same Jarvis, TV tools, key-checked. See tv-routes.ts.
+app.use("/api/tv", tvRouter);
 // Market data proxy (Yahoo Finance — Indian + international tickers).
 app.use("/api/stocks", stocksRouter);
 // ElevenLabs TTS proxy (key stays server-side; client falls back to browser TTS).
