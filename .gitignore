@@ -11,3 +11,6 @@ coverage/
 
 # Local agent/session files — never pushed.
 .claude/
+
+# Local screenshots (may show personal data); kept off GitHub
+SS/
