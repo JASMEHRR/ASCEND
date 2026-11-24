@@ -85,6 +85,9 @@ label { display: block; font-size: 12px; letter-spacing: .16em; font-weight: 700
       </div>
       <div class="row"><button data-k="back">Back</button><button data-k="home">Home</button><button data-k="menu">Menu</button></div>
       <div class="row"><button data-k="rew">&#9194;</button><button data-k="play">&#9199;</button><button data-k="ffwd">&#9193;</button></div>
+      <div class="row"><button data-k="voldown" aria-label="Volume down">Vol &minus;</button><button data-k="mute">Mute</button><button data-k="volup" aria-label="Volume up">Vol +</button></div>
+      <div class="row"><button data-k="power_off">TV off</button><button data-k="power_on">TV on</button></div>
+      <div class="hint" id="tvstate"></div>
     </div>
     <div class="card">
       <input id="typeText" placeholder="Type into the TV's search box" autocomplete="off">
@@ -207,6 +210,7 @@ label { display: block; font-size: 12px; letter-spacing: .16em; font-weight: 700
         ig.appendChild(b);
       });
     }
+    $('tvstate').textContent = state.tv || '';
     var log = $('log'), lines = state.log || [];
     log.textContent = '';
     lines.slice(-14).forEach(function (l) { var d = document.createElement('div'); d.className = 'msg ' + (l.who === 'you' ? 'you' : 'jarvis'); d.textContent = l.text; log.appendChild(d); });
