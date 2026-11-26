@@ -14,3 +14,10 @@ coverage/
 
 # Local screenshots (may show personal data); kept off GitHub
 SS/
+
+# Laptop bridge: the key and local config never leave the laptop
+tools/laptop-bridge/.bridge-key
+tools/laptop-bridge/bridge.config.json
+tools/laptop-bridge/logs/
+tools/laptop-bridge/work/
+tools/laptop-bridge/STOP

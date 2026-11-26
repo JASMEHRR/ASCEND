@@ -35,22 +35,60 @@ export interface ProjectStatus {
 
 // --- Laptop jobs ----------------------------------------------------------------
 
-export const JOB_ACTIONS = ['status.refresh', 'clipforge.clip'] as const;
+/** The only action the bridge runs in v1 is 'clipforge.blocky'; the others are reserved names. */
+export const JOB_ACTIONS = ['status.refresh', 'clipforge.clip', 'clipforge.blocky'] as const;
 export type JobAction = (typeof JOB_ACTIONS)[number];
 
-export const JOB_STATUSES = ['pending', 'running', 'done', 'failed', 'cancelled', 'rejected', 'expired'] as const;
+/**
+ * 'pending' is "queued": Muse created it and no laptop has it yet. 'running' covers
+ * picked up and building (see `stage`). The review loop adds three states:
+ * awaiting_review (a version is in the Outbox), redo (Muse wrote notes for the next
+ * version) and approved (Muse says it is ready for JasMehr; nothing is ever posted).
+ */
+export const JOB_STATUSES = [
+  'pending', 'running', 'awaiting_review', 'redo', 'approved',
+  'done', 'failed', 'cancelled', 'rejected', 'expired',
+] as const;
 export type JobStatus = (typeof JOB_STATUSES)[number];
+
+/** Within 'running': claimed, then rendering. */
+export const JOB_STAGES = ['picked_up', 'building'] as const;
+export type JobStage = (typeof JOB_STAGES)[number];
+
+/** Versions a single review job may produce before it waits for JasMehr. */
+export const MAX_JOB_VERSIONS = 3;
+
+/** One rendered version and its review pack, as file names inside the Outbox folder. */
+export interface JobVersion {
+  n: number;
+  /** The redo notes this version answers ('' for version 1). */
+  notes: string;
+  /** Folder inside "ClipForge Outbox", e.g. "<job id>/v2". */
+  folder: string;
+  files: { video: string; frameSheet: string; frames: string[]; narration: string; story: string };
+  durationS: number;
+  shots: number;
+  madeAt: string;
+}
 
 export interface LaptopJob {
   id: string;
   action: string;
+  /** clipforge.blocky: { premise: string } or { story: <Blocky story JSON> }. */
   args: Record<string, unknown>;
   status: JobStatus;
+  stage: JobStage | null;
   requestedBy: string;
   note: string;
+  /** Muse's review notes for the next version (set together with status 'redo'). */
+  notes: string;
+  version: number;
+  versions: JobVersion[];
+  claimedBy: string | null;
   createdAt: string | null;
   claimedAt: string | null;
   finishedAt: string | null;
+  updatedAt: string | null;
   summary: string;
   error: string;
   result: Record<string, string | number | boolean>;

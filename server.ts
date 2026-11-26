@@ -25,6 +25,7 @@ import { telegramRouter } from "./telegram-routes";
 import { llmKeysRouter } from "./llm-keys-routes";
 import { timetableRouter } from "./timetable-routes";
 import { googleOAuthRouter } from "./google-oauth-routes";
+import { bridgeRouter } from "./bridge-routes";
 
 dotenv.config({ override: true });
 
@@ -60,6 +61,8 @@ app.use("/api/llm-keys", llmKeysRouter);
 // Calendar with no browser open. Separate from GoogleContext's client-side
 // token flow, which only lasts while a tab is open.
 app.use("/api/google-oauth", googleOAuthRouter);
+// Laptop bridge: key-checked jobs and heartbeat for ONE user's tree. See bridge-routes.ts.
+app.use("/api/bridge", bridgeRouter);
 
 // The AI physiotherapist's persona and safety rules. Personalise the
 // conditions / trek details below as the user's situation changes.

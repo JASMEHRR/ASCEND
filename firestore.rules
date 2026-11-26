@@ -38,7 +38,20 @@ service cloud.firestore {
     match /users/{userId}/{collection}/{rest=**} {
       allow read, write: if isOwner(userId)
         && collection != 'googleTokens'
-        && collection != 'internships';
+        && collection != 'internships'
+        && collection != 'jobs'
+        && collection != 'status';
+    }
+
+    // Laptop jobs and project status are written only by Muse and by the laptop
+    // bridge (/api/bridge), both through the Admin SDK, which bypasses these rules.
+    // The owner's browser may read them. No page can create a job or mark one
+    // approved, so a script injected into the app cannot start or pass a render.
+    match /users/{userId}/jobs/{jobId}/{rest=**} {
+      allow read: if isOwner(userId);
+    }
+    match /users/{userId}/status/{project} {
+      allow read: if isOwner(userId);
     }
 
     // Internships are written by Muse (a separate agent) through the Admin
