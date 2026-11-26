@@ -230,6 +230,7 @@ class Renderer:
             notes = []
         failed = [str(n) for n in notes if str(n).startswith("job failed")]
         reason = (failed[-1] if failed else "ClipForge reported the video as failed") + f" (folder {job_dir})"
+        reason = re.sub(r"\s*[–—�]\s*", ": ", reason)  # ClipForge's dashes, or their mangled form
         if BUSY.search(reason):
             reason = ("The AI story writer was busy, not a broken story. Set the job back to redo "
                       "(or pending) to try again. Details: " + reason)
