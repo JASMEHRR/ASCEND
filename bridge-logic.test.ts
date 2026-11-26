@@ -52,8 +52,9 @@ test('the third version is the last: a fourth redo holds', () => {
   assert.match((w as { reason: string }).reason, /cap/i);
 });
 
-test('claim lock is one document per version', () => {
-  assert.equal(claimLockPath('u1', 'j1', 2), 'users/u1/jobs/j1/claims/v2');
+test('claim lock is one document per version and attempt', () => {
+  assert.equal(claimLockPath('u1', 'j1', 2), 'users/u1/jobs/j1/claims/v2-a0');
+  assert.equal(claimLockPath('u1', 'j1', 2, 1), 'users/u1/jobs/j1/claims/v2-a1');
 });
 
 test('ids and hosts cannot carry paths', () => {

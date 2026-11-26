@@ -76,3 +76,10 @@ Review from the frames and the narration (no need to play the mp4).
 - A job makes at most **3 versions**. After that a redo returns to `awaiting_review` with
   "Version cap reached" in `summary`, and JasMehr decides.
 - `approved` never posts. JasMehr's own approve in ClipForge is the final step.
+
+### When a job fails
+
+`error` holds the real reason. If it says the AI story writer was busy (503, 429,
+"high demand"), nothing is wrong with the story: set `status` back to `pending` (if no
+version was made yet) or `redo` (with the same or new notes) and the laptop tries again.
+A failed version never counts toward the 3-version cap.

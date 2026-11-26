@@ -57,9 +57,12 @@ export function nextWork(job: JobLike, host: string): Work {
   return { kind: 'revise', version: done.length + 1, notes };
 }
 
-/** The atomic claim is one lock document per (job, version): a second claim of the same version fails. */
-export function claimLockPath(uid: string, jobId: string, version: number): string {
-  return `users/${uid}/jobs/${jobId}/claims/v${version}`;
+/**
+ * The atomic claim is one lock document per (job, version, attempt): a second claim of the
+ * same attempt fails. A failed attempt bumps the job's `failures`, so a retry gets a fresh lock.
+ */
+export function claimLockPath(uid: string, jobId: string, version: number, attempt = 0): string {
+  return `users/${uid}/jobs/${jobId}/claims/v${version}-a${attempt}`;
 }
 
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;

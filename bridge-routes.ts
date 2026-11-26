@@ -79,7 +79,8 @@ bridgeRouter.post('/claim', async (req: Request, res: Response) => {
       res.status(409).json({ error: 'Nothing to claim on this job.', work }); return;
     }
     try {
-      await d.doc(claimLockPath(UID, id, work.version)).create({ host, at: now() });
+      const attempt = Number((snap.data() ?? {}).failures) || 0;
+      await d.doc(claimLockPath(UID, id, work.version, attempt)).create({ host, at: now() });
     } catch {
       res.status(409).json({ error: `Version ${work.version} of this job is already claimed.` }); return;
     }
@@ -133,7 +134,12 @@ bridgeRouter.post('/fail', async (req: Request, res: Response) => {
   const h = await heldJob(req, res); if (!h) return;
   if (h.data.status !== 'running' || h.data.claimedBy !== h.host) { res.status(409).json({ error: 'This laptop does not hold the job.' }); return; }
   const error = cleanError((req.body ?? {}).error);
-  await h.ref.update({ status: 'failed', stage: null, error, finishedAt: now(), updatedAt: now(), summary: 'Failed. See error.' });
+  await h.ref.update({
+    status: 'failed', stage: null, error, finishedAt: now(), updatedAt: now(),
+    // A retry (Muse sets pending or redo again) claims a fresh lock: see claimLockPath.
+    failures: (Number(h.data.failures) || 0) + 1,
+    summary: 'Failed. See error. To retry, set status back to pending (no version yet) or redo (with notes).',
+  });
   res.json({ ok: true });
 });
 
@@ -190,7 +196,9 @@ bridgeRouter.post('/test-review', async (req: Request, res: Response) => {
   const snap = await ref.get();
   const data = snap.data() ?? {};
   if (!snap.exists || data.requestedBy !== 'bridge-test') { res.status(403).json({ error: 'Only test jobs can be reviewed this way.' }); return; }
-  if (data.status !== 'awaiting_review') { res.status(409).json({ error: 'The job is not awaiting review.' }); return; }
+  if (data.status !== 'awaiting_review' && data.status !== 'failed') {
+    res.status(409).json({ error: 'The job is not awaiting review or failed.' }); return;
+  }
   await ref.update({ status, notes: typeof notes === 'string' ? notes.slice(0, 5000) : '', updatedAt: now() });
   res.json({ ok: true });
 });
