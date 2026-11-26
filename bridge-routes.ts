@@ -122,7 +122,9 @@ bridgeRouter.post('/result', async (req: Request, res: Response) => {
   if (typeof v === 'string') { res.status(400).json({ error: v }); return; }
   const capped = v.n >= MAX_VERSIONS;
   await h.ref.update({
+    // nextStory was used for this version: clear it so a later redo cannot render it twice.
     status: 'awaiting_review', stage: null, versions: [...prior, v], version: v.n, finishedAt: now(), updatedAt: now(),
+    nextStory: null,
     error: '',
     summary: `Version ${v.n} is in the ClipForge Outbox (${v.folder}).`
       + (capped ? ` That is the last version this job can make (${MAX_VERSIONS} max).` : ''),
@@ -187,7 +189,7 @@ bridgeRouter.post('/test-job', async (req: Request, res: Response) => {
 });
 
 bridgeRouter.post('/test-review', async (req: Request, res: Response) => {
-  const { id, status, notes } = (req.body ?? {}) as { id?: unknown; status?: unknown; notes?: unknown };
+  const { id, status, notes, nextStory } = (req.body ?? {}) as { id?: unknown; status?: unknown; notes?: unknown; nextStory?: unknown };
   if (!safeId(id) || (status !== 'redo' && status !== 'approved')) {
     res.status(400).json({ error: "id and status ('redo' or 'approved') are required." }); return;
   }
@@ -199,7 +201,10 @@ bridgeRouter.post('/test-review', async (req: Request, res: Response) => {
   if (data.status !== 'awaiting_review' && data.status !== 'failed') {
     res.status(409).json({ error: 'The job is not awaiting review or failed.' }); return;
   }
-  await ref.update({ status, notes: typeof notes === 'string' ? notes.slice(0, 5000) : '', updatedAt: now() });
+  await ref.update({
+    status, notes: typeof notes === 'string' ? notes.slice(0, 5000) : '', updatedAt: now(),
+    nextStory: status === 'redo' && nextStory && typeof nextStory === 'object' ? nextStory : null,
+  });
   res.json({ ok: true });
 });
 

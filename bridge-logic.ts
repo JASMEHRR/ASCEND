@@ -14,7 +14,8 @@ export const MAX_VERSIONS = 3;
 
 export type Work =
   | { kind: 'render'; version: number }
-  | { kind: 'revise'; version: number; notes: string }
+  /** withStory: Muse sent the next version's full story in `nextStory`, so nothing is rewritten on the laptop. */
+  | { kind: 'revise'; version: number; notes: string; withStory: boolean }
   | { kind: 'hold'; reason: string }
   | { kind: 'recover' }
   | null;
@@ -25,6 +26,7 @@ export interface JobLike {
   notes?: unknown;
   claimedBy?: unknown;
   versions?: unknown;
+  nextStory?: unknown;
 }
 
 function versionsOf(job: JobLike): { n: number; notes: string }[] {
@@ -54,7 +56,8 @@ export function nextWork(job: JobLike, host: string): Work {
   if (last.notes.trim() === notes) {
     return { kind: 'hold', reason: 'These notes were already answered by the last version. Write new notes to get another version.' };
   }
-  return { kind: 'revise', version: done.length + 1, notes };
+  const withStory = !!job.nextStory && typeof job.nextStory === 'object' && !Array.isArray(job.nextStory);
+  return { kind: 'revise', version: done.length + 1, notes, withStory };
 }
 
 /**

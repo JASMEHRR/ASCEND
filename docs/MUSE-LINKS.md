@@ -34,8 +34,9 @@ Path: `users/{uid}/jobs/{jobId}`. The only action the laptop runs is `clipforge.
 }
 ```
 
-`args` is either `{ "premise": "In this town, ..." }` (ClipForge writes the story) or
-`{ "story": <story> }` in ClipForge Blocky's story format (`schemas.BLOCKY_STORY` in the
+**Muse writes the story.** Send `{ "story": <story> }` in ClipForge Blocky's story format.
+(`{ "premise": "In this town, ..." }` also works, but then the laptop's free AI writers
+write the story, and they are often busy or too short.) The story format (`schemas.BLOCKY_STORY` in the
 clipforge repo): title, premise, description, hashtags, cast (2 to 5), shots (20 to 32,
 one sentence each, only the places, cameras, actions, faces, props and sfx Blocky can draw).
 A story that does not match fails the job with the validator's message in `error`.
@@ -71,7 +72,12 @@ Review from the frames and the narration (no need to play the mp4).
 
 ### Redo rules
 
-- Set `status: "redo"` and write the review in `notes`. One redo makes one new version.
+- Set `status: "redo"`, write the review in `notes`, and put the **full next version of the
+  story in `nextStory`** (same format as `args.story`). The laptop renders it exactly as
+  written, with no AI on the laptop. `nextStory` is cleared once that version is made.
+- Notes alone (no `nextStory`) also work: the laptop's AI then rewrites the story from the
+  notes, which is slower and can fail when the free AI writers are busy.
+- One redo makes one new version.
 - Notes the last version already answered do not render again.
 - A job makes at most **3 versions**. After that a redo returns to `awaiting_review` with
   "Version cap reached" in `summary`, and JasMehr decides.

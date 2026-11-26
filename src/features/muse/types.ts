@@ -82,6 +82,8 @@ export interface LaptopJob {
   note: string;
   /** Muse's review notes for the next version (set together with status 'redo'). */
   notes: string;
+  /** Optional with 'redo': the full next-version story, written by Muse; rendered as is. */
+  nextStory: Record<string, unknown> | null;
   version: number;
   versions: JobVersion[];
   claimedBy: string | null;

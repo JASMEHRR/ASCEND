@@ -260,6 +260,8 @@ class Renderer:
 def build_args(work: dict, job: dict, input_story: Path | None) -> list[str]:
     """Pure-ish. The ONLY argument lists the bridge ever passes to blocky.py."""
     if work["kind"] == "revise":
+        if work.get("withStory"):
+            return ["--story-file", str(input_story)]  # Muse wrote the next version itself
         notes = str(work["notes"])[:3000]
         return ["--story-file", str(input_story), "--revise-notes", notes]
     args = job.get("args") or {}
@@ -325,7 +327,13 @@ def handle(api: Api, cfg: dict, r: Renderer, job_id: str, job: dict, work: dict)
         work_dir = WORK_DIR / job_id / f"v{n}"
         work_dir.mkdir(parents=True, exist_ok=True)
         input_story = None
-        if work["kind"] == "revise":
+        if work["kind"] == "revise" and work.get("withStory"):
+            story = job.get("nextStory")
+            if not isinstance(story, dict):
+                raise BridgeError("The redo says it has a story from Muse, but nextStory is missing")
+            input_story = work_dir / "input_story.json"
+            input_story.write_text(json.dumps(story, indent=2), encoding="utf-8")
+        elif work["kind"] == "revise":
             prev = outbox / job_id / f"v{n - 1}" / "story.json"
             if not prev.exists():
                 raise BridgeError(f"The story of version {n - 1} is missing from the Outbox ({prev})")
@@ -448,6 +456,7 @@ def main(argv: list[str] | None = None) -> int:
     rv.add_argument("id")
     rv.add_argument("status", choices=["redo", "approved"])
     rv.add_argument("--notes", default="")
+    rv.add_argument("--story", help="redo only: Muse's full next-version story (JSON file)")
     sh = sub.add_parser("show")
     sh.add_argument("id")
     a = ap.parse_args(argv)
@@ -473,7 +482,10 @@ def main(argv: list[str] | None = None) -> int:
         print(out["id"])
         return 0
     if a.cmd == "test-review":
-        api.call("POST", "/test-review", {"id": a.id, "status": a.status, "notes": a.notes})
+        body = {"id": a.id, "status": a.status, "notes": a.notes}
+        if a.story:
+            body["nextStory"] = json.loads(Path(a.story).read_text(encoding="utf-8"))
+        api.call("POST", "/test-review", body)
         log.info("test review: job %s set to %s%s", a.id, a.status, f" with notes: {a.notes}" if a.notes else "")
         return 0
     if a.cmd == "show":

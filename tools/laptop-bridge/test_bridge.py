@@ -27,6 +27,8 @@ class PureHelpers(unittest.TestCase):
                          ["--premise", "In this town, x."])
         self.assertEqual(bridge.build_args({"kind": "revise", "notes": "slower"}, {}, story),
                          ["--story-file", "s.json", "--revise-notes", "slower"])
+        self.assertEqual(bridge.build_args({"kind": "revise", "notes": "n", "withStory": True}, {}, story),
+                         ["--story-file", "s.json"])
         with self.assertRaises(bridge.BridgeError):
             bridge.build_args({"kind": "render"}, {"args": {"cmd": "del *"}}, None)
 

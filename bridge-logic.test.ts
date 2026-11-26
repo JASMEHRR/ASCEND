@@ -38,7 +38,12 @@ test('a running job is recovered only by the laptop that holds it', () => {
 
 test('redo with new notes makes the next version', () => {
   assert.deepEqual(nextWork({ action: A, status: 'redo', notes: ' Slower ending ', versions: [v(1)] }, 'tuf'),
-    { kind: 'revise', version: 2, notes: 'Slower ending' });
+    { kind: 'revise', version: 2, notes: 'Slower ending', withStory: false });
+});
+
+test('redo with a story from Muse renders that story instead of rewriting on the laptop', () => {
+  const w = nextWork({ action: A, status: 'redo', notes: 'new ending', nextStory: { title: 't' }, versions: [v(1)] }, 'tuf');
+  assert.deepEqual(w, { kind: 'revise', version: 2, notes: 'new ending', withStory: true });
 });
 
 test('redo without notes, or with already answered notes, holds instead of rendering', () => {
