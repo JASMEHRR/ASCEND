@@ -8,6 +8,9 @@ import {
   EMPTY_FILTERS,
   countInternships,
   daysUntil,
+  dueTodayList,
+  isDueToday,
+  museDueTodayTask,
   failsStipendFloor,
   groupIntoSections,
   isClosingSoon,
@@ -178,3 +181,27 @@ assert.equal(shortStipend('Not stated'), 'Pay ?');
 assert.equal(shortStipend('Not verified'), 'Pay ?');
 assert.equal(shortStipend('Stipend reported ₹20,000/mo'), '₹20k');
 console.log('internships improvements: passed');
+
+// Due today: open entries whose deadline is today get their own section on top
+{
+  const day = new Date(2026, 10, 26, 9, 30);
+  const queued = item({ id: 't1', status: 'apply-queue', company: 'Acme', role: 'Analyst', deadlineText: '26 Nov 2026', score: 7, link: 'https://acme.example/apply' });
+  const review = item({ id: 't2', company: 'Beta', role: 'Intern', deadlineText: 'Nov 26, 2026', score: 9 });
+  const appliedToday = item({ id: 't3', status: 'applied', deadlineText: '26 Nov 2026' });
+  const tomorrow = item({ id: 't4', deadlineText: '27 Nov 2026' });
+  assert.equal(isDueToday(queued, day), true);
+  assert.equal(isDueToday(appliedToday, day), false, 'applied is not due');
+  assert.equal(isDueToday(tomorrow, day), false);
+  assert.equal(sectionOf(queued, day), 'today', 'today beats the apply queue');
+  assert.equal(sectionOf(tomorrow, day), 'rest');
+  const g = groupIntoSections([queued, review, appliedToday, tomorrow], day);
+  assert.deepEqual(g.today.map((i) => i.id), ['t2', 't1'], 'best score first');
+  assert.equal(g.queue.length, 0);
+  const list = dueTodayList([queued, review, appliedToday, tomorrow], day);
+  const text = museDueTodayTask(list, '26 Nov');
+  assert.match(text, /^Send JasMehr the list of internships due today \(26 Nov\)\. 2 closing today:/);
+  assert.match(text, /1\. Beta, Intern \(not reviewed yet\)/);
+  assert.match(text, /2\. Acme, Analyst \(in your apply queue\) https:\/\/acme\.example\/apply/);
+  assert.doesNotMatch(text, /[—–]/, 'no dashes in what Muse forwards');
+  console.log('internships due today: passed');
+}

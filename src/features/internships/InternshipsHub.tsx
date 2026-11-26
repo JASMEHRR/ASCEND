@@ -26,6 +26,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { NOTES_MAX, subscribeInternships, updateInternship } from './internshipsClient';
+import { mirrorToMuse } from '../jarvis/museInbox';
 import {
   EMPTY_FILTERS,
   SECTION_ORDER,
@@ -35,6 +36,7 @@ import {
   groupIntoSections,
   isMayJulWindow,
   matchesFilters,
+  museDueTodayTask,
   parseDeadline,
   safeLink,
   shortPlace,
@@ -128,6 +130,7 @@ export default function InternshipsHub() {
       items={items}
       loadError={loadError}
       save={(id, patch) => (uid ? updateInternship(uid, id, patch) : Promise.reject(new Error('Not signed in.')))}
+      sendToMuse={(text) => (uid ? mirrorToMuse(uid, text, 'app-text') : Promise.resolve(false))}
     />
   );
 }
@@ -137,12 +140,16 @@ export function InternshipsView({
   items,
   loadError,
   save,
+  sendToMuse,
 }: {
   items: Internship[] | null;
   loadError: string | null;
   save: (id: string, patch: InternshipPatch) => Promise<void>;
+  /** Drops a task in Muse's coach-inbox; true once Firestore has it. */
+  sendToMuse?: (text: string) => Promise<boolean>;
 }) {
   const toast = useToast();
+  const [museState, setMuseState] = useState<'idle' | 'sending' | 'sent'>('idle');
   const [filters, setFilters] = useState<InternshipFilters>(EMPTY_FILTERS);
   const [showHidden, setShowHidden] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<SectionId>>(() => new Set(['done']));
@@ -213,6 +220,19 @@ export function InternshipsView({
   const visibleSections = SECTION_ORDER.filter((s) => sections[s.id].length > 0 && (s.id !== 'hidden' || revealHidden));
   const filtersActive =
     filters.search.trim() !== '' || filters.status !== 'all' || filters.remoteOnly || filters.fundedOnly || filters.autoOnly || filters.dueSoon;
+
+  // Sends the whole of today's list, not just what the filters show.
+  const askMuseForToday = async () => {
+    if (!sendToMuse || museState === 'sending') return;
+    const today = groupIntoSections(items ?? []).today;
+    if (today.length === 0) return;
+    setMuseState('sending');
+    const label = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
+    const ok = await sendToMuse(museDueTodayTask(today, label));
+    setMuseState(ok ? 'sent' : 'idle');
+    if (ok) toast.show({ kind: 'info', title: 'Sent to Muse', message: `Muse will send you today's ${today.length} deadline${today.length === 1 ? '' : 's'}.` });
+    else toast.show({ kind: 'warning', title: "Couldn't reach Muse", message: 'Try again in a moment.' });
+  };
 
   const toggleSet = <T,>(setter: (fn: (prev: Set<T>) => Set<T>) => void, key: T) =>
     setter((prev) => {
@@ -327,19 +347,35 @@ export function InternshipsView({
           const isCollapsed = collapsed.has(section.id);
           return (
             <section key={section.id} className="flex flex-col gap-1.5">
-              <button
-                onClick={() => toggleSet(setCollapsed, section.id)}
-                aria-expanded={!isCollapsed}
-                className="flex cursor-pointer items-baseline gap-2 px-1 text-left"
-              >
-                <span className="font-mono text-[12px] font-bold uppercase tracking-widest text-white/60">{section.label}</span>
-                <span className="font-mono text-[12px] text-white/40">{list.length}</span>
-                {section.hint && <span className="hidden truncate text-[12px] text-white/35 sm:inline">{section.hint}</span>}
-                <ChevronDown
-                  size={13}
-                  className={`ml-auto shrink-0 self-center text-white/35 transition-transform ${isCollapsed ? '-rotate-90' : ''}`}
-                />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => toggleSet(setCollapsed, section.id)}
+                  aria-expanded={!isCollapsed}
+                  className="flex min-w-0 flex-1 cursor-pointer items-baseline gap-2 px-1 text-left"
+                >
+                  <span
+                    className={`font-mono text-[12px] font-bold uppercase tracking-widest ${section.id === 'today' ? 'text-rose-300' : 'text-white/60'}`}
+                  >
+                    {section.label}
+                  </span>
+                  <span className="font-mono text-[12px] text-white/40">{list.length}</span>
+                  {section.hint && <span className="hidden truncate text-[12px] text-white/35 sm:inline">{section.hint}</span>}
+                  <ChevronDown
+                    size={13}
+                    className={`ml-auto shrink-0 self-center text-white/35 transition-transform ${isCollapsed ? '-rotate-90' : ''}`}
+                  />
+                </button>
+                {section.id === 'today' && sendToMuse && (
+                  <button
+                    onClick={() => void askMuseForToday()}
+                    disabled={museState === 'sending'}
+                    className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[12px] font-semibold text-white/75 hover:border-brand-400/50 hover:text-white disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {museState === 'sending' ? <Loader2 size={12} className="animate-spin" /> : museState === 'sent' ? <Check size={12} /> : <Send size={12} />}
+                    {museState === 'sent' ? 'Sent to Muse' : 'Muse, send me this'}
+                  </button>
+                )}
+              </div>
               {!isCollapsed &&
                 list.map((item) => (
                   <InternshipRow

@@ -41,7 +41,7 @@
  *   2. When unsure, stay silent. A missed nudge is recoverable; a spammy bot
  *      gets muted, and then every future nudge is missed too.
  */
-import { getAdminDb } from './admin-db';
+import { getAdminDb, serverTimestamp } from './admin-db';
 import { fetchQuote } from './stocks-routes';
 import { sendTelegramMessage as send } from './telegram-send';
 import { collectCalendarAlerts } from './google-oauth-routes';
@@ -50,6 +50,10 @@ import { collectNudges } from './nudges';
 import { isQuietTime } from './src/features/telegram/prefs';
 import { hhmmToMinutes, to12h } from './src/lib/time';
 import { loadScheduleInputs, planReminder, type ReminderDoc } from './telegram-schedule';
+import { dueTodayList, museDueTodayTask, normalizeInternship } from './src/features/internships/logic';
+
+/** The first pass at or after this local time hands Muse the day's internship deadlines. */
+const MUSE_DUE_TODAY_FROM_MIN = 7 * 60;
 
 type AdminDb = NonNullable<Awaited<ReturnType<typeof getAdminDb>>>;
 
@@ -272,6 +276,40 @@ async function runPass(
     checked.push(await collectNudges(db, uid, clock, prefs, lessons, seen, messages, newlySeen));
   } catch (err) {
     console.warn('[telegram-cron] nudges failed:', (err as Error).message);
+  }
+
+  // ── internships due today → Muse ────────────────────────────────────────
+  // Once a day, the first pass after 7 AM drops a task in coach-inbox asking
+  // Muse to send JasMehr today's open deadlines. Nothing due, nothing sent.
+  // The doc id is the date, so a re-run the same day can't make a second task.
+  try {
+    const key = `muse-due-today:${clock.dateKey}`;
+    if (seen.has(key)) checked.push('internships due today: already sent to Muse');
+    else if (clock.minutes < MUSE_DUE_TODAY_FROM_MIN) checked.push('internships due today: waits for 7 AM');
+    else {
+      const [y, m, d] = clock.dateKey.split('-').map(Number);
+      const today = new Date(y, m - 1, d, 12);
+      const snap = await db.collection(`users/${uid}/internships`).get();
+      const due = dueTodayList(snap.docs.map((doc) => normalizeInternship(doc.id, doc.data() as Record<string, unknown>)), today);
+      if (due.length > 0) {
+        const label = today.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+        const ref = db.doc(`users/${uid}/coach-inbox/due-today-${clock.dateKey}`);
+        const exists = (await ref.get()).exists;
+        if (!exists) {
+          await ref.create({
+            text: museDueTodayTask(due, label),
+            createdAt: await serverTimestamp(),
+            status: 'pending',
+            channel: 'ascend-cron',
+            task: 'internships-due-today',
+          });
+        }
+      }
+      newlySeen.push(key);
+      checked.push(`internships due today: ${due.length} sent to Muse`);
+    }
+  } catch (err) {
+    console.warn('[telegram-cron] internships due today failed:', (err as Error).message);
   }
 
   // ── price alerts ────────────────────────────────────────────────────────

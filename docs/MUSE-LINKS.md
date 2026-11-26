@@ -83,3 +83,20 @@ Review from the frames and the narration (no need to play the mp4).
 "high demand"), nothing is wrong with the story: set `status` back to `pending` (if no
 version was made yet) or `redo` (with the same or new notes) and the laptop tries again.
 A failed version never counts toward the 3-version cap.
+
+## Internships due today
+
+An internship is **due today** when its `status` is `to-review` or `apply-queue` and the date
+in `deadlineText` is today (IST). Ascend shows these in a **Due today** section at the top of
+the Internships page.
+
+Every morning, the first Ascend cron pass after 7 AM IST writes one task to
+`users/{uid}/coach-inbox/due-today-<YYYY-MM-DD>` (`channel: "ascend-cron"`,
+`task: "internships-due-today"`) when anything is due. JasMehr can also send the same task
+from the page with **Muse, send me this**.
+
+When Muse picks it up:
+
+1. Send JasMehr the list in `text`, one line per internship, with its link.
+2. Apply to the ones in `apply-queue` before the deadline if you can; say which ones need him.
+3. Close the doc (`status: "processed"`) as with any other coach-inbox task.

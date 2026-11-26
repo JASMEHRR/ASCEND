@@ -145,6 +145,37 @@ export function isClosingSoon(item: Pick<Internship, 'deadlineText'>, now: Date 
   return days >= 0 && days <= SOON_DAYS;
 }
 
+/** Still open (to review or queued) and the deadline is today. */
+export function isDueToday(item: Pick<Internship, 'deadlineText' | 'status'>, now: Date = new Date()): boolean {
+  if (!isOpen(item)) return false;
+  const d = parseDeadline(item.deadlineText);
+  return d !== null && daysUntil(d, now) === 0;
+}
+
+/** Today's open deadlines, best score first. */
+export function dueTodayList(items: Internship[], now: Date = new Date()): Internship[] {
+  return items.filter((i) => isDueToday(i, now)).sort(compareByScoreThenDeadline);
+}
+
+/**
+ * The task text Muse gets in coach-inbox: send JasMehr today's list. One line
+ * per entry with what he needs to act (company, role, status, link), so Muse
+ * can forward it as is.
+ */
+export function museDueTodayTask(items: Internship[], dateLabel: string): string {
+  const lines = items.map((i, n) => {
+    const name = i.role ? `${i.company}, ${i.role}` : i.company;
+    const state = i.status === 'apply-queue' ? 'in your apply queue' : 'not reviewed yet';
+    const link = safeLink(i.link);
+    return `${n + 1}. ${name} (${state})${link ? ` ${link}` : ''}`;
+  });
+  return [
+    `Send JasMehr the list of internships due today (${dateLabel}). ${items.length} closing today:`,
+    ...lines,
+    'Apply to the queued ones before the deadline if you can, and tell him which ones need him.',
+  ].join('\n');
+}
+
 // --- Badges ------------------------------------------------------------------
 
 /**
@@ -232,9 +263,10 @@ export function safeLink(link: string | null): string | null {
 
 // --- Sections ------------------------------------------------------------------
 
-export type SectionId = 'queue' | 'auto' | 'funded' | 'rest' | 'applied' | 'done' | 'hidden';
+export type SectionId = 'today' | 'queue' | 'auto' | 'funded' | 'rest' | 'applied' | 'done' | 'hidden';
 
 export const SECTION_ORDER: { id: SectionId; label: string; hint: string }[] = [
+  { id: 'today', label: 'Due today', hint: 'Deadline is today: apply or skip before midnight' },
   { id: 'queue', label: 'Apply queue', hint: 'Muse applies to these on its next run' },
   { id: 'auto', label: 'Auto-apply / one-click', hint: 'Pinned on top whatever the score' },
   { id: 'funded', label: 'Fully funded', hint: '' },
@@ -245,7 +277,11 @@ export const SECTION_ORDER: { id: SectionId; label: string; hint: string }[] = [
 ];
 
 /** Each entry lands in exactly one section: the first that matches. */
-export function sectionOf(item: Pick<Internship, 'status' | 'autoApply' | 'fullyFunded'>): SectionId {
+export function sectionOf(
+  item: Pick<Internship, 'status' | 'autoApply' | 'fullyFunded'> & Partial<Pick<Internship, 'deadlineText'>>,
+  now: Date = new Date(),
+): SectionId {
+  if (isDueToday({ status: item.status, deadlineText: item.deadlineText ?? '' }, now)) return 'today';
   switch (item.status) {
     case 'apply-queue':
       return 'queue';
@@ -289,9 +325,9 @@ export function compareApplied(a: Internship, b: Internship): number {
   return compareByScoreThenDeadline(a, b);
 }
 
-export function groupIntoSections(items: Internship[]): Record<SectionId, Internship[]> {
-  const groups: Record<SectionId, Internship[]> = { queue: [], auto: [], funded: [], rest: [], applied: [], done: [], hidden: [] };
-  for (const item of items) groups[sectionOf(item)].push(item);
+export function groupIntoSections(items: Internship[], now: Date = new Date()): Record<SectionId, Internship[]> {
+  const groups: Record<SectionId, Internship[]> = { today: [], queue: [], auto: [], funded: [], rest: [], applied: [], done: [], hidden: [] };
+  for (const item of items) groups[sectionOf(item, now)].push(item);
   for (const id of Object.keys(groups) as SectionId[]) {
     groups[id].sort(id === 'applied' ? compareApplied : compareByScoreThenDeadline);
   }
