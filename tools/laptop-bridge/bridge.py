@@ -55,7 +55,7 @@ DEFAULTS = {
 OUTBOX_NAME = "ClipForge Outbox"
 DONE_LINE = re.compile(r"^\[\d+/\d+\] (\w+): (.+)$")
 # A render that failed because the AI writer was overloaded, not because the story is wrong.
-BUSY = re.compile(r"\b(503|429|UNAVAILABLE|high demand|rate.?limit|DEADLINE_EXCEEDED)\b", re.I)
+BUSY = re.compile(r"\b(503|429|UNAVAILABLE|high demand|rate.?limit|DEADLINE_EXCEEDED|timed out)\b", re.I)
 
 log = logging.getLogger("bridge")
 
