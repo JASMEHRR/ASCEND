@@ -208,6 +208,21 @@ bridgeRouter.post('/test-review', async (req: Request, res: Response) => {
   res.json({ ok: true });
 });
 
+/** Removes a test job and its claim locks. Like the other test routes: bridge-test jobs only. */
+bridgeRouter.post('/test-delete', async (req: Request, res: Response) => {
+  const { id } = (req.body ?? {}) as { id?: unknown };
+  if (!safeId(id)) { res.status(400).json({ error: 'id is required.' }); return; }
+  const d = await db(res); if (!d) return;
+  const ref = d.doc(`${JOBS}/${id}`);
+  const snap = await ref.get();
+  if (!snap.exists) { res.status(404).json({ error: 'No such job.' }); return; }
+  if ((snap.data() ?? {}).requestedBy !== 'bridge-test') { res.status(403).json({ error: 'Only test jobs can be deleted this way.' }); return; }
+  const claims = await d.collection(`${JOBS}/${id}/claims`).get();
+  for (const c of claims.docs) await d.doc(`${JOBS}/${id}/claims/${c.id}`).delete();
+  await ref.delete();
+  res.json({ ok: true, claimsDeleted: claims.docs.length });
+});
+
 /** Read one job (for the test command and the proof). Only this user's jobs. */
 bridgeRouter.get('/job/:id', async (req: Request, res: Response) => {
   if (!safeId(req.params.id)) { res.status(400).json({ error: 'Bad id.' }); return; }
