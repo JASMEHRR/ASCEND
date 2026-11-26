@@ -76,6 +76,13 @@ svg.f { width: 20px; height: 20px; fill: currentColor; }
 .vol span { font: 700 11px system-ui, sans-serif; letter-spacing: .22em; color: var(--muted); padding: 0 10px; }
 .vol b { width: 1px; height: 28px; background: rgba(255,255,255,.14); }
 .nav3 button:active, .media button:active, .vol button:active, .ico:active { background: rgba(103,232,249,.28); }
+.wnow { font-size: 15px; margin-bottom: 4px; }
+.wlist button { display: flex; align-items: center; justify-content: space-between; width: 100%; margin-top: 8px; padding: 13px 14px;
+  border-radius: 14px; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.06); color: #fff; font: 600 15px system-ui, sans-serif; text-align: left; }
+.wlist button span { color: var(--muted); font-weight: 500; font-size: 13px; margin-left: 10px; white-space: nowrap; }
+.wother { margin-top: 10px; background: none; border: 0; color: #67e8f9; font: 600 14px system-ui, sans-serif; padding: 6px 0; }
+#wForm input, #wForm button, .card > input { margin-top: 8px; }
+#wForm.hide { display: none; }
 </style>
 </head>
 <body>
@@ -147,6 +154,29 @@ svg.f { width: 20px; height: 20px; fill: currentColor; }
   </section>
 
   <section id="t-setup" class="hide">
+    <div class="card">
+      <label>TV WI-FI</label>
+      <div class="wnow" id="wNow">Checking...</div>
+      <button class="go" id="wScan">Find networks</button>
+      <div class="wlist" id="wList"></div>
+      <button class="wother" id="wOther">Type a network name instead</button>
+      <div id="wForm" class="hide">
+        <input id="wSsid" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Network name">
+        <input id="wUser" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Username (college or office Wi-Fi)">
+        <input id="wPass" type="password" autocomplete="off" placeholder="Password (empty for open Wi-Fi)">
+        <button class="go" id="wJoin">Connect the TV</button>
+      </div>
+      <div class="hint" id="wMsg"></div>
+      <div class="hint">Connecting moves the TV off this network, so the phone loses it for a moment. This page keeps working once the TV is online on the new Wi-Fi.</div>
+    </div>
+    <div class="card">
+      <label>REMEMBER MY PHONE'S HOTSPOT</label>
+      <input id="hName" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Hotspot name, exactly as on the phone">
+      <input id="hPass" type="password" autocomplete="off" placeholder="Hotspot password">
+      <button class="go" id="hSave">Remember it on the TV</button>
+      <div class="hint" id="hMsg"></div>
+      <div class="hint">Do this once while the TV is on your home Wi-Fi. Anywhere else, with no remote: turn the hotspot on, the TV joins it by itself, and this page works over it. Then use Find networks to move the TV to the local Wi-Fi.</div>
+    </div>
     <div class="card">
       <label>ANILIST USER NAME</label>
       <input id="anilist" placeholder="For your next episodes" autocomplete="off">
@@ -238,6 +268,8 @@ svg.f { width: 20px; height: 20px; fill: currentColor; }
       });
     }
     $('tvstate').textContent = state.tv || '';
+    if (state.wifi && state.wifi.at !== wifiSeen) { wifiSeen = state.wifi.at; wifiShow(Object.assign({ searched: true }, state.wifi)); }
+    if (state.wifiResult && state.wifiResult.at !== wifiResSeen) { wifiResSeen = state.wifiResult.at; if (wifiWait) { wifiWait(!!state.wifiResult.ok); wifiWait = null; } }
     var log = $('log'), lines = state.log || [];
     log.textContent = '';
     lines.slice(-14).forEach(function (l) { var d = document.createElement('div'); d.className = 'msg ' + (l.who === 'you' ? 'you' : 'jarvis'); d.textContent = l.text; log.appendChild(d); });
@@ -259,6 +291,63 @@ svg.f { width: 20px; height: 20px; fill: currentColor; }
     } catch (e) { toast('Could not reach Ascend'); }
   };
   $('repair').onclick = function () { show('pair'); };
+  // ---- the TV's Wi-Fi (Glass Home WifiControl) ----
+  function wifiBars(l) { return ['', '\u2582', '\u2582\u2583', '\u2582\u2583\u2585', '\u2582\u2583\u2585\u2587'][Math.max(1, Math.min(4, l || 1))]; }
+  function wifiShow(w) {
+    if (!w) return;
+    var s = w.status || {};
+    $('wNow').textContent = s.connected ? 'The TV is on ' + (s.ssid || 'Wi-Fi') + (s.ip ? ' (' + s.ip + ')' : '') + '.' : 'The TV is not on any Wi-Fi.';
+    var list = $('wList'); list.textContent = '';
+    (w.networks || []).forEach(function (n) {
+      var b = document.createElement('button');
+      b.textContent = n.ssid;
+      var t = document.createElement('span');
+      t.textContent = (n.security === 'open' ? 'open  ' : n.security === 'eap' ? 'username  ' : '') + wifiBars(n.level);
+      b.appendChild(t);
+      b.onclick = function () { wifiPick(n.ssid, n.security); };
+      list.appendChild(b);
+    });
+    if (w.networks && !w.networks.length && w.searched) {
+      $('wMsg').textContent = w.allowed === false
+        ? 'The TV is asking for permission to see nearby networks: press Allow on the TV (Remote tab, then OK). Or type the name.'
+        : 'No networks found yet. Press Find networks again in a few seconds, or type the name.';
+    }
+  }
+  function wifiPick(ssid, security) {
+    $('wForm').classList.remove('hide');
+    $('wSsid').value = ssid || '';
+    $('wUser').style.display = security === 'eap' || !ssid ? '' : 'none';
+    $('wUser').value = ''; $('wPass').value = '';
+    (ssid ? $('wPass') : $('wSsid')).focus();
+  }
+  $('wOther').onclick = function () { wifiPick('', ''); };
+  $('wJoin').onclick = function () {
+    var ssid = $('wSsid').value.trim(), pass = $('wPass').value;
+    if (!ssid) { $('wMsg').textContent = 'Type the network name.'; return; }
+    if (pass && pass.length < 8 && !$('wUser').value.trim()) { $('wMsg').textContent = 'Wi-Fi passwords are at least 8 characters.'; return; }
+    $('wMsg').textContent = 'Sending to the TV...';
+    wifiSend('join', { ssid: ssid, password: pass, identity: $('wUser').value.trim() }, function (ok) {
+      $('wMsg').textContent = ok ? 'The TV is joining ' + ssid + '. This page keeps working once the TV is online there.' : 'The TV could not add that network. Check the name and password.';
+      if (ok) $('wPass').value = '';
+    });
+  };
+  $('hSave').onclick = function () {
+    var ssid = $('hName').value.trim(), pass = $('hPass').value;
+    if (!ssid || (pass && pass.length < 8)) { $('hMsg').textContent = 'Type the hotspot name and its password (8 or more characters).'; return; }
+    wifiSend('remember', { ssid: ssid, password: pass, identity: '', hotspot: '1' }, function (ok) {
+      $('hMsg').textContent = ok ? 'Remembered. The TV stays on this Wi-Fi now and joins ' + ssid + ' whenever this one is gone.' : 'The TV could not save it. Check the name and password.';
+      if (ok) $('hPass').value = '';
+    });
+  };
+  $('wScan').onclick = function () { $('wMsg').textContent = 'Looking...'; wifiFind(); };
+  var wifiSeen = 0, wifiResSeen = 0, wifiWait = null;
+  function wifiFind() { cmd({ t: 'wifi', op: 'scan' }); }
+  function wifiSend(op, data, done) {
+    wifiWait = done;
+    cmd(Object.assign({ t: 'wifi', op: op }, data));
+    setTimeout(function () { if (wifiWait === done) { wifiWait = null; done(false); } }, 15000);
+  }
+
   $('apkGo').onclick = function () {
     if (!state || !state.apkPage) { toast('The TV has not sent its address yet'); return; }
     window.open(state.apkPage, '_blank');
