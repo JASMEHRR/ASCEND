@@ -90,6 +90,58 @@ Review from the frames and the narration (no need to play the mp4).
 version was made yet) or `redo` (with the same or new notes) and the laptop tries again.
 A failed version never counts toward the 3-version cap.
 
+## Writing a Blocky story (exact format)
+
+The validator only checks the shape below. Any **value not in these lists is silently swapped**
+for a default (a wrong place becomes `street`, a wrong action `idle`), so use these words exactly.
+
+**Top level**: `title` (max 60 chars, no emoji), `premise` (the rule, max 160), `description`
+(2 sentences), `hashtags` (8 to 12, like `#InThisTown`), `cast` (2 to 5), `shots` (20 to 32).
+
+**Cast member**: `id` (lowercase, the hero is `me`), `name`, `shape`, `shirt`, `pants`, `skin`,
+`hair`, `hair_color`, `size`, `extras` (0 to 3).
+
+| Field | Allowed values |
+|---|---|
+| shape | person, house, car, phone, fridge, tree, cake, dog, cat (objects get a face, arms and legs) |
+| shirt, pants, hair_color | red, blue, green, yellow, orange, purple, pink, white, black, brown, grey, teal, navy, gold, lime, cyan |
+| skin | yellow, light, tan, brown, dark |
+| hair | none, short, long, bun, spiky, cap, tophat, crown, bow |
+| extras | glasses, mustache, blush, tie |
+| size | baby, kid, adult, giant |
+
+**Shot**: `text` (ONE sentence, 6 to 12 words, numbers as words), `place`, `camera`, `focus`
+(a cast id in the shot, `group`, or `sign`), `actors` (1 to 4: `id`, `action`, `face`, `prop`),
+`sfx`, `emphasis` (0 or 1 word copied exactly from `text`), `sign` (`""` or max 24 chars).
+
+| Field | Allowed values |
+|---|---|
+| place | street, house, school, park, shop, city, room, classroom, kitchen |
+| camera | player, wide, push_in, close_up, orbit, low_angle, top_down, pan, shake, whip, reveal |
+| action | idle, walk, run, sneak, jump, celebrate, wave, dance, shock, cry, fall, spin, point, sit, shrink, grow, float, talk, lose_part |
+| face | neutral, smile, grin, laugh, shock, sad, angry, worried, smug, cry, love, cool, ko |
+| prop | none, phone, pizza, book, money, gift, ball, trophy, icecream, burger |
+| sfx | none, pop, whoosh, ding, riser |
+
+**What makes it work** (ClipForge's own writer rules):
+- First person; the hero is `me` and is in shot 1. Shot 1's text is the hook, under 14 words.
+- Total narration 180 to 280 words. 2 to 4 places, staying in each for several shots.
+- `player` or `wide` camera for about half the shots; `close_up` at most one shot in seven and
+  never twice in a row; never the same camera twice in a row; `top_down` or `player` for shot 1.
+- Two or more actors in at least half the shots. Use `giant` and `baby` sizes boldly together.
+- One recurring side character; a problem, three failed tries, a twist; the last shot is a
+  question that makes people comment. No brand names, no real people, nothing scary or mean.
+- Never use Roblox's name, logo or characters anywhere.
+
+One cast member and one shot, for the shape only:
+
+```json
+{"id": "me", "name": "Milo", "shape": "person", "shirt": "red", "pants": "navy", "skin": "yellow", "hair": "short", "hair_color": "brown", "size": "kid", "extras": []}
+{"text": "My mom is the tallest lady in town.", "place": "street", "camera": "low_angle", "focus": "mom", "actors": [{"id": "mom", "action": "wave", "face": "smile", "prop": "none"}, {"id": "me", "action": "idle", "face": "smile", "prop": "book"}], "sfx": "none", "emphasis": ["tallest"], "sign": ""}
+```
+
+A full example with every value valid (26 shots, 237 words, about 52 s): `docs/blocky-example-story.json`.
+
 ## Internships due today
 
 An internship is **due today** when its `status` is `to-review` or `apply-queue` and the date

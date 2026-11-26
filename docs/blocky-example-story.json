@@ -1,0 +1,588 @@
+{
+  "title": "My House Goes To School",
+  "premise": "What if your house followed you to school?",
+  "description": "In this brick town, every single house walks to school right behind its kid. My huge house is way too big and ruins every morning.",
+  "hashtags": [
+    "#InThisTown",
+    "#BrickTown",
+    "#SchoolLife",
+    "#Funny",
+    "#Viral",
+    "#Shorts",
+    "#Animation",
+    "#ToyBricks",
+    "#House"
+  ],
+  "cast": [
+    {
+      "id": "me",
+      "name": "Milo",
+      "shape": "person",
+      "shirt": "red",
+      "pants": "navy",
+      "skin": "yellow",
+      "hair": "short",
+      "hair_color": "brown",
+      "size": "kid",
+      "extras": [
+        "glasses"
+      ]
+    },
+    {
+      "id": "mom",
+      "name": "Clara",
+      "shape": "person",
+      "shirt": "blue",
+      "pants": "black",
+      "skin": "tan",
+      "hair": "bun",
+      "hair_color": "black",
+      "size": "adult",
+      "extras": []
+    },
+    {
+      "id": "house",
+      "name": "Home",
+      "shape": "house",
+      "shirt": "pink",
+      "pants": "white",
+      "skin": "yellow",
+      "hair": "none",
+      "hair_color": "red",
+      "size": "giant",
+      "extras": []
+    }
+  ],
+  "shots": [
+    {
+      "text": "In this town, every house follows its kid to school.",
+      "place": "street",
+      "camera": "top_down",
+      "focus": "group",
+      "actors": [
+        {
+          "id": "me",
+          "action": "walk",
+          "face": "neutral",
+          "prop": "book"
+        },
+        {
+          "id": "house",
+          "action": "walk",
+          "face": "smile",
+          "prop": "none"
+        }
+      ],
+      "sfx": "none",
+      "emphasis": [
+        "follows"
+      ],
+      "sign": "RULE HOUSE"
+    },
+    {
+      "text": "Small houses walk fast down the paved brick street.",
+      "place": "street",
+      "camera": "wide",
+      "focus": "group",
+      "actors": [
+        {
+          "id": "me",
+          "action": "walk",
+          "face": "smile",
+          "prop": "none"
+        }
+      ],
+      "sfx": "none",
+      "emphasis": [
+        "fast"
+      ],
+      "sign": ""
+    },
+    {
+      "text": "My pink house is huge and walks very slow.",
+      "place": "street",
+      "camera": "low_angle",
+      "focus": "house",
+      "actors": [
+        {
+          "id": "house",
+          "action": "walk",
+          "face": "neutral",
+          "prop": "none"
+        }
+      ],
+      "sfx": "none",
+      "emphasis": [
+        "huge"
+      ],
+      "sign": ""
+    },
+    {
+      "text": "Mom said, Not today, when my roof hit a tree.",
+      "place": "street",
+      "camera": "player",
+      "focus": "mom",
+      "actors": [
+        {
+          "id": "mom",
+          "action": "talk",
+          "face": "sad",
+          "prop": "none"
+        }
+      ],
+      "sfx": "none",
+      "emphasis": [
+        "today"
+      ],
+      "sign": ""
+    },
+    {
+      "text": "Every morning I try to pull my heavy front door.",
+      "place": "house",
+      "camera": "close_up",
+      "focus": "me",
+      "actors": [
+        {
+          "id": "me",
+          "action": "walk",
+          "face": "angry",
+          "prop": "none"
+        }
+      ],
+      "sfx": "none",
+      "emphasis": [
+        "heavy"
+      ],
+      "sign": ""
+    },
+    {
+      "text": "Try one was tying ten long ropes to the chimney.",
+      "place": "house",
+      "camera": "wide",
+      "focus": "house",
+      "actors": [
+        {
+          "id": "me",
+          "action": "jump",
+          "face": "shock",
+          "prop": "none"
+        }
+      ],
+      "sfx": "none",
+      "emphasis": [
+        "ten"
+      ],
+      "sign": ""
+    },
+    {
+      "text": "The ropes snapped with a loud pop right away.",
+      "place": "house",
+      "camera": "shake",
+      "focus": "house",
+      "actors": [
+        {
+          "id": "house",
+          "action": "spin",
+          "face": "shock",
+          "prop": "none"
+        }
+      ],
+      "sfx": "pop",
+      "emphasis": [
+        "snapped"
+      ],
+      "sign": ""
+    },
+    {
+      "text": "Mom waved goodbye from her yellow front porch step.",
+      "place": "house",
+      "camera": "player",
+      "focus": "mom",
+      "actors": [
+        {
+          "id": "mom",
+          "action": "wave",
+          "face": "smile",
+          "prop": "none"
+        }
+      ],
+      "sfx": "none",
+      "emphasis": [
+        "porch"
+      ],
+      "sign": ""
+    },
+    {
+      "text": "Try two was feeding my house giant red burgers.",
+      "place": "street",
+      "camera": "push_in",
+      "focus": "house",
+      "actors": [
+        {
+          "id": "me",
+          "action": "jump",
+          "face": "smile",
+          "prop": "burger"
+        },
+        {
+          "id": "house",
+          "action": "idle",
+          "face": "smile",
+          "prop": "none"
+        }
+      ],
+      "sfx": "none",
+      "emphasis": [
+        "burgers"
+      ],
+      "sign": ""
+    },
+    {
+      "text": "It ate four burgers and took a long nap.",
+      "place": "street",
+      "camera": "orbit",
+      "focus": "house",
+      "actors": [
+        {
+          "id": "house",
+          "action": "sit",
+          "face": "ko",
+          "prop": "none"
+        }
+      ],
+      "sfx": "none",
+      "emphasis": [
+        "nap"
+      ],
+      "sign": ""
+    },
+    {
+      "text": "I pushed the giant brick wall with my hands.",
+      "place": "street",
+      "camera": "low_angle",
+      "focus": "me",
+      "actors": [
+        {
+          "id": "me",
+          "action": "walk",
+          "face": "angry",
+          "prop": "none"
+        },
+        {
+          "id": "house",
+          "action": "idle",
+          "face": "neutral",
+          "prop": "none"
+        }
+      ],
+      "sfx": "none",
+      "emphasis": [
+        "pushed"
+      ],
+      "sign": ""
+    },
+    {
+      "text": "The house stayed fast asleep on the town sidewalk.",
+      "place": "street",
+      "camera": "player",
+      "focus": "house",
+      "actors": [
+        {
+          "id": "house",
+          "action": "idle",
+          "face": "neutral",
+          "prop": "none"
+        }
+      ],
+      "sfx": "none",
+      "emphasis": [
+        "sidewalk"
+      ],
+      "sign": ""
+    },
+    {
+      "text": "Try three was putting squeaky wheels under the floor.",
+      "place": "street",
+      "camera": "wide",
+      "focus": "group",
+      "actors": [
+        {
+          "id": "me",
+          "action": "walk",
+          "face": "worried",
+          "prop": "none"
+        },
+        {
+          "id": "house",
+          "action": "idle",
+          "face": "shock",
+          "prop": "none"
+        }
+      ],
+      "sfx": "none",
+      "emphasis": [
+        "wheels"
+      ],
+      "sign": ""
+    },
+    {
+      "text": "All four wheels broke under the massive heavy weight.",
+      "place": "street",
+      "camera": "shake",
+      "focus": "house",
+      "actors": [
+        {
+          "id": "house",
+          "action": "fall",
+          "face": "cry",
+          "prop": "none"
+        }
+      ],
+      "sfx": "whoosh",
+      "emphasis": [
+        "broke"
+      ],
+      "sign": ""
+    },
+    {
+      "text": "Mom shook her head at my silly broken plan.",
+      "place": "street",
+      "camera": "close_up",
+      "focus": "mom",
+      "actors": [
+        {
+          "id": "mom",
+          "action": "talk",
+          "face": "sad",
+          "prop": "none"
+        }
+      ],
+      "sfx": "none",
+      "emphasis": [
+        "plan"
+      ],
+      "sign": ""
+    },
+    {
+      "text": "The school clock chimed loud across the morning air.",
+      "place": "school",
+      "camera": "player",
+      "focus": "group",
+      "actors": [
+        {
+          "id": "me",
+          "action": "run",
+          "face": "shock",
+          "prop": "book"
+        }
+      ],
+      "sfx": "ding",
+      "emphasis": [
+        "loud"
+      ],
+      "sign": "9:00 AM"
+    },
+    {
+      "text": "I had one last chance to make it inside.",
+      "place": "school",
+      "camera": "push_in",
+      "focus": "me",
+      "actors": [
+        {
+          "id": "me",
+          "action": "stand",
+          "face": "angry",
+          "prop": "none"
+        }
+      ],
+      "sfx": "none",
+      "emphasis": [
+        "chance"
+      ],
+      "sign": ""
+    },
+    {
+      "text": "I tied a shiny gold trophy to my belt.",
+      "place": "school",
+      "camera": "player",
+      "focus": "me",
+      "actors": [
+        {
+          "id": "me",
+          "action": "jump",
+          "face": "smile",
+          "prop": "trophy"
+        }
+      ],
+      "sfx": "none",
+      "emphasis": [
+        "trophy"
+      ],
+      "sign": ""
+    },
+    {
+      "text": "My house saw the gold and stood up fast.",
+      "place": "school",
+      "camera": "reveal",
+      "focus": "house",
+      "actors": [
+        {
+          "id": "house",
+          "action": "grow",
+          "face": "grin",
+          "prop": "none"
+        }
+      ],
+      "sfx": "riser",
+      "emphasis": [
+        "fast"
+      ],
+      "sign": ""
+    },
+    {
+      "text": "It ran past every small house on the road.",
+      "place": "street",
+      "camera": "orbit",
+      "focus": "house",
+      "actors": [
+        {
+          "id": "house",
+          "action": "run",
+          "face": "smile",
+          "prop": "none"
+        }
+      ],
+      "sfx": "whoosh",
+      "emphasis": [
+        "road"
+      ],
+      "sign": ""
+    },
+    {
+      "text": "Dust flew up as my huge pink walls sped.",
+      "place": "street",
+      "camera": "shake",
+      "focus": "house",
+      "actors": [
+        {
+          "id": "house",
+          "action": "run",
+          "face": "grin",
+          "prop": "none"
+        }
+      ],
+      "sfx": "pop",
+      "emphasis": [
+        "sped"
+      ],
+      "sign": ""
+    },
+    {
+      "text": "We crashed right through the school front yard.",
+      "place": "school",
+      "camera": "wide",
+      "focus": "group",
+      "actors": [
+        {
+          "id": "me",
+          "action": "jump",
+          "face": "laugh",
+          "prop": "none"
+        },
+        {
+          "id": "house",
+          "action": "idle",
+          "face": "smile",
+          "prop": "none"
+        }
+      ],
+      "sfx": "whoosh",
+      "emphasis": [
+        "yard"
+      ],
+      "sign": ""
+    },
+    {
+      "text": "My house parked right on top of the principal.",
+      "place": "school",
+      "camera": "low_angle",
+      "focus": "house",
+      "actors": [
+        {
+          "id": "house",
+          "action": "idle",
+          "face": "smug",
+          "prop": "none"
+        }
+      ],
+      "sfx": "none",
+      "emphasis": [
+        "principal"
+      ],
+      "sign": "PRINCIPAL"
+    },
+    {
+      "text": "Mom laughed out loud from her front porch step.",
+      "place": "street",
+      "camera": "player",
+      "focus": "mom",
+      "actors": [
+        {
+          "id": "mom",
+          "action": "celebrate",
+          "face": "laugh",
+          "prop": "none"
+        }
+      ],
+      "sfx": "ding",
+      "emphasis": [
+        "laughed"
+      ],
+      "sign": ""
+    },
+    {
+      "text": "Now my house carries me to class every day.",
+      "place": "school",
+      "camera": "player",
+      "focus": "group",
+      "actors": [
+        {
+          "id": "me",
+          "action": "walk",
+          "face": "smile",
+          "prop": "book"
+        },
+        {
+          "id": "house",
+          "action": "walk",
+          "face": "smile",
+          "prop": "none"
+        }
+      ],
+      "sfx": "none",
+      "emphasis": [
+        "class"
+      ],
+      "sign": "A+"
+    },
+    {
+      "text": "Would you let your house follow you to school?",
+      "place": "school",
+      "camera": "close_up",
+      "focus": "me",
+      "actors": [
+        {
+          "id": "me",
+          "action": "wave",
+          "face": "smile",
+          "prop": "none"
+        }
+      ],
+      "sfx": "none",
+      "emphasis": [
+        "house"
+      ],
+      "sign": "PART TWO?"
+    }
+  ]
+}
