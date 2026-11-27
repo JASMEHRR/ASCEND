@@ -4,7 +4,7 @@
  *   npx tsx src/features/reels/logic.test.ts
  */
 import assert from 'node:assert/strict';
-import { EMPTY_FILTERS, countTabs, divisions, embedUrl, groupBy, topTags, matchesFilters, normalizeReel, safeLink, scoreTone, sortReels } from './logic';
+import { EMPTY_FILTERS, countTabs, divisions, embedUrl, groupBy, headlineOf, topTags, matchesFilters, normalizeReel, safeLink, scoreTone, sortReels } from './logic';
 import { SEED_REELS } from './seedReels';
 
 const reels = SEED_REELS.map((s) => normalizeReel(s.id, s.data));
@@ -97,5 +97,11 @@ const bare = normalizeReel('b', {});
 assert.deepEqual(bare.links, []);
 assert.equal(bare.forYou, '');
 assert.equal(bare.archived, false);
+
+// Headline fallback: oneLine, then first sentence of whatItIs, then title.
+assert.equal(headlineOf({ oneLine: 'Real tool.', whatItIs: 'A. B.', title: 'T' }), 'Real tool.');
+assert.equal(headlineOf({ oneLine: '', whatItIs: 'Costs $8.79/mo. Renews higher.', title: 'T' }), 'Costs $8.79/mo.');
+assert.equal(headlineOf({ oneLine: '', whatItIs: 'No full stop here', title: 'T' }), 'No full stop here');
+assert.equal(headlineOf({ oneLine: '', whatItIs: '', title: 'T' }), 'T');
 
 console.log('reels logic: all passed');

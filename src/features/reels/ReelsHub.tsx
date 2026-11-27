@@ -45,6 +45,7 @@ import {
   divisions,
   embedUrl,
   groupBy,
+  headlineOf,
   inTab,
   matchesSearch,
   safeLink,
@@ -604,7 +605,7 @@ function PaidBadge() {
   );
 }
 
-/** Block-letter section heading, used for the about headline and FOR YOU. */
+/** Block-letter section heading (FOR YOU). */
 function BlockHeading({ children, className = 'text-white' }: { children: ReactNode; className?: string }) {
   return <p className={`text-[15px] font-black uppercase leading-tight tracking-[0.12em] ${className}`}>{children}</p>;
 }
@@ -640,7 +641,8 @@ function ReelRow({
         <ScoreBadge score={reel.score} />
         <span className="min-w-0 flex-1">
           <span className="block text-[14px] font-semibold leading-snug text-white">{reel.title}</span>
-          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-white/45">
+          <span className="mt-0.5 line-clamp-2 block text-[13px] font-bold leading-snug text-white/85">{headlineOf(reel)}</span>
+          <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-white/45">
             {reel.author && <span>{reel.author}</span>}
             {reel.sharedAt && <span>· {formatShared(reel.sharedAt)}</span>}
             {reel.isBS && <BsBadge />}
@@ -651,7 +653,6 @@ function ReelRow({
             )}
             {reel.links.some((l) => l.paid) && <PaidBadge />}
           </span>
-          {reel.oneLine && <span className="mt-1 line-clamp-2 block text-[13px] leading-snug text-white/65">{reel.oneLine}</span>}
         </span>
       </button>
       {reel.tags.length > 0 && (
@@ -682,6 +683,7 @@ function ReelDetail({
   onDelete: () => void;
 }) {
   const ig = safeLink(reel.igUrl);
+  const headline = headlineOf(reel);
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-white/12 bg-white/[0.03] p-3">
       <div className="flex items-center gap-2">
@@ -716,6 +718,14 @@ function ReelDetail({
       {/* Keyed by reel, so switching reels swaps the one frame rather than stacking them. */}
       <VideoBox key={reel.id} igUrl={reel.igUrl} />
 
+      {/* What the reel is about: the first and biggest thing in the pane. */}
+      <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
+        <p className="text-[19px] font-black uppercase leading-[1.2] tracking-[0.04em] text-white">{headline}</p>
+        {reel.whatItIs && reel.whatItIs !== headline && (
+          <p className="mt-2 text-[14px] font-medium leading-relaxed text-white/80">{reel.whatItIs}</p>
+        )}
+      </div>
+
       <div className="flex items-start gap-3">
         <ScoreBadge score={reel.score} size="lg" />
         <div className="min-w-0 flex-1">
@@ -729,12 +739,6 @@ function ReelDetail({
       </div>
 
       <div className="flex flex-col gap-3 text-[13px] leading-relaxed text-white/70">
-        {reel.whatItIs && (
-          <div>
-            <BlockHeading>What this reel is about</BlockHeading>
-            <p className="mt-1">{reel.whatItIs}</p>
-          </div>
-        )}
         {reel.links.length > 0 && (
           <Detail label={`Links (${reel.links.length})`}>
             <ul className="mt-1 flex flex-col gap-1.5">
@@ -769,7 +773,6 @@ function ReelDetail({
             </ul>
           </Detail>
         )}
-        {reel.oneLine && <Detail label="In one line">{reel.oneLine}</Detail>}
         {reel.verdict && <Detail label="Verdict">{reel.verdict}</Detail>}
         {reel.nextAction && <Detail label="Next action">{reel.nextAction}</Detail>}
         {reel.sources.length > 0 && (

@@ -29,4 +29,4 @@
 - 2026-11-28 Reels v3: search and tags always search every division and show results grouped by division.
 - 2026-11-28 Reels v5: swipe is touch/pen only (left archive, right delete after a confirm, 90px); desktop uses Archive/Delete buttons in the opened reel. In Archived, swipe left restores.
 - 2026-11-28 Reels v5: rules let only JasMehr's uid update `archived` (bool, nothing else) and delete reels; still no create. Muse must merge-write so `archived` survives (docs/MUSE-LINKS.md).
-- 2026-11-28 Reels v5: the v4 brief (block-letters headline) never reached this session; "WHAT THIS REEL IS ABOUT" and "FOR YOU" use one shared BlockHeading in ReelsHub.tsx.
+- 2026-11-28 Reels v4 (arrived after v5): the opened reel leads with the headline (oneLine, else first sentence of whatItIs, else title) in block capitals right under the video, then whatItIs. Cards show the same headline in bold under the title. headlineOf in logic.ts.

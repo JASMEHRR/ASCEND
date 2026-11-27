@@ -142,6 +142,16 @@ export function sortReels(reels: Reel[], mode: SortMode): Reel[] {
 
 // --- Display -------------------------------------------------------------------
 
+/**
+ * What the reel is about, in one line: `oneLine`, else the first sentence of
+ * `whatItIs`, else the title. Never empty.
+ */
+export function headlineOf(r: Pick<Reel, 'oneLine' | 'whatItIs' | 'title'>): string {
+  if (r.oneLine) return r.oneLine;
+  const first = r.whatItIs.match(/^[\s\S]*?[.!?](?=\s|$)/)?.[0].trim() || r.whatItIs;
+  return first || r.title;
+}
+
 export type ScoreTone = 'high' | 'mid' | 'low' | 'none';
 
 export function scoreTone(score: number | null): ScoreTone {
