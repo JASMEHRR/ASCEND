@@ -225,6 +225,9 @@ svg.f { width: 20px; height: 20px; fill: currentColor; }
     uid = u.uid;
     unsub = db.collection('users').doc(uid).collection('tvState').doc('main').onSnapshot(function (s) {
       state = s.exists ? s.data() : null;
+      var sv = state && state.seen && state.seen.toMillis ? state.seen.toMillis() : 0;
+      if (sv && lastSeen && sv !== lastSeen) heardAt = Date.now(); // a fresh check-in arrived just now
+      if (sv) lastSeen = sv;
       render();
     }, function () { toast('Could not read the TV state'); });
   });
@@ -234,10 +237,15 @@ svg.f { width: 20px; height: 20px; fill: currentColor; }
     auth.signInWithPopup(p).catch(function () { return auth.signInWithRedirect(p); });
   };
 
+  // The TV checks in every minute. Online if a check-in arrived here in the last 3 minutes (this
+  // phone's own clock, so a phone set a few minutes off does not read the TV as offline), or if the
+  // last check-in is that recent by the server's time (right after opening the page).
+  var lastSeen = 0, heardAt = 0;
   function online() {
     var seen = state && state.seen && state.seen.toMillis ? state.seen.toMillis() : 0;
-    return seen && Date.now() - seen < 3 * 60000;
+    return (heardAt && Date.now() - heardAt < 3 * 60000) || (seen && Date.now() - seen < 3 * 60000);
   }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden && state) render(); });
   function render() {
     if (!state) { show('pair'); $('statusText').textContent = 'Not paired'; $('status').classList.remove('on'); return; }
     show('app');
