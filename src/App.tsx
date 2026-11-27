@@ -2,9 +2,9 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-import { Suspense, lazy, useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { Sliders, LogOut, Loader2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Sliders, LogOut, Loader2, PanelLeftClose, PanelLeftOpen, Pin } from 'lucide-react';
 import { readStore, removeStore, writeStore } from './lib/storage';
 import { useAuth } from './context/AuthContext';
 import { useDialog } from './context/DialogContext';
@@ -140,14 +140,41 @@ export default function App() {
   const [view, setView] = useState<View>('dashboard');
   const [, setTimeTick] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // Collapsing the nav hands the width to whichever module is open — the
-  // puzzle and the stocks table both want it. Remembered across reloads.
-  const [navOpen, setNavOpen] = useState(() => readStore('ascend_nav') !== 'closed');
-  const toggleNav = () =>
-    setNavOpen((open) => {
-      writeStore('ascend_nav', open ? 'closed' : 'open');
-      return !open;
-    });
+  // The sidebar rests as an icon rail so every page gets the full width.
+  // Hovering the rail (or tapping its menu button) opens the full nav over
+  // the page; a click into the page closes it again. Pinning keeps it open
+  // beside the page, remembered for this browser session only.
+  const [navPinned, setNavPinned] = useState(() => {
+    try {
+      return sessionStorage.getItem('ascend_nav_pinned') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [navPeek, setNavPeek] = useState(false);
+  const peekTimer = useRef<number | undefined>(undefined);
+  const setPinned = (pin: boolean) => {
+    setNavPinned(pin);
+    setNavPeek(false);
+    try {
+      sessionStorage.setItem('ascend_nav_pinned', pin ? '1' : '0');
+    } catch {
+      /* private mode: the choice just isn't remembered */
+    }
+  };
+  // A short delay so sweeping the mouse past the rail doesn't flash the panel open.
+  const peekOpen = () => {
+    window.clearTimeout(peekTimer.current);
+    peekTimer.current = window.setTimeout(() => setNavPeek(true), 120);
+  };
+  const peekClose = () => {
+    window.clearTimeout(peekTimer.current);
+    setNavPeek(false);
+  };
+  const goTo = (next: View) => {
+    setView(next);
+    peekClose();
+  };
   const [rewardModalOpen, setRewardModalOpen] = useState(false);
   const [currentReward, setCurrentReward] = useState('');
   const [lastPointMilestone, setLastPointMilestone] = useState(0);
@@ -233,80 +260,8 @@ export default function App() {
   const mobileMid = Math.ceil(mobileModules.length / 2);
   const showSetup = setupOpen || !state.setupComplete;
 
-  // Shell sizing note: h-dvh rather than h-screen, because 100vh on mobile
-  // excludes the browser address bar — combined with overflow-hidden that put
-  // the bottom of the app off-screen with no way to reach it. The bottom
-  // padding clears the fixed mobile nav, which now hides at the same
-  // breakpoint the sidebar appears (md) instead of at sm, closing a gap where
-  // neither was visible.
-  return (
-    <div className="relative flex flex-col h-dvh w-full bg-app text-white/95 font-plus p-3 sm:p-4 md:p-6 pb-[calc(4.5rem+max(0.75rem,env(safe-area-inset-bottom)))] md:pb-6 gap-3 sm:gap-5 overflow-hidden selection:bg-brand-500/30 selection:text-white">
-      <AtmosphereBackdrop currentAtmosphere={activeAtmosphere} />
-      <CondensationEffect active={activeAtmosphere.condensationActive} />
-      {/* Light mode lays a soft veil over the photographic atmosphere for contrast. */}
-      <div aria-hidden="true" className="theme-veil pointer-events-none absolute inset-0" />
-
-      {/* HEADER */}
-      {/* On a phone the title and account chip share one row — stacking them
-          burned vertical space the dashboard needs more than the header does. */}
-      <header className="relative flex flex-row justify-between items-center pb-1 sm:pb-2 px-1 sm:px-2 z-10 gap-3 sm:gap-5 shrink-0 w-full mb-0 sm:mb-2">
-        <h1 className="text-xl sm:text-3xl md:text-4xl font-extrabold text-white tracking-tight drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)] whitespace-nowrap">
-          Ascend Protocol
-        </h1>
-
-        {/* Header stays minimal — vitals live in the dashboard's Vitals panel. */}
-        <div className="flex gap-3 items-center justify-end min-w-0">
-          <HeaderAccount />
-        </div>
-      </header>
-
-      {/* CORE */}
-      <div className="relative flex flex-1 flex-col md:flex-row gap-3 sm:gap-5 min-h-0 z-10">
-        {/* SIDEBAR */}
-        {/* Collapsed nav: an icon strip that keeps every module one click away. */}
-        {!navOpen && (
-          <aside className="hidden md:flex shrink-0">
-            <div className="liquid-glass-panel flex h-full flex-col items-center gap-1.5 rounded-[2rem] p-2">
-              <button
-                onClick={toggleNav}
-                aria-label="Expand navigation"
-                title="Expand navigation"
-                className="rounded-xl p-2 text-white/40 transition-colors hover:bg-white/10 hover:text-white cursor-pointer"
-              >
-                <PanelLeftOpen size={16} />
-              </button>
-              <span className="my-0.5 h-px w-6 bg-white/10" />
-              {features.navModules.map((mod) => {
-                const Icon = mod.icon;
-                const active = view === mod.id;
-                return (
-                  <button
-                    key={mod.id}
-                    onClick={() => setView(mod.id as View)}
-                    aria-label={mod.label}
-                    title={mod.label}
-                    className={`rounded-xl p-2.5 transition-all cursor-pointer ${
-                      active ? 'bg-white/15 text-white' : 'text-white/40 hover:bg-white/[0.07] hover:text-white/85'
-                    }`}
-                  >
-                    <Icon size={15} />
-                  </button>
-                );
-              })}
-              <button
-                onClick={() => setSettingsOpen(true)}
-                aria-label="Settings"
-                title="Settings"
-                className="mt-auto rounded-xl p-2.5 text-white/40 transition-colors hover:bg-white/10 hover:text-white cursor-pointer"
-              >
-                <Sliders size={15} />
-              </button>
-            </div>
-          </aside>
-        )}
-
-        <aside className={navOpen ? 'hidden md:flex w-64 shrink-0 flex-col gap-4' : 'hidden'}>
-          <div className="liquid-glass-panel rounded-[2rem] p-4 flex flex-col gap-5 h-full overflow-y-auto custom-scrollbar">
+  const fullNav = (
+    <div className={`liquid-glass-panel rounded-[2rem] p-4 flex flex-col gap-5 h-full w-full overflow-y-auto custom-scrollbar ${navPinned ? '' : 'bg-app/80 backdrop-blur-xl'}`}>
             <div className="flex flex-col items-center justify-center -mx-2">
               <FlipClock compact />
             </div>
@@ -317,12 +272,12 @@ export default function App() {
               <div className="mb-2.5 flex items-center justify-between gap-2 pl-1.5">
                 <p className="text-[9px] font-extrabold text-white/40 uppercase tracking-[0.18em] leading-none font-mono">Navigation</p>
                 <button
-                  onClick={toggleNav}
-                  aria-label="Collapse navigation"
-                  title="Collapse navigation"
+                  onClick={() => setPinned(!navPinned)}
+                  aria-label={navPinned ? 'Collapse navigation' : 'Keep navigation open'}
+                  title={navPinned ? 'Collapse navigation' : 'Keep navigation open'}
                   className="rounded-lg p-1 text-white/35 transition-colors hover:bg-white/10 hover:text-white cursor-pointer"
                 >
-                  <PanelLeftClose size={13} />
+                  {navPinned ? <PanelLeftClose size={13} /> : <Pin size={13} />}
                 </button>
               </div>
               <div className="grid grid-cols-1 gap-1.5">
@@ -333,7 +288,7 @@ export default function App() {
                   return (
                     <button
                       key={mod.id}
-                      onClick={() => setView(mod.id as View)}
+                      onClick={() => goTo(mod.id as View)}
                       aria-current={active ? 'page' : undefined}
                       className={`w-full relative flex items-center justify-between gap-2 px-4 py-3 rounded-2xl text-[11px] font-bold uppercase tracking-wider transition-all border cursor-pointer text-left ${
                         active
@@ -374,11 +329,90 @@ export default function App() {
             <div className="mt-auto pt-4 border-t border-white/5 text-[8px] font-mono font-bold text-white/25 uppercase tracking-[0.16em] text-center">
               Ascend Protocol
             </div>
+    </div>
+  );
+
+  // Shell sizing note: h-dvh rather than h-screen, because 100vh on mobile
+  // excludes the browser address bar — combined with overflow-hidden that put
+  // the bottom of the app off-screen with no way to reach it. The bottom
+  // padding clears the fixed mobile nav, which now hides at the same
+  // breakpoint the sidebar appears (md) instead of at sm, closing a gap where
+  // neither was visible.
+  return (
+    <div className="relative flex flex-col h-dvh w-full bg-app text-white/95 font-plus p-3 sm:p-4 md:p-6 pb-[calc(4.5rem+max(0.75rem,env(safe-area-inset-bottom)))] md:pb-6 gap-3 sm:gap-5 overflow-hidden selection:bg-brand-500/30 selection:text-white">
+      <AtmosphereBackdrop currentAtmosphere={activeAtmosphere} />
+      <CondensationEffect active={activeAtmosphere.condensationActive} />
+      {/* Light mode lays a soft veil over the photographic atmosphere for contrast. */}
+      <div aria-hidden="true" className="theme-veil pointer-events-none absolute inset-0" />
+
+      {/* HEADER */}
+      {/* On a phone the title and account chip share one row — stacking them
+          burned vertical space the dashboard needs more than the header does. */}
+      <header className="relative flex flex-row justify-between items-center pb-1 sm:pb-2 px-1 sm:px-2 z-10 gap-3 sm:gap-5 shrink-0 w-full mb-0 sm:mb-2">
+        <h1 className="text-xl sm:text-3xl md:text-4xl font-extrabold text-white tracking-tight drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)] whitespace-nowrap">
+          Ascend Protocol
+        </h1>
+
+        {/* Header stays minimal — vitals live in the dashboard's Vitals panel. */}
+        <div className="flex gap-3 items-center justify-end min-w-0">
+          <HeaderAccount />
+        </div>
+      </header>
+
+      {/* CORE */}
+      <div className="relative flex flex-1 flex-col md:flex-row gap-3 sm:gap-5 min-h-0 z-10">
+        {/* SIDEBAR */}
+        {/* Resting nav: an icon strip that keeps every module one click away.
+            Hover (or the top button) opens the full panel over the page. */}
+        {!navPinned && (
+          <div className="relative hidden md:flex shrink-0" onMouseEnter={peekOpen} onMouseLeave={peekClose}>
+          <aside className="flex">
+            <div className="liquid-glass-panel flex h-full flex-col items-center gap-1.5 rounded-[2rem] p-2">
+              <button
+                onClick={() => setNavPeek(true)}
+                aria-label="Open navigation"
+                aria-expanded={navPeek}
+                title="Open navigation"
+                className="rounded-xl p-2 text-white/40 transition-colors hover:bg-white/10 hover:text-white cursor-pointer"
+              >
+                <PanelLeftOpen size={16} />
+              </button>
+              <span className="my-0.5 h-px w-6 bg-white/10" />
+              {features.navModules.map((mod) => {
+                const Icon = mod.icon;
+                const active = view === mod.id;
+                return (
+                  <button
+                    key={mod.id}
+                    onClick={() => goTo(mod.id as View)}
+                    aria-label={mod.label}
+                    title={mod.label}
+                    className={`rounded-xl p-2.5 transition-all cursor-pointer ${
+                      active ? 'bg-white/15 text-white' : 'text-white/40 hover:bg-white/[0.07] hover:text-white/85'
+                    }`}
+                  >
+                    <Icon size={15} />
+                  </button>
+                );
+              })}
+              <button
+                onClick={() => setSettingsOpen(true)}
+                aria-label="Settings"
+                title="Settings"
+                className="mt-auto rounded-xl p-2.5 text-white/40 transition-colors hover:bg-white/10 hover:text-white cursor-pointer"
+              >
+                <Sliders size={15} />
+              </button>
+            </div>
+          </aside>
+          {navPeek && <div className="absolute inset-y-0 left-0 z-40 flex w-64 shadow-2xl shadow-black/60">{fullNav}</div>}
           </div>
-        </aside>
+        )}
+
+        {navPinned && <aside className="hidden md:flex w-64 shrink-0 flex-col gap-4">{fullNav}</aside>}
 
         {/* MAIN */}
-        <main className="flex-1 flex flex-col gap-6 min-w-0 overflow-y-auto custom-scrollbar">
+        <main onPointerDown={navPeek ? peekClose : undefined} className="flex-1 flex flex-col gap-6 min-w-0 overflow-y-auto custom-scrollbar">
           {/* Enter-only fade: an exit/enter handoff (mode="wait") could drop the
               enter animation and leave the new view stuck invisible at opacity 0. */}
           <motion.div

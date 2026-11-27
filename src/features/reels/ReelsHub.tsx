@@ -24,6 +24,7 @@ import {
   ArchiveRestore,
   ArrowLeft,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   ExternalLink,
   Film,
@@ -111,8 +112,6 @@ const formatShared = (iso: string | null): string =>
 
 const tabLabel = (id: TabId) => TABS.find((t) => t.id === id)?.label ?? id;
 
-/** Phones and small tablets show the list or the reel, never both. */
-const isNarrow = () => typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches;
 
 /** Display side: home tiles, division sections, the reel pane. Knows nothing about Firestore. */
 export function ReelsView({
@@ -162,10 +161,23 @@ export function ReelsView({
     return groupBy(list, (r) => r.subcat, sort);
   }, [all, archivedList, querying, tag, search, view, sort]);
   const resultCount = groups.reduce((n, g) => n + g.reels.length, 0);
+  // The list in reading order, for ← / → and for "next reel" after a removal.
+  const flat = useMemo(() => groups.flatMap((g) => g.reels), [groups]);
+  const index = selected ? flat.findIndex((r) => r.id === selected.id) : -1;
+  const step = (by: -1 | 1) => {
+    const next = index >= 0 ? flat[index + by] : undefined;
+    if (next) setSelectedId(next.id);
+  };
+  /** Leaving a reel (archived, restored, deleted) opens the next one in the list. */
+  const moveOff = (r: Reel) => {
+    if (selectedId !== r.id) return;
+    const i = flat.findIndex((x) => x.id === r.id);
+    setSelectedId((flat[i + 1] ?? flat[i - 1])?.id ?? null);
+  };
 
-  // Opening a reel on a phone swaps the list for the reel; start it at the top.
+  // Each opened reel starts at the top, so the verdict pane is in view.
   useEffect(() => {
-    if (selectedId && isNarrow()) topRef.current?.scrollIntoView({ block: 'start' });
+    if (selectedId) topRef.current?.scrollIntoView({ block: 'start' });
   }, [selectedId]);
 
   // The undo bar lives a few seconds after each archive.
@@ -179,7 +191,7 @@ export function ReelsView({
     toast.show({ kind: 'warning', title: `Couldn't ${what}`, message: (err as Error).message || 'Try again in a moment.' });
 
   const archive = (r: Reel) => {
-    if (selectedId === r.id) setSelectedId(null);
+    moveOff(r);
     setUndo(r);
     setArchived(r.id, true).catch((err) => {
       setUndo(null);
@@ -187,7 +199,7 @@ export function ReelsView({
     });
   };
   const restore = (r: Reel) => {
-    if (selectedId === r.id) setSelectedId(null);
+    moveOff(r);
     setArchived(r.id, false).catch(fail('restore'));
   };
   const undoArchive = () => {
@@ -200,7 +212,7 @@ export function ReelsView({
     const r = confirmDelete;
     setConfirmDelete(null);
     if (!r) return;
-    if (selectedId === r.id) setSelectedId(null);
+    moveOff(r);
     remove(r.id).then(
       () => toast.show({ kind: 'info', title: 'Deleted', message: r.title }),
       fail('delete'),
@@ -220,10 +232,29 @@ export function ReelsView({
 
   const heading = querying ? 'Results' : view === 'home' ? null : view === 'archived' ? 'Archived' : tabLabel(view);
 
+  // Desktop keys while a reel is open: ← → move, Backspace/Delete remove (asks), A archive, Esc back.
+  useEffect(() => {
+    if (!selected || confirmDelete) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+      if (e.key === 'ArrowRight') step(1);
+      else if (e.key === 'ArrowLeft') step(-1);
+      else if (e.key === 'Backspace' || e.key === 'Delete') setConfirmDelete(selected);
+      else if (e.key === 'a' || e.key === 'A') (selected.archived ? restore : archive)(selected);
+      else if (e.key === 'Escape') setSelectedId(null);
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
   return (
     <div ref={topRef} className="mx-auto flex w-full max-w-6xl scroll-mt-4 gap-5 pb-8">
-      {/* List column: hidden on a phone while a reel is open. */}
-      <div className={`min-w-0 flex-1 flex-col gap-4 ${selected ? 'hidden lg:flex' : 'flex'}`}>
+      {/* The list, or (while a reel is open) the decision view in its place. */}
+      <div className={`min-w-0 flex-1 flex-col gap-4 ${selected ? 'hidden' : 'flex'}`}>
         <div>
           <h2 className="flex items-center gap-2 text-lg font-extrabold tracking-tight text-white">
             {heading ? (
@@ -381,16 +412,18 @@ export function ReelsView({
       </div>
 
       {selected && (
-        <aside className="w-full lg:sticky lg:top-0 lg:max-h-[calc(100dvh-7rem)] lg:w-[400px] lg:shrink-0 lg:self-start lg:overflow-y-auto custom-scrollbar">
-          <ReelDetail
-            reel={selected}
-            onClose={() => setSelectedId(null)}
-            activeTag={tag}
-            onTag={pickTag}
-            onArchive={() => (selected.archived ? restore(selected) : archive(selected))}
-            onDelete={() => setConfirmDelete(selected)}
-          />
-        </aside>
+        <ReelDetail
+          reel={selected}
+          backLabel={heading ?? 'Reels'}
+          position={index >= 0 ? { at: index + 1, of: flat.length } : null}
+          onPrev={index > 0 ? () => step(-1) : null}
+          onNext={index >= 0 && index < flat.length - 1 ? () => step(1) : null}
+          onClose={() => setSelectedId(null)}
+          activeTag={tag}
+          onTag={pickTag}
+          onArchive={() => (selected.archived ? restore(selected) : archive(selected))}
+          onDelete={() => setConfirmDelete(selected)}
+        />
       )}
 
       {undo &&
@@ -668,9 +701,17 @@ function ReelRow({
   );
 }
 
-/** The selected reel: video first, then what it is, its claims and the verdict. */
+/**
+ * The opened reel as a decision screen: video on the left, the verdict pane
+ * on the right (stacked on a phone). Headline, verdict, score and Remove all
+ * fit without scrolling; everything else sits below the fold.
+ */
 function ReelDetail({
   reel,
+  backLabel,
+  position,
+  onPrev,
+  onNext,
   onClose,
   activeTag,
   onTag,
@@ -678,6 +719,10 @@ function ReelDetail({
   onDelete,
 }: {
   reel: Reel;
+  backLabel: string;
+  position: { at: number; of: number } | null;
+  onPrev: (() => void) | null;
+  onNext: (() => void) | null;
   onClose: () => void;
   activeTag: string | null;
   onTag: (tag: string) => void;
@@ -686,61 +731,79 @@ function ReelDetail({
 }) {
   const ig = safeLink(reel.igUrl);
   const headline = headlineOf(reel);
+  // The yes/no text: Muse's personal verdict when it has one, else the review.
+  const verdictText = reel.forYou || reel.verdict;
+  const navBtn =
+    'flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/70 hover:text-white disabled:cursor-default disabled:opacity-30';
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-white/12 bg-white/[0.03] p-3">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-3">
       <div className="flex items-center gap-2">
         <button
           onClick={onClose}
-          className="flex cursor-pointer items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-[13px] font-semibold text-white/75 hover:text-white lg:hidden"
+          className="flex min-w-0 cursor-pointer items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-[13px] font-semibold text-white/75 hover:text-white"
         >
-          <ArrowLeft size={14} /> Back
+          <ArrowLeft size={14} className="shrink-0" /> <span className="truncate">{backLabel}</span>
         </button>
         <span className="flex-1" />
-        <button
-          onClick={onArchive}
-          className="flex cursor-pointer items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-[13px] font-semibold text-white/75 hover:text-white"
-        >
-          {reel.archived ? <ArchiveRestore size={14} /> : <Archive size={14} />} {reel.archived ? 'Restore' : 'Archive'}
-        </button>
-        <button
-          onClick={onDelete}
-          className="flex cursor-pointer items-center gap-1.5 rounded-full border border-red-400/30 bg-red-500/10 px-3 py-2 text-[13px] font-semibold text-red-300 hover:bg-red-500/20"
-        >
-          <Trash2 size={14} /> Delete
-        </button>
-        <button
-          onClick={onClose}
-          aria-label="Close reel"
-          className="hidden h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-white/45 hover:bg-white/10 hover:text-white lg:flex"
-        >
-          <X size={16} />
-        </button>
-      </div>
-
-      {/* Keyed by reel, so switching reels swaps the one frame rather than stacking them. */}
-      <VideoBox key={reel.id} igUrl={reel.igUrl} />
-
-      {/* What the reel is about: the first and biggest thing in the pane. */}
-      <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
-        <p className="text-[19px] font-black uppercase leading-[1.2] tracking-[0.04em] text-white">{headline}</p>
-        {reel.whatItIs && reel.whatItIs !== headline && (
-          <p className="mt-2 text-[14px] font-medium leading-relaxed text-white/80">{reel.whatItIs}</p>
+        <span className="hidden text-[12px] text-white/35 lg:inline">← → move · Del remove · A archive</span>
+        {position && (
+          <span className="font-mono text-[12px] text-white/45">
+            {position.at} / {position.of}
+          </span>
         )}
+        <button onClick={onPrev ?? undefined} disabled={!onPrev} aria-label="Previous reel" className={navBtn}>
+          <ChevronLeft size={16} />
+        </button>
+        <button onClick={onNext ?? undefined} disabled={!onNext} aria-label="Next reel" className={navBtn}>
+          <ChevronRight size={16} />
+        </button>
       </div>
 
-      <div className="flex items-start gap-3">
-        <ScoreBadge score={reel.score} size="lg" />
-        <div className="min-w-0 flex-1">
+      <div className="flex flex-col gap-3 lg:h-[calc(100dvh-11.5rem)] lg:min-h-[460px] lg:flex-row">
+        {/* Keyed by reel, so moving between reels swaps the one frame rather than stacking them. */}
+        <VideoBox key={reel.id} igUrl={reel.igUrl} className="h-[34dvh] lg:h-full lg:w-[340px] lg:shrink-0" />
+
+        <section aria-label="Verdict" className="flex min-h-0 flex-col gap-2.5 rounded-2xl border border-white/12 bg-white/[0.04] p-3.5 lg:flex-1 lg:p-5">
+          <p className="line-clamp-3 text-[17px] font-black uppercase leading-[1.18] tracking-[0.03em] text-white lg:line-clamp-4 lg:text-[23px]">
+            {headline}
+          </p>
+          <div className="min-h-0 flex-1 overflow-y-auto pr-1 custom-scrollbar max-lg:max-h-[15dvh]">
+            <p className={`text-[11.5px] font-black uppercase tracking-[0.14em] ${reel.forYou ? 'text-brand-300' : 'text-white/45'}`}>
+              {reel.forYou ? 'For you' : 'Verdict'}
+            </p>
+            <p className="mt-1 text-[14.5px] leading-relaxed text-white/90 lg:text-[16px]">{verdictText || 'No verdict yet.'}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 border-t border-white/8 pt-2.5">
+            <ScoreBadge score={reel.score} size="lg" />
+            {reel.isBS && <BsBadge />}
+            <span className="flex-1" />
+            <button
+              onClick={onArchive}
+              className="flex cursor-pointer items-center gap-1.5 rounded-full border border-white/12 bg-white/[0.05] px-3.5 py-2.5 text-[13px] font-semibold text-white/80 hover:text-white"
+            >
+              {reel.archived ? <ArchiveRestore size={15} /> : <Archive size={15} />} {reel.archived ? 'Restore' : 'Archive'}
+            </button>
+            <button
+              onClick={onDelete}
+              className="flex cursor-pointer items-center gap-1.5 rounded-full border border-red-400/50 bg-red-500/25 px-5 py-2.5 text-[14px] font-black uppercase tracking-wide text-red-100 hover:bg-red-500/40"
+            >
+              <X size={16} strokeWidth={3} /> Remove
+            </button>
+          </div>
+        </section>
+      </div>
+
+      {/* Below the fold: only when more is wanted before deciding. */}
+      <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-[13px] leading-relaxed text-white/70">
+        <div>
           <p className="text-[15px] font-bold leading-snug text-white">{reel.title}</p>
           <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-white/45">
             {reel.author && <span>{reel.author}</span>}
+            {reel.sharedAt && <span>· {formatShared(reel.sharedAt)}</span>}
             {reel.bucket && <span>· {reel.bucket}{reel.subcat ? ` › ${reel.subcat}` : ''}</span>}
-            {reel.isBS && <BsBadge />}
           </p>
         </div>
-      </div>
-
-      <div className="flex flex-col gap-3 text-[13px] leading-relaxed text-white/70">
+        {reel.whatItIs && reel.whatItIs !== headline && <Detail label="What this reel is about">{reel.whatItIs}</Detail>}
         {reel.links.length > 0 && (
           <Detail label={`Links (${reel.links.length})`}>
             <ul className="mt-1 flex flex-col gap-1.5">
@@ -752,12 +815,7 @@ function ReelDetail({
             </ul>
           </Detail>
         )}
-        {reel.forYou && (
-          <div className="rounded-xl border border-brand-400/35 bg-brand-500/[0.08] p-3">
-            <BlockHeading className="text-brand-300">For you</BlockHeading>
-            <p className="mt-1.5 text-white/85">{reel.forYou}</p>
-          </div>
-        )}
+        {reel.forYou && reel.verdict && <Detail label="Muse's review">{reel.verdict}</Detail>}
         {reel.claims.length > 0 && (
           <Detail label="What it claims vs what's true">
             <ul className="mt-1 flex flex-col gap-2">
@@ -775,21 +833,20 @@ function ReelDetail({
             </ul>
           </Detail>
         )}
-        {reel.verdict && <Detail label="Verdict">{reel.verdict}</Detail>}
         {reel.nextAction && <Detail label="Next action">{reel.nextAction}</Detail>}
         {reel.sources.length > 0 && (
           <Detail label="Sources">
             <ul className="mt-1 flex flex-col gap-1">
-              {reel.sources.map((s, i) => {
-                const href = safeLink(s.url);
+              {reel.sources.map((src, i) => {
+                const href = safeLink(src.url);
                 return (
                   <li key={i}>
                     {href ? (
                       <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-brand-300 hover:underline">
-                        {s.label || href} <ExternalLink size={12} />
+                        {src.label || href} <ExternalLink size={12} />
                       </a>
                     ) : (
-                      <span>{s.label}</span>
+                      <span>{src.label}</span>
                     )}
                   </li>
                 );
@@ -827,7 +884,7 @@ const EMBED_TIMEOUT_MS = 12000;
  * Instagram reel/post, or a frame that never loads, shows a clean
  * "can't play here" box instead of a grey iframe.
  */
-function VideoBox({ igUrl }: { igUrl: string }) {
+function VideoBox({ igUrl, className }: { igUrl: string; className: string }) {
   const src = embedUrl(igUrl);
   const ig = safeLink(igUrl);
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading');
@@ -838,11 +895,11 @@ function VideoBox({ igUrl }: { igUrl: string }) {
     return () => window.clearTimeout(t);
   }, [src]);
 
-  const frame = 'relative mx-auto h-[min(620px,72dvh)] w-full max-w-[360px] overflow-hidden rounded-2xl border border-white/10 bg-black/40';
+  const frame = `relative mx-auto w-full max-w-[360px] shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-black/40 ${className}`;
 
   if (!src || state === 'failed') {
     return (
-      <div className={`${frame} flex flex-col items-center justify-center gap-3 p-6 text-center`} style={{ height: 'auto', minHeight: 200 }}>
+      <div className={`${frame} flex flex-col items-center justify-center gap-3 p-6 text-center`}>
         <VideoOff size={26} className="text-white/35" />
         <p className="text-[13px] leading-snug text-white/55">
           {ig ? "This reel can't play here." : 'No Instagram link saved for this reel.'}
@@ -877,7 +934,8 @@ function VideoBox({ igUrl }: { igUrl: string }) {
         referrerPolicy="strict-origin-when-cross-origin"
         onLoad={() => setState('ready')}
         onError={() => setState('failed')}
-        className={`h-full w-full border-0 transition-opacity ${state === 'ready' ? 'opacity-100' : 'opacity-0'}`}
+        // On a phone the frame is short, so Instagram's profile strip is pushed up out of view to leave room for the video.
+        className={`absolute inset-x-0 -top-[54px] h-[calc(100%+54px)] w-full border-0 transition-opacity lg:top-0 lg:h-full ${state === 'ready' ? 'opacity-100' : 'opacity-0'}`}
       />
     </div>
   );
