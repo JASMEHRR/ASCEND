@@ -761,7 +761,7 @@ function ReelDetail({
 
       <div className="flex flex-col gap-3 lg:h-[calc(100dvh-11.5rem)] lg:min-h-[460px] lg:flex-row">
         {/* Keyed by reel, so moving between reels swaps the one frame rather than stacking them. */}
-        <VideoBox key={reel.id} igUrl={reel.igUrl} className="h-[34dvh] lg:h-full lg:w-[340px] lg:shrink-0" />
+        <VideoBox key={reel.id} igUrl={reel.igUrl} className="h-[30dvh] lg:h-full lg:w-[340px] lg:shrink-0" />
 
         <section aria-label="Verdict" className="flex min-h-0 flex-col gap-2.5 rounded-2xl border border-white/12 bg-white/[0.04] p-3.5 lg:flex-1 lg:p-5">
           <p className="line-clamp-3 text-[17px] font-black uppercase leading-[1.18] tracking-[0.03em] text-white lg:line-clamp-4 lg:text-[23px]">
