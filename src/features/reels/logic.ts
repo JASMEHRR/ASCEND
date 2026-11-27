@@ -14,6 +14,7 @@ import {
   type ReelCategory,
   type ReelClaim,
   type ReelLink,
+  type LifeSide,
   type ReelSource,
   type Side,
 } from './types';
@@ -262,7 +263,7 @@ export function embedUrl(igUrl: string): string | null {
 // --- Work / Personal and JasMehr's own categories -----------------------------
 
 /** Where each Muse division sits until he moves it. */
-export const DEFAULT_DIVISION_SIDE: Record<ReelBucket, Side> = {
+export const DEFAULT_DIVISION_SIDE: Record<ReelBucket, LifeSide> = {
   Opportunities: 'work',
   'Claude & Coding': 'work',
   'Video & Animation': 'work',
@@ -294,16 +295,36 @@ export function normalizeDivisionSides(raw: Record<string, unknown> | undefined)
   const out: DivisionSides = {};
   for (const b of REEL_BUCKETS) {
     const s = asSide(raw?.[b]);
-    if (s) out[b] = s;
+    if (s && s !== 'claude') out[b] = s;
   }
   return out;
 }
 
-export const divisionSide = (bucket: ReelBucket, prefs: DivisionSides): Side => prefs[bucket] ?? DEFAULT_DIVISION_SIDE[bucket];
+export const divisionSide = (bucket: ReelBucket, prefs: DivisionSides): LifeSide => prefs[bucket] ?? DEFAULT_DIVISION_SIDE[bucket];
 
-/** Work categories first, then by name. */
+/**
+ * The Claude lane's sections: what a Claude reel is for. Fixed ids so Muse can
+ * sort new reels into them; JasMehr can rename, delete or add more.
+ */
+export const CLAUDE_PURPOSES: { id: string; name: string }[] = [
+  { id: 'purpose-save-money', name: 'Save money' },
+  { id: 'purpose-do-more', name: 'Make Claude do more' },
+  { id: 'purpose-fun', name: 'Fun & personal builds' },
+  { id: 'purpose-earn', name: 'Earn money' },
+  { id: 'purpose-free-alternatives', name: 'Free alternatives to paid software' },
+  { id: 'purpose-learn', name: 'Learn & level up' },
+];
+const PURPOSE_ORDER = new Map(CLAUDE_PURPOSES.map((p, i) => [p.id, i]));
+const SIDE_ORDER: Record<Side, number> = { work: 0, personal: 1, claude: 2 };
+
+/** Work, then Personal, then Claude (its built-in sections in their set order), each by name. */
 export const sortCategories = (cats: ReelCategory[]): ReelCategory[] =>
-  [...cats].sort((a, b) => (a.side === b.side ? a.name.localeCompare(b.name) : a.side === 'work' ? -1 : 1));
+  [...cats].sort(
+    (a, b) =>
+      SIDE_ORDER[a.side] - SIDE_ORDER[b.side] ||
+      (PURPOSE_ORDER.get(a.id) ?? 99) - (PURPOSE_ORDER.get(b.id) ?? 99) ||
+      a.name.localeCompare(b.name),
+  );
 
 /** reel id -> the categories it is in. */
 export function categoryIndex(cats: ReelCategory[]): Map<string, ReelCategory[]> {
@@ -313,16 +334,32 @@ export function categoryIndex(cats: ReelCategory[]): Map<string, ReelCategory[]>
 }
 
 /**
- * A reel's side(s): his own categories decide when it has any (it can be both,
- * e.g. Anime + Claude); otherwise its Muse division does. A reel with neither
- * shows on both sides, so nothing is ever hidden by accident.
+ * A reel's Work/Personal side(s): his own Work or Personal categories decide
+ * when it has any (it can be both, e.g. Anime + Claude); otherwise its Muse
+ * division does. A reel with neither shows on both, so nothing is ever hidden
+ * by accident. Claude sections don't move a reel between Work and Personal.
  */
-export function sidesOf(reel: Pick<Reel, 'bucket'>, cats: ReelCategory[], prefs: DivisionSides): Side[] {
-  if (cats.length) return [...new Set(cats.map((c) => c.side))];
-  return reel.bucket ? [divisionSide(reel.bucket, prefs)] : [...SIDES];
+export function sidesOf(reel: Pick<Reel, 'bucket'>, cats: ReelCategory[], prefs: DivisionSides): LifeSide[] {
+  const life = cats.filter((c): c is ReelCategory & { side: LifeSide } => c.side !== 'claude');
+  if (life.length) return [...new Set(life.map((c) => c.side))];
+  return reel.bucket ? [divisionSide(reel.bucket, prefs)] : ['work', 'personal'];
+}
+
+const CLAUDE_TAG = /^(claude|claude-?code|claude-?ai|anthropic|mcp|claude-?md)$/;
+
+/**
+ * Whether a reel belongs in the Claude lane: Muse's Claude & Coding bucket, a
+ * Claude tag, or any of his categories that is a Claude section or named Claude.
+ */
+export function isClaudeReel(reel: Pick<Reel, 'bucket' | 'tags'>, cats: ReelCategory[]): boolean {
+  return (
+    reel.bucket === 'Claude & Coding' ||
+    reel.tags.some((t) => CLAUDE_TAG.test(t)) ||
+    cats.some((c) => c.side === 'claude' || /claude/i.test(c.name))
+  );
 }
 
 export type SideFilter = 'all' | Side;
 
-export const inSide = (reel: Pick<Reel, 'bucket'>, side: SideFilter, cats: ReelCategory[], prefs: DivisionSides): boolean =>
-  side === 'all' || sidesOf(reel, cats, prefs).includes(side);
+export const inSide = (reel: Pick<Reel, 'bucket' | 'tags'>, side: SideFilter, cats: ReelCategory[], prefs: DivisionSides): boolean =>
+  side === 'all' ? true : side === 'claude' ? isClaudeReel(reel, cats) : sidesOf(reel, cats, prefs).includes(side);

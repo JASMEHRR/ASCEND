@@ -5,6 +5,8 @@
  */
 import assert from 'node:assert/strict';
 import {
+  CLAUDE_PURPOSES,
+  isClaudeReel,
   categoryIndex,
   cleanCatName,
   inSide,
@@ -132,8 +134,21 @@ assert.deepEqual(sidesOf({ bucket: 'Entertainment & Explainers' }, [], {}), ['pe
 assert.deepEqual(sidesOf({ bucket: 'Claude & Coding' }, [], {}), ['work']);
 assert.deepEqual(sidesOf({ bucket: 'Claude & Coding' }, [], prefs), ['personal']);
 assert.deepEqual(sidesOf({ bucket: null }, [], {}), ['work', 'personal']);
-assert.equal(inSide({ bucket: 'Opportunities' }, 'personal', [], {}), false);
-assert.equal(inSide({ bucket: 'Opportunities' }, 'all', [], {}), true);
+assert.equal(inSide({ bucket: 'Opportunities', tags: [] }, 'personal', [], {}), false);
+assert.equal(inSide({ bucket: 'Opportunities', tags: [] }, 'all', [], {}), true);
+// Claude lane: bucket, tag or a Claude section puts a reel in it; sections don't change Work/Personal.
+const save = normalizeCategory(CLAUDE_PURPOSES[0].id, { name: 'Save money', side: 'claude', reelIds: ['r9'] });
+assert.equal(save.side, 'claude');
+assert.equal(isClaudeReel({ bucket: 'Claude & Coding', tags: [] }, []), true);
+assert.equal(isClaudeReel({ bucket: 'Opportunities', tags: ['mcp'] }, []), true);
+assert.equal(isClaudeReel({ bucket: 'Deals & Shopping', tags: ['amazon'] }, [save]), true);
+assert.equal(isClaudeReel({ bucket: 'Deals & Shopping', tags: ['amazon'] }, []), false);
+assert.equal(inSide({ bucket: 'Deals & Shopping', tags: [] }, 'claude', [], {}), false);
+assert.deepEqual(sidesOf({ bucket: 'Deals & Shopping' }, [save], {}), ['personal']);
+assert.deepEqual(normalizeDivisionSides({ Opportunities: 'claude' }), {});
+// Claude sections sort after Work/Personal, in their set order.
+const learn = normalizeCategory('purpose-learn', { name: 'Learn & level up', side: 'claude' });
+assert.deepEqual(sortCategories([learn, save, anime, claude]).map((c) => c.id), ['c2', 'c1', 'purpose-save-money', 'purpose-learn']);
 
 // Re-evaluation request.
 assert.equal(bare.reevalRequested, false);

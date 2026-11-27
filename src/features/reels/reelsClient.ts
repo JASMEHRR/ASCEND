@@ -10,7 +10,7 @@
 import { addDoc, arrayRemove, arrayUnion, collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { cleanCatName, normalizeCategory, normalizeDivisionSides, normalizeReel } from './logic';
-import type { DivisionSides, Reel, ReelBucket, ReelCategory, Side } from './types';
+import type { DivisionSides, LifeSide, Reel, ReelBucket, ReelCategory, Side } from './types';
 
 export function subscribeReels(uid: string, onData: (items: Reel[]) => void, onError: (message: string) => void): () => void {
   return onSnapshot(
@@ -89,6 +89,11 @@ export async function setReelsInCategory(uid: string, id: string, reelIds: strin
   await updateDoc(doc(catsCol(uid), id), { reelIds: on ? arrayUnion(...reelIds) : arrayRemove(...reelIds) });
 }
 
-export async function setDivisionSide(uid: string, bucket: ReelBucket, side: Side): Promise<void> {
+/** Makes one of the built-in Claude sections under its fixed id (merge, so reels already in it stay). */
+export async function ensurePurpose(uid: string, id: string, name: string): Promise<void> {
+  await setDoc(doc(catsCol(uid), id), { name, side: 'claude', kind: 'purpose', createdAt: new Date().toISOString() }, { merge: true });
+}
+
+export async function setDivisionSide(uid: string, bucket: ReelBucket, side: LifeSide): Promise<void> {
   await setDoc(sidesDoc(uid), { [bucket]: side }, { merge: true });
 }

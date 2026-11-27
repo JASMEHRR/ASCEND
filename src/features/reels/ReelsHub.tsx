@@ -45,6 +45,7 @@ import {
   createCategory,
   deleteCategory,
   deleteReel,
+  ensurePurpose,
   renameCategory,
   requestReeval,
   setCategorySide,
@@ -61,6 +62,7 @@ import {
   countTabs,
   divisions,
   embedUrl,
+  CLAUDE_PURPOSES,
   categoryIndex,
   divisionSide,
   groupBy,
@@ -79,7 +81,7 @@ import {
   type SortMode,
   type TabId,
 } from './logic';
-import type { ClaimStatus, DivisionSides, Reel, ReelBucket, ReelCategory, ReelLink, Side } from './types';
+import type { ClaimStatus, DivisionSides, LifeSide, Reel, ReelBucket, ReelCategory, ReelLink, Side } from './types';
 
 export default function ReelsHub() {
   const { user } = useAuth();
@@ -100,7 +102,7 @@ export default function ReelsHub() {
     );
   }, [uid]);
 
-  const [cats, setCats] = useState<ReelCategory[]>([]);
+  const [cats, setCats] = useState<ReelCategory[] | null>(null);
   const [sides, setSides] = useState<DivisionSides>({});
   useEffect(() => {
     if (!uid) return;
@@ -120,6 +122,7 @@ export default function ReelsHub() {
     remove: (id) => (uid ? deleteCategory(uid, id) : noUser()),
     setReels: (id, reelIds, on) => (uid ? setReelsInCategory(uid, id, reelIds, on) : noUser()),
     setDivisionSide: (bucket, side) => (uid ? setDivisionSide(uid, bucket, side) : noUser()),
+    ensurePurpose: (id, name) => (uid ? ensurePurpose(uid, id, name) : noUser()),
   };
   return (
     <ReelsView
@@ -128,7 +131,8 @@ export default function ReelsHub() {
       setArchived={(id, archived) => (uid ? setReelArchived(uid, id, archived) : noUser())}
       remove={(id) => (uid ? deleteReel(uid, id) : noUser())}
       reeval={(id) => (uid ? requestReeval(uid, id) : noUser())}
-      cats={cats}
+      cats={cats ?? []}
+      catsReady={cats !== null}
       divisionSides={sides}
       catApi={catApi}
     />
@@ -142,16 +146,17 @@ export interface CategoryApi {
   rename: (id: string, name: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
   setReels: (id: string, reelIds: string[], on: boolean) => Promise<void>;
-  setDivisionSide: (bucket: ReelBucket, side: Side) => Promise<void>;
+  setDivisionSide: (bucket: ReelBucket, side: LifeSide) => Promise<void>;
+  ensurePurpose: (id: string, name: string) => Promise<void>;
 }
 
-type ViewId = TabId | 'home' | 'archived' | `cat:${string}`;
+type ViewId = TabId | 'home' | 'archived' | 'claude-unsorted' | `cat:${string}`;
 
 const SIDE_KEY = 'ascend_reels_side';
 const readSide = (): SideFilter => {
   try {
     const v = localStorage.getItem(SIDE_KEY);
-    return v === 'work' || v === 'personal' ? v : 'all';
+    return v === 'work' || v === 'personal' || v === 'claude' ? v : 'all';
   } catch {
     return 'all';
   }
@@ -188,6 +193,7 @@ export function ReelsView({
   remove,
   reeval,
   cats = [],
+  catsReady = false,
   divisionSides = {},
   catApi,
 }: {
@@ -198,6 +204,8 @@ export function ReelsView({
   /** "Not BS — re-evaluate". */
   reeval?: (id: string) => Promise<void>;
   cats?: ReelCategory[];
+  /** True once the categories listener has answered (so missing means missing). */
+  catsReady?: boolean;
   divisionSides?: DivisionSides;
   catApi?: CategoryApi;
 }) {
@@ -222,7 +230,12 @@ export function ReelsView({
   // Work / Personal switch scopes everything, Archived included.
   const live = useMemo(() => (items ?? []).filter((r) => !r.archived), [items]);
   const sideCounts = useMemo(
-    () => ({ all: live.length, work: live.filter((r) => showsOn(r, 'work')).length, personal: live.filter((r) => showsOn(r, 'personal')).length }),
+    () => ({
+      all: live.length,
+      work: live.filter((r) => showsOn(r, 'work')).length,
+      personal: live.filter((r) => showsOn(r, 'personal')).length,
+      claude: live.filter((r) => showsOn(r, 'claude')).length,
+    }),
     [live, catIdx, divisionSides],
   );
   const all = useMemo(() => live.filter((r) => showsOn(r, side)), [live, side, catIdx, divisionSides]);
@@ -232,6 +245,23 @@ export function ReelsView({
   );
   const inArchive = view === 'archived';
   const viewCat = view.startsWith('cat:') ? (cats.find((c) => c.id === view.slice(4)) ?? null) : null;
+  const claudeCats = useMemo(() => sortCategories(cats.filter((c) => c.side === 'claude')), [cats]);
+  // Claude reels not yet in any Claude section.
+  const unsorted = useMemo(
+    () => (side === 'claude' ? all.filter((r) => !(catIdx.get(r.id) ?? []).some((c) => c.side === 'claude')) : []),
+    [side, all, catIdx],
+  );
+
+  // First visit to the Claude lane: make its built-in sections (once; a
+  // section he later deletes is not brought back).
+  const madePurposes = useRef(false);
+  useEffect(() => {
+    if (side !== 'claude' || !catsReady || !catApi || madePurposes.current) return;
+    madePurposes.current = true;
+    const have = new Set(cats.map((c) => c.id));
+    if (CLAUDE_PURPOSES.some((p) => have.has(p.id))) return;
+    Promise.all(CLAUDE_PURPOSES.map((p) => catApi.ensurePurpose(p.id, p.name))).catch(fail('set up the Claude sections'));
+  });
   const countIn = (pool: Reel[]) => {
     const ids = new Set(pool.map((r) => r.id));
     return new Map(cats.map((c) => [c.id, c.reelIds.filter((id) => ids.has(id)).length]));
@@ -263,6 +293,8 @@ export function ReelsView({
     }
     if (view === 'home') return [];
     if (view === 'archived') return [{ name: '', reels: archivedList }];
+    // Grouped by Muse's subcategory, so a whole group can be filed with "Put in…".
+    if (view === 'claude-unsorted') return groupBy(unsorted, (r) => r.subcat || r.bucket || '', sort);
     if (view.startsWith('cat:')) {
       if (!viewCat) return [];
       const ids = new Set(viewCat.reelIds);
@@ -273,7 +305,7 @@ export function ReelsView({
     const list = all.filter((r) => inTab(r, tab));
     if (tab === 'top' || tab === 'bs') return [{ name: '', reels: sortReels(list, sort) }];
     return groupBy(list, (r) => r.subcat, sort);
-  }, [all, archivedList, querying, tag, search, view, viewCat, sort]);
+  }, [all, archivedList, unsorted, querying, tag, search, view, viewCat, sort]);
   const resultCount = groups.reduce((n, g) => n + g.reels.length, 0);
   // The list in reading order, for ← / → and for "next reel" after a removal.
   const flat = useMemo(() => groups.flatMap((g) => g.reels), [groups]);
@@ -382,7 +414,9 @@ export function ReelsView({
       ? null
       : view === 'archived'
         ? 'Archived'
-        : view.startsWith('cat:')
+        : view === 'claude-unsorted'
+          ? 'Claude › Not sorted yet'
+          : view.startsWith('cat:')
           ? (viewCat?.name ?? 'Category')
           : tabLabel(view as TabId);
 
@@ -517,7 +551,41 @@ export function ReelsView({
               <SpecialTile label="⭐ Top rated" count={counts.top} onClick={() => open('top')} />
               <SpecialTile label="🚩 BS" count={counts.bs} danger onClick={() => open('bs')} />
             </div>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {side === 'claude' && (
+              <section aria-label="What it's for" className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-2 px-1">
+                  <p className="font-mono text-[12px] font-bold uppercase tracking-widest text-orange-300/80">Claude · what it's for</p>
+                  <span className="flex-1" />
+                  <button onClick={() => setShowManage(true)} className="cursor-pointer text-[13px] font-semibold text-brand-300 hover:underline">
+                    Edit sections
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {claudeCats.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => open(`cat:${c.id}`)}
+                      className="flex cursor-pointer flex-col gap-1 rounded-2xl border border-orange-400/20 bg-orange-500/[0.05] p-3 text-left transition-colors hover:border-orange-400/40 hover:bg-orange-500/[0.09]"
+                    >
+                      <span className="text-[14px] font-bold leading-snug text-white">{c.name}</span>
+                      <span className="text-[12.5px] font-semibold text-white/45">
+                        {catCounts.get(c.id) ?? 0} reel{catCounts.get(c.id) === 1 ? '' : 's'}
+                      </span>
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => open('claude-unsorted')}
+                    className="flex cursor-pointer flex-col gap-1 rounded-2xl border border-dashed border-white/20 bg-white/[0.02] p-3 text-left transition-colors hover:border-white/35"
+                  >
+                    <span className="text-[14px] font-bold leading-snug text-white/85">Not sorted yet</span>
+                    <span className="text-[12.5px] font-semibold text-white/45">
+                      {unsorted.length} reel{unsorted.length === 1 ? '' : 's'} · Muse sorts these, or use "Put in…"
+                    </span>
+                  </button>
+                </div>
+              </section>
+            )}
+            <div className={`grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3 ${side === 'claude' ? 'hidden' : ''}`}>
               {divs.filter((d) => side === 'all' || d.count > 0).map((d) => (
                 <button
                   key={d.bucket}
@@ -545,7 +613,7 @@ export function ReelsView({
                 </button>
               ))}
             </div>
-            {catApi && (
+            {catApi && side !== 'claude' && (
               <section aria-label="My categories">
                 <div className="mb-1.5 flex items-center gap-2 px-1">
                   <p className="font-mono text-[12px] font-bold uppercase tracking-widest text-white/45">My categories</p>

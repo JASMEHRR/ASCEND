@@ -81,9 +81,15 @@ export interface Reel {
   reevalRequestedAt: string | null;
 }
 
-/** Which half of life a reel belongs to; the Reels page can show one at a time. */
-export const SIDES = ['work', 'personal'] as const;
+/**
+ * Where a reel belongs; the Reels page can show one at a time. Work and
+ * Personal split life; Claude is its own lane, divided by what the reel is
+ * for (save money, make Claude do more...).
+ */
+export const SIDES = ['work', 'personal', 'claude'] as const;
 export type Side = (typeof SIDES)[number];
+/** The two halves Muse's buckets are split into. */
+export type LifeSide = Exclude<Side, 'claude'>;
 
 /**
  * JasMehr's own category (Anime, Claude...), at `users/{uid}/reelCats/{id}`.
@@ -98,4 +104,4 @@ export interface ReelCategory {
 }
 
 /** Work/Personal per Muse division, at `users/{uid}/reelPrefs/sides`; unset ones use the defaults. */
-export type DivisionSides = Partial<Record<ReelBucket, Side>>;
+export type DivisionSides = Partial<Record<ReelBucket, LifeSide>>;
