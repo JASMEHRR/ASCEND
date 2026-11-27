@@ -773,7 +773,8 @@ function ReelDetail({
             </p>
             <p className="mt-1 text-[14.5px] leading-relaxed text-white/90 lg:text-[16px]">{verdictText || 'No verdict yet.'}</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2 border-t border-white/8 pt-2.5">
+          {/* Right padding on a phone keeps Remove clear of the floating Jarvis orb in the corner. */}
+          <div className="flex flex-wrap items-center gap-2 border-t border-white/8 pt-2.5 max-lg:pr-12">
             <ScoreBadge score={reel.score} size="lg" />
             {reel.isBS && <BsBadge />}
             <span className="flex-1" />
