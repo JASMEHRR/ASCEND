@@ -767,28 +767,38 @@ function ReelDetail({
           <p className="line-clamp-3 text-[17px] font-black uppercase leading-[1.18] tracking-[0.03em] text-white lg:line-clamp-4 lg:text-[23px]">
             {headline}
           </p>
-          <div className="min-h-0 flex-1 overflow-y-auto pr-1 custom-scrollbar max-lg:max-h-[15dvh]">
+          {/* Phone: score and BS ride on the verdict's label line, so the button row
+              below stays one line and clear of the floating Jarvis orb in the corner. */}
+          <div className="flex items-center gap-2 lg:hidden">
+            <ScoreBadge score={reel.score} />
+            {reel.isBS && <BsBadge />}
             <p className={`text-[11.5px] font-black uppercase tracking-[0.14em] ${reel.forYou ? 'text-brand-300' : 'text-white/45'}`}>
               {reel.forYou ? 'For you' : 'Verdict'}
             </p>
-            <p className="mt-1 text-[14.5px] leading-relaxed text-white/90 lg:text-[16px]">{verdictText || 'No verdict yet.'}</p>
           </div>
-          {/* Right padding on a phone keeps Remove clear of the floating Jarvis orb in the corner. */}
-          <div className="flex flex-wrap items-center gap-2 border-t border-white/8 pt-2.5 max-lg:pr-12">
-            <ScoreBadge score={reel.score} size="lg" />
-            {reel.isBS && <BsBadge />}
-            <span className="flex-1" />
+          <div className="min-h-0 flex-1 overflow-y-auto pr-1 custom-scrollbar max-lg:max-h-[13dvh]">
+            <p className={`hidden text-[11.5px] font-black uppercase tracking-[0.14em] lg:block ${reel.forYou ? 'text-brand-300' : 'text-white/45'}`}>
+              {reel.forYou ? 'For you' : 'Verdict'}
+            </p>
+            <p className="text-[14.5px] leading-relaxed text-white/90 lg:mt-1 lg:text-[16px]">{verdictText || 'No verdict yet.'}</p>
+          </div>
+          <div className="flex items-center gap-2 border-t border-white/8 pt-2.5">
+            <span className="hidden items-center gap-2 lg:flex">
+              <ScoreBadge score={reel.score} size="lg" />
+              {reel.isBS && <BsBadge />}
+            </span>
+            <span className="hidden flex-1 lg:block" />
+            <button
+              onClick={onDelete}
+              className="flex cursor-pointer items-center gap-1.5 rounded-full border border-red-400/50 bg-red-500/25 px-5 py-2.5 text-[14px] font-black uppercase tracking-wide text-red-100 hover:bg-red-500/40 lg:order-last"
+            >
+              <X size={16} strokeWidth={3} /> Remove
+            </button>
             <button
               onClick={onArchive}
               className="flex cursor-pointer items-center gap-1.5 rounded-full border border-white/12 bg-white/[0.05] px-3.5 py-2.5 text-[13px] font-semibold text-white/80 hover:text-white"
             >
               {reel.archived ? <ArchiveRestore size={15} /> : <Archive size={15} />} {reel.archived ? 'Restore' : 'Archive'}
-            </button>
-            <button
-              onClick={onDelete}
-              className="flex cursor-pointer items-center gap-1.5 rounded-full border border-red-400/50 bg-red-500/25 px-5 py-2.5 text-[14px] font-black uppercase tracking-wide text-red-100 hover:bg-red-500/40"
-            >
-              <X size={16} strokeWidth={3} /> Remove
             </button>
           </div>
         </section>
