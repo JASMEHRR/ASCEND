@@ -64,6 +64,9 @@ import {
   embedUrl,
   CLAUDE_PURPOSES,
   categoryIndex,
+  claudeLane,
+  isClaudeFirst,
+  reevalQueue,
   divisionSide,
   groupBy,
   headlineOf,
@@ -122,7 +125,7 @@ export default function ReelsHub() {
     remove: (id) => (uid ? deleteCategory(uid, id) : noUser()),
     setReels: (id, reelIds, on) => (uid ? setReelsInCategory(uid, id, reelIds, on) : noUser()),
     setDivisionSide: (bucket, side) => (uid ? setDivisionSide(uid, bucket, side) : noUser()),
-    ensurePurpose: (id, name) => (uid ? ensurePurpose(uid, id, name) : noUser()),
+    ensurePurpose: (id, name, side) => (uid ? ensurePurpose(uid, id, name, side) : noUser()),
   };
   return (
     <ReelsView
@@ -147,10 +150,10 @@ export interface CategoryApi {
   remove: (id: string) => Promise<void>;
   setReels: (id: string, reelIds: string[], on: boolean) => Promise<void>;
   setDivisionSide: (bucket: ReelBucket, side: LifeSide) => Promise<void>;
-  ensurePurpose: (id: string, name: string) => Promise<void>;
+  ensurePurpose: (id: string, name: string, side: Side) => Promise<void>;
 }
 
-type ViewId = TabId | 'home' | 'archived' | 'claude-unsorted' | `cat:${string}`;
+type ViewId = TabId | 'home' | 'archived' | 'reeval' | `cat:${string}`;
 
 const SIDE_KEY = 'ascend_reels_side';
 const readSide = (): SideFilter => {
@@ -231,7 +234,7 @@ export function ReelsView({
   const live = useMemo(() => (items ?? []).filter((r) => !r.archived), [items]);
   const sideCounts = useMemo(
     () => ({
-      all: live.length,
+      all: live.filter((r) => showsOn(r, 'all')).length,
       work: live.filter((r) => showsOn(r, 'work')).length,
       personal: live.filter((r) => showsOn(r, 'personal')).length,
       claude: live.filter((r) => showsOn(r, 'claude')).length,
@@ -245,22 +248,18 @@ export function ReelsView({
   );
   const inArchive = view === 'archived';
   const viewCat = view.startsWith('cat:') ? (cats.find((c) => c.id === view.slice(4)) ?? null) : null;
-  const claudeCats = useMemo(() => sortCategories(cats.filter((c) => c.side === 'claude')), [cats]);
-  // Claude reels not yet in any Claude section.
-  const unsorted = useMemo(
-    () => (side === 'claude' ? all.filter((r) => !(catIdx.get(r.id) ?? []).some((c) => c.side === 'claude')) : []),
-    [side, all, catIdx],
-  );
+  // Reels Muse is re-checking (global, whatever the switch says).
+  const reevalList = useMemo(() => reevalQueue(live), [live]);
 
-  // First visit to the Claude lane: make its built-in sections (once; a
-  // section he later deletes is not brought back).
+  // First visit to the Claude lane with no sections at all: make the built-in
+  // ones. If any exist, a missing one was deleted on purpose and stays gone.
   const madePurposes = useRef(false);
   useEffect(() => {
     if (side !== 'claude' || !catsReady || !catApi || madePurposes.current) return;
     madePurposes.current = true;
     const have = new Set(cats.map((c) => c.id));
     if (CLAUDE_PURPOSES.some((p) => have.has(p.id))) return;
-    Promise.all(CLAUDE_PURPOSES.map((p) => catApi.ensurePurpose(p.id, p.name))).catch(fail('set up the Claude sections'));
+    Promise.all(CLAUDE_PURPOSES.map((p) => catApi.ensurePurpose(p.id, p.name, p.side))).catch(fail('set up the Claude sections'));
   });
   const countIn = (pool: Reel[]) => {
     const ids = new Set(pool.map((r) => r.id));
@@ -288,13 +287,14 @@ export function ReelsView({
   // What the list column shows, as headed groups (a single unnamed group for flat lists).
   const groups: ReelGroup[] = useMemo(() => {
     if (querying) {
-      const hits = all.filter((r) => (!tag || r.tags.includes(tag)) && matchesSearch(r, search));
+      // Search text still finds Claude-first reels from any lane; a tag alone stays in the lane.
+      const pool = search.trim() && side !== 'claude' ? [...all, ...live.filter((r) => isClaudeFirst(r))] : all;
+      const hits = pool.filter((r) => (!tag || r.tags.includes(tag)) && matchesSearch(r, search));
       return groupBy(hits, (r) => r.bucket ?? '', sort);
     }
-    if (view === 'home') return [];
+    if (view === 'home') return side === 'claude' ? claudeLane(all, cats, sort) : [];
     if (view === 'archived') return [{ name: '', reels: archivedList }];
-    // Grouped by Muse's subcategory, so a whole group can be filed with "Put in…".
-    if (view === 'claude-unsorted') return groupBy(unsorted, (r) => r.subcat || r.bucket || '', sort);
+    if (view === 'reeval') return [{ name: '', reels: reevalList }];
     if (view.startsWith('cat:')) {
       if (!viewCat) return [];
       const ids = new Set(viewCat.reelIds);
@@ -305,10 +305,11 @@ export function ReelsView({
     const list = all.filter((r) => inTab(r, tab));
     if (tab === 'top' || tab === 'bs') return [{ name: '', reels: sortReels(list, sort) }];
     return groupBy(list, (r) => r.subcat, sort);
-  }, [all, archivedList, unsorted, querying, tag, search, view, viewCat, sort]);
+  }, [all, live, archivedList, reevalList, cats, side, querying, tag, search, view, viewCat, sort]);
   const resultCount = groups.reduce((n, g) => n + g.reels.length, 0);
   // The list in reading order, for ← / → and for "next reel" after a removal.
-  const flat = useMemo(() => groups.flatMap((g) => g.reels), [groups]);
+  // A reel in two Claude sections is listed twice but stepped through once.
+  const flat = useMemo(() => [...new Map(groups.flatMap((g) => g.reels).map((r) => [r.id, r])).values()], [groups]);
   const index = selected ? flat.findIndex((r) => r.id === selected.id) : -1;
   const step = (by: -1 | 1) => {
     const next = index >= 0 ? flat[index + by] : undefined;
@@ -403,6 +404,21 @@ export function ReelsView({
     setSearch('');
     setSelectedId(null);
   };
+  /** Opens a reel; a Claude-first one found from another lane opens in the Claude lane. */
+  const openReel = (r: Reel) => {
+    if (side !== 'claude' && isClaudeFirst(r) && view !== 'reeval' && !inArchive) {
+      setSideState('claude');
+      try {
+        localStorage.setItem(SIDE_KEY, 'claude');
+      } catch {
+        /* not remembered */
+      }
+      setView('home');
+      setSearch('');
+      setTag(null);
+    }
+    setSelectedId(r.id);
+  };
   const pickTag = (t: string) => {
     setTag((cur) => (cur === t ? null : t));
     setSelectedId(null);
@@ -414,8 +430,8 @@ export function ReelsView({
       ? null
       : view === 'archived'
         ? 'Archived'
-        : view === 'claude-unsorted'
-          ? 'Claude › Not sorted yet'
+        : view === 'reeval'
+          ? 'Re-evaluation requested'
           : view.startsWith('cat:')
           ? (viewCat?.name ?? 'Category')
           : tabLabel(view as TabId);
@@ -538,55 +554,45 @@ export function ReelsView({
           </div>
         )}
 
+        {view === 'home' && !querying && reevalList.length > 0 && (
+          <button
+            onClick={() => open('reeval')}
+            className="flex w-full cursor-pointer items-center gap-2 rounded-xl border border-amber-400/35 bg-amber-500/[0.08] px-3 py-2 text-left text-[13px] font-bold text-amber-100 hover:bg-amber-500/15"
+          >
+            <RotateCcw size={14} className="shrink-0" /> Re-evaluation requested: {reevalList.length}
+            <span className="ml-auto text-[12px] font-semibold text-amber-200/70">Muse is re-checking</span>
+            <ChevronRight size={14} className="shrink-0 text-amber-200/70" />
+          </button>
+        )}
+        {view === 'home' && !querying && side === 'claude' && items && items.length > 0 && (
+          <div className="flex items-center gap-3 px-1">
+            <p className="font-mono text-[12px] font-bold uppercase tracking-widest text-orange-300/80">Claude · by what it's for</p>
+            <span className="flex-1" />
+            <button onClick={() => open('archived')} className="cursor-pointer text-[13px] font-semibold text-white/50 hover:text-white">
+              Archived {archivedList.length}
+            </button>
+            <button onClick={() => setShowManage(true)} className="cursor-pointer text-[13px] font-semibold text-brand-300 hover:underline">
+              Edit sections
+            </button>
+          </div>
+        )}
+
         {loadError ? (
           <Message icon={<AlertTriangle size={16} className="text-amber-400" />}>Couldn't load reels: {loadError}</Message>
         ) : items === null ? (
           <Message icon={<Loader2 size={16} className="animate-spin text-white/40" />}>Loading reels…</Message>
         ) : items.length === 0 ? (
           <Message>No reels on this account yet. Muse writes them here after each review.</Message>
-        ) : !querying && view === 'home' ? (
+        ) : !querying && view === 'home' && side !== 'claude' ? (
           <>
             <div className="grid grid-cols-3 gap-2">
               <SpecialTile label="All" count={counts.all} onClick={() => open('all')} />
               <SpecialTile label="⭐ Top rated" count={counts.top} onClick={() => open('top')} />
               <SpecialTile label="🚩 BS" count={counts.bs} danger onClick={() => open('bs')} />
             </div>
-            {side === 'claude' && (
-              <section aria-label="What it's for" className="flex flex-col gap-1.5">
-                <div className="flex items-center gap-2 px-1">
-                  <p className="font-mono text-[12px] font-bold uppercase tracking-widest text-orange-300/80">Claude · what it's for</p>
-                  <span className="flex-1" />
-                  <button onClick={() => setShowManage(true)} className="cursor-pointer text-[13px] font-semibold text-brand-300 hover:underline">
-                    Edit sections
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {claudeCats.map((c) => (
-                    <button
-                      key={c.id}
-                      onClick={() => open(`cat:${c.id}`)}
-                      className="flex cursor-pointer flex-col gap-1 rounded-2xl border border-orange-400/20 bg-orange-500/[0.05] p-3 text-left transition-colors hover:border-orange-400/40 hover:bg-orange-500/[0.09]"
-                    >
-                      <span className="text-[14px] font-bold leading-snug text-white">{c.name}</span>
-                      <span className="text-[12.5px] font-semibold text-white/45">
-                        {catCounts.get(c.id) ?? 0} reel{catCounts.get(c.id) === 1 ? '' : 's'}
-                      </span>
-                    </button>
-                  ))}
-                  <button
-                    onClick={() => open('claude-unsorted')}
-                    className="flex cursor-pointer flex-col gap-1 rounded-2xl border border-dashed border-white/20 bg-white/[0.02] p-3 text-left transition-colors hover:border-white/35"
-                  >
-                    <span className="text-[14px] font-bold leading-snug text-white/85">Not sorted yet</span>
-                    <span className="text-[12.5px] font-semibold text-white/45">
-                      {unsorted.length} reel{unsorted.length === 1 ? '' : 's'} · Muse sorts these, or use "Put in…"
-                    </span>
-                  </button>
-                </div>
-              </section>
-            )}
-            <div className={`grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3 ${side === 'claude' ? 'hidden' : ''}`}>
-              {divs.filter((d) => side === 'all' || d.count > 0).map((d) => (
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {/* Claude & Coding lives only in the Claude lane. */}
+              {divs.filter((d) => !isClaudeFirst(d) && (side === 'all' || d.count > 0)).map((d) => (
                 <button
                   key={d.bucket}
                   onClick={() => open(d.bucket)}
@@ -613,7 +619,7 @@ export function ReelsView({
                 </button>
               ))}
             </div>
-            {catApi && side !== 'claude' && (
+            {catApi && (
               <section aria-label="My categories">
                 <div className="mb-1.5 flex items-center gap-2 px-1">
                   <p className="font-mono text-[12px] font-bold uppercase tracking-widest text-white/45">My categories</p>
@@ -644,7 +650,7 @@ export function ReelsView({
                       .map((c) => (
                         <button
                           key={c.id}
-                          onClick={() => open(`cat:${c.id}`)}
+                          onClick={() => (/^claude$/i.test(c.name.trim()) ? setSide('claude') : open(`cat:${c.id}`))}
                           className="flex cursor-pointer flex-col gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-left transition-colors hover:border-white/20 hover:bg-white/[0.06]"
                         >
                           <span className="flex min-w-0 items-center gap-1.5 text-[14px] font-bold text-white">
@@ -652,7 +658,7 @@ export function ReelsView({
                             <span className="truncate">{c.name}</span>
                           </span>
                           <span className="flex items-center gap-2 text-[12.5px] font-semibold text-white/45">
-                            {catCounts.get(c.id) ?? 0} reel{catCounts.get(c.id) === 1 ? '' : 's'}
+                            {/^claude$/i.test(c.name.trim()) ? `${sideCounts.claude} in the Claude lane` : `${catCounts.get(c.id) ?? 0} reel${catCounts.get(c.id) === 1 ? '' : 's'}`}
                             <SideBadge side={c.side} />
                           </span>
                         </button>
@@ -683,7 +689,7 @@ export function ReelsView({
           <Message>{inArchive && !querying ? 'Nothing archived. Swipe a reel left to archive it.' : 'Nothing here matches.'}</Message>
         ) : (
           groups.map((g) => (
-            <section key={g.name || 'flat'} className="flex flex-col gap-1.5">
+            <section key={g.id ?? (g.name || 'flat')} className="flex flex-col gap-1.5">
               {g.name && (
                 <h3 className="flex items-center gap-2 px-1">
                   <span className="font-mono text-[12px] font-bold uppercase tracking-widest text-white/60">{g.name}</span>
@@ -710,6 +716,7 @@ export function ReelsView({
                   )}
                 </h3>
               )}
+              {g.reels.length === 0 && <p className="px-1 pb-1 text-[12.5px] text-white/35">Nothing here yet.</p>}
               {g.reels.map((r) => (
                 <SwipeRow
                   key={r.id}
@@ -717,7 +724,7 @@ export function ReelsView({
                   onSwipeLeft={() => (r.archived ? restore(r) : archive(r))}
                   onSwipeRight={() => setConfirmDelete(r)}
                 >
-                  <ReelRow reel={r} cats={catsOf(r.id)} selected={r.id === selectedId} onSelect={() => setSelectedId(r.id)} activeTag={tag} onTag={pickTag} />
+                  <ReelRow reel={r} cats={catsOf(r.id)} selected={r.id === selectedId} onSelect={() => openReel(r)} activeTag={tag} onTag={pickTag} />
                 </SwipeRow>
               ))}
             </section>
@@ -996,7 +1003,7 @@ function ReevalBadge({ compact = false }: { compact?: boolean }) {
         compact ? 'px-2 py-0.5 text-[11px]' : 'px-2.5 py-1 text-[11.5px]'
       }`}
     >
-      <RotateCcw size={compact ? 10 : 12} /> {compact ? 'Re-eval requested' : 'Re-evaluation requested'}
+      <RotateCcw size={compact ? 10 : 12} /> {compact ? 'Re-eval' : 'Re-evaluation requested'}
     </span>
   );
 }
@@ -1118,8 +1125,18 @@ function ReelDetail({
         <RotateCcw size={size === 'lg' ? 15 : 12} strokeWidth={2.5} /> Not BS — re-evaluate
       </button>
     );
-  const phoneAction = reel.isBS ? notBsButton('sm') : reel.reevalRequested ? <ReevalBadge /> : null;
-  const deskAction = reel.isBS ? notBsButton('lg') : reel.reevalRequested ? <ReevalBadge /> : null;
+  const requested = (size: 'sm' | 'lg') => (
+    <button
+      disabled
+      className={`flex min-w-0 cursor-default items-center gap-1.5 rounded-full border border-amber-400/35 bg-amber-500/10 text-left font-semibold leading-tight text-amber-100/90 ${
+        size === 'lg' ? 'px-4 py-2.5 text-[13px]' : 'px-2.5 py-1 text-[11.5px]'
+      }`}
+    >
+      <RotateCcw size={size === 'lg' ? 15 : 12} className="shrink-0" /> Re-evaluation requested — Muse is re-checking this
+    </button>
+  );
+  const phoneAction = reel.reevalRequested ? requested('sm') : reel.isBS ? notBsButton('sm') : null;
+  const deskAction = reel.reevalRequested ? requested('lg') : reel.isBS ? notBsButton('lg') : null;
   const navBtn =
     'flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/70 hover:text-white disabled:cursor-default disabled:opacity-30';
   return (

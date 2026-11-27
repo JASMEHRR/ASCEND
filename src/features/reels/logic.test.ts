@@ -6,6 +6,10 @@
 import assert from 'node:assert/strict';
 import {
   CLAUDE_PURPOSES,
+  UNSORTED_LANE,
+  claudeLane,
+  isClaudeFirst,
+  reevalQueue,
   isClaudeReel,
   categoryIndex,
   cleanCatName,
@@ -155,5 +159,38 @@ assert.equal(bare.reevalRequested, false);
 const re = normalizeReel('q', { isBS: false, reevalRequested: true, reevalRequestedAt: { toDate: () => new Date('2026-11-29T00:00:00Z') } });
 assert.equal(re.reevalRequested, true);
 assert.equal(re.reevalRequestedAt, '2026-11-29T00:00:00.000Z');
+
+// v8: Claude-first reels live only in the Claude lane; tag-only ones show in both.
+assert.equal(isClaudeFirst({ bucket: 'Claude & Coding' }), true);
+assert.equal(inSide({ bucket: 'Claude & Coding', tags: [] }, 'all', [], {}), false);
+assert.equal(inSide({ bucket: 'Claude & Coding', tags: [] }, 'work', [], {}), false);
+assert.equal(inSide({ bucket: 'Claude & Coding', tags: [] }, 'claude', [], {}), true);
+assert.equal(inSide({ bucket: 'Opportunities', tags: ['claude'] }, 'all', [], {}), true);
+assert.equal(inSide({ bucket: 'Opportunities', tags: ['claude'] }, 'claude', [], {}), true);
+// A Work-side section (setups-hosting) still counts as a Claude section, not as Work.
+const hosting = normalizeCategory('purpose-setups-hosting', { name: 'Setups & self-hosting', side: 'work', reelIds: ['L2'] });
+assert.deepEqual(sidesOf({ bucket: 'Deals & Shopping' }, [hosting], {}), ['personal']);
+assert.equal(isClaudeReel({ bucket: 'Deals & Shopping', tags: [] }, [hosting]), true);
+// Lane: sections in set order (empty ones kept), a reel in two sections shows twice, the rest under Unsorted last.
+const laneReels = ['L1', 'L2', 'L3'].map((id) => normalizeReel(id, { bucket: 'Claude & Coding' }));
+const saveL = normalizeCategory('purpose-save-money', { name: 'Save money', side: 'claude', reelIds: ['L1', 'L2', 'gone'] });
+const funL = normalizeCategory('purpose-fun', { name: 'Fun & personal builds', side: 'claude', reelIds: [] });
+const lane = claudeLane(laneReels, [hosting, funL, saveL], 'score');
+assert.deepEqual(lane.map((g) => [g.name, g.reels.length]), [
+  ['Save money', 2],
+  ['Fun & personal builds', 0],
+  ['Setups & self-hosting', 1],
+  [UNSORTED_LANE, 1],
+]);
+assert.equal(lane[3].reels[0].id, 'L3');
+assert.equal(CLAUDE_PURPOSES.length, 9);
+// Re-eval queue skips the proof doc.
+const q = reevalQueue([
+  normalizeReel('zz-bs-test', { reevalRequested: true }),
+  normalizeReel('a1', { reevalRequested: true, reevalRequestedAt: '2026-11-28T01:00:00Z' }),
+  normalizeReel('a2', { reevalRequested: true, reevalRequestedAt: '2026-11-28T02:00:00Z' }),
+  normalizeReel('a3', {}),
+]);
+assert.deepEqual(q.map((r) => r.id), ['a2', 'a1']);
 
 console.log('reels logic: all passed');

@@ -1,4 +1,4 @@
-# Ascend updates for Muse (27 to 29 Nov 2026)
+# Ascend updates for Muse (27 and 28 Nov 2026)
 
 Muse, this is everything that changed in Ascend in the last three days and what you need to do. Firestore project `ascend-57d4e`, all data under `users/dBZTvCHfyiPHFLjHxv2ckf37iOr2`. Live app: https://ascend-delta-sage.vercel.app
 
@@ -67,7 +67,7 @@ He can make his own categories (now: "Anime" as Personal with 138 reels, "Claude
 
 ### 5b. NEW: the Claude lane and its sections (you sort these)
 
-The switch has a third option, **Claude**. It shows every Claude reel: your Claude & Coding bucket, any reel tagged `claude`, `claude-code`, `anthropic`, `mcp` or `claude-md`, and any reel he put in a Claude category. Inside, reels are divided by what the reel is FOR him. These sections are categories with fixed ids in `users/{uid}/reelCats`:
+The switch has a third option, **Claude**. It shows every Claude reel: your Claude & Coding bucket, any reel tagged `claude`, `claude-code`, `anthropic`, `mcp` or `claude-md`, and any reel in a Claude section or a category he made for Claude. Reels in your **Claude & Coding bucket now show ONLY in the Claude lane** (not in All, Work, Personal, bucket, tag or category pages); a reel from another bucket that is only tagged Claude shows in both. Inside the lane, reels are grouped by what the reel is FOR him, in this order, and every Claude reel in no section sits under "Unsorted, waiting for Muse" so your backlog is visible. The sections are categories with fixed ids in `users/{uid}/reelCats`:
 
 | Doc id | Section | Put a reel here when it... |
 |---|---|---|
@@ -77,14 +77,17 @@ The switch has a third option, **Claude**. It shows every Claude reel: your Clau
 | `purpose-earn` | Earn money | helps him make money with Claude (freelance, products, clients, content) |
 | `purpose-free-alternatives` | Free alternatives to paid software | shows Claude replacing or rebuilding a paid app or SaaS |
 | `purpose-learn` | Learn & level up | is a course, explainer or skill-building resource |
+| `purpose-setups-hosting` | Setups & self-hosting | is about running Claude or tools on his own machines or servers (home server, VPS, local models, installs) |
+| `purpose-news` | News & updates | is news: a release, a new model, a feature or pricing change |
+| `purpose-warnings` | Scams & warnings | warns about a scam, a fake claim, a risk or a paid trap |
 
 What you do:
-- For each Claude reel that is in none of these six sections, pick the best one or two and add its id with `arrayUnion` on that doc's `reelIds`. Never use `set()` on these docs and never touch `name` or `side`.
+- For each Claude reel that is in none of these nine sections, pick the best one or two and add its id with `arrayUnion` on that doc's `reelIds`. Never use `set()` on these docs and never touch `name` or `side`.
 - Never remove a reel from a section and never re-add one he moved out; if a reel is already in any section, leave it alone.
-- These six docs are the only part of `reelCats` you may write. His other categories (like "Anime", "Claude") stay read only.
+- These nine docs are the only part of `reelCats` you may write. His other categories (like "Anime", "Claude") stay read only.
 - If a doc id is missing, he deleted that section on purpose: skip it.
 
-## 6. Firestore read quota ran out (29 Nov, about 2:30 AM IST)
+## 6. Firestore read quota ran out (28 Nov, about 2:20 AM IST)
 
 The project hit its free daily read limit; reads return at about 1:30 PM IST (midnight Pacific) each day. With 1,300+ reel docs, one full read of `reels` costs 1,300+ reads.
 
@@ -92,7 +95,7 @@ The project hit its free daily read limit; reads return at about 1:30 PM IST (mi
 - Batch writes, and skip writes for reels that did not change.
 - The app now caches Firestore on the device to cut its own reads.
 
-## 7. Modules turned off in Ascend (29 Nov)
+## 7. Modules turned off in Ascend (28 Nov)
 
 To cut background load and clutter, JasMehr turned off: Stocks & Finance (including the Kite connection), AI Physio, Vision Board, Purchases, and Journal. Their data is kept; they are just hidden and stop polling. Do not send work for them into Ascend for now. Still on: Dashboard and Jarvis, Arena, Strategic Command (your `leads`), Timetable, Attendance, Internships, Reels, My Modules, Gmail and Calendar for Jarvis, and Telegram.
 

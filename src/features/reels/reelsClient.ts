@@ -90,8 +90,8 @@ export async function setReelsInCategory(uid: string, id: string, reelIds: strin
 }
 
 /** Makes one of the built-in Claude sections under its fixed id (merge, so reels already in it stay). */
-export async function ensurePurpose(uid: string, id: string, name: string): Promise<void> {
-  await setDoc(doc(catsCol(uid), id), { name, side: 'claude', kind: 'purpose', createdAt: new Date().toISOString() }, { merge: true });
+export async function ensurePurpose(uid: string, id: string, name: string, side: Side): Promise<void> {
+  await setDoc(doc(catsCol(uid), id), { name, side, kind: 'purpose', createdAt: new Date().toISOString() }, { merge: true });
 }
 
 export async function setDivisionSide(uid: string, bucket: ReelBucket, side: LifeSide): Promise<void> {

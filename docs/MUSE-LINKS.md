@@ -9,7 +9,7 @@ Firestore is the only meeting point. Everything lives under JasMehr's own user:
 | Laptop bridge | `/api/bridge` with the bridge key (no Admin key on the laptop) | its claim and result on `jobs/*`, `status/laptop` |
 | Ascend app (browser) | JasMehr's sign-in | reads `jobs` and `status`; writes neither |
 | Ascend app (browser) | JasMehr's sign-in | `reels/*`: only the `archived` field, and delete |
-| Ascend app (browser) | JasMehr's sign-in | `reelCats/*` (his own reel categories) and `reelPrefs/sides`; Muse only reads these, except `arrayUnion` into the six `reelCats/purpose-*` Claude sections (see docs/MUSE-UPDATES.md) |
+| Ascend app (browser) | JasMehr's sign-in | `reelCats/*` (his own reel categories) and `reelPrefs/sides`; Muse only reads these, except `arrayUnion` into the nine `reelCats/purpose-*` Claude sections (see docs/MUSE-UPDATES.md) |
 
 Types: `src/features/muse/types.ts`. Rules for the laptop: `bridge-logic.ts`.
 

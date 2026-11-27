@@ -216,6 +216,8 @@ export function divisions(reels: Reel[]): Division[] {
 export interface ReelGroup {
   name: string;
   reels: Reel[];
+  /** Set for Claude-lane sections (their reelCats id). */
+  id?: string;
 }
 
 /**
@@ -303,17 +305,24 @@ export function normalizeDivisionSides(raw: Record<string, unknown> | undefined)
 export const divisionSide = (bucket: ReelBucket, prefs: DivisionSides): LifeSide => prefs[bucket] ?? DEFAULT_DIVISION_SIDE[bucket];
 
 /**
- * The Claude lane's sections: what a Claude reel is for. Fixed ids so Muse can
- * sort new reels into them; JasMehr can rename, delete or add more.
+ * The Claude lane's sections, in the order the lane shows them: what a Claude
+ * reel is for. Fixed ids so Muse can sort reels into them (Admin SDK);
+ * JasMehr can rename, delete or add more. A section is recognised by its
+ * `purpose-` id, whatever its `side` says.
  */
-export const CLAUDE_PURPOSES: { id: string; name: string }[] = [
-  { id: 'purpose-save-money', name: 'Save money' },
-  { id: 'purpose-do-more', name: 'Make Claude do more' },
-  { id: 'purpose-fun', name: 'Fun & personal builds' },
-  { id: 'purpose-earn', name: 'Earn money' },
-  { id: 'purpose-free-alternatives', name: 'Free alternatives to paid software' },
-  { id: 'purpose-learn', name: 'Learn & level up' },
+export const CLAUDE_PURPOSES: { id: string; name: string; side: Side }[] = [
+  { id: 'purpose-save-money', name: 'Save money', side: 'claude' },
+  { id: 'purpose-do-more', name: 'Make Claude do more', side: 'claude' },
+  { id: 'purpose-fun', name: 'Fun & personal builds', side: 'claude' },
+  { id: 'purpose-earn', name: 'Earn money', side: 'claude' },
+  { id: 'purpose-free-alternatives', name: 'Free alternatives to paid software', side: 'claude' },
+  { id: 'purpose-learn', name: 'Learn & level up', side: 'claude' },
+  { id: 'purpose-setups-hosting', name: 'Setups & self-hosting', side: 'work' },
+  { id: 'purpose-news', name: 'News & updates', side: 'work' },
+  { id: 'purpose-warnings', name: 'Scams & warnings', side: 'work' },
 ];
+export const isPurposeId = (id: string): boolean => id.startsWith('purpose-');
+export const UNSORTED_LANE = 'Unsorted — waiting for Muse';
 const PURPOSE_ORDER = new Map(CLAUDE_PURPOSES.map((p, i) => [p.id, i]));
 const SIDE_ORDER: Record<Side, number> = { work: 0, personal: 1, claude: 2 };
 
@@ -340,26 +349,63 @@ export function categoryIndex(cats: ReelCategory[]): Map<string, ReelCategory[]>
  * by accident. Claude sections don't move a reel between Work and Personal.
  */
 export function sidesOf(reel: Pick<Reel, 'bucket'>, cats: ReelCategory[], prefs: DivisionSides): LifeSide[] {
-  const life = cats.filter((c): c is ReelCategory & { side: LifeSide } => c.side !== 'claude');
+  const life = cats.filter((c): c is ReelCategory & { side: LifeSide } => c.side !== 'claude' && !isPurposeId(c.id));
   if (life.length) return [...new Set(life.map((c) => c.side))];
   return reel.bucket ? [divisionSide(reel.bucket, prefs)] : ['work', 'personal'];
 }
 
 const CLAUDE_TAG = /^(claude|claude-?code|claude-?ai|anthropic|mcp|claude-?md)$/;
 
+/** Muse's Claude & Coding reels live only in the Claude lane. */
+export const isClaudeFirst = (reel: Pick<Reel, 'bucket'>): boolean => reel.bucket === 'Claude & Coding';
+
 /**
  * Whether a reel belongs in the Claude lane: Muse's Claude & Coding bucket, a
- * Claude tag, or any of his categories that is a Claude section or named Claude.
+ * Claude tag, a Claude section, or any of his categories that is Claude-side
+ * or named Claude. Tag-only Claude reels from other buckets show in both.
  */
 export function isClaudeReel(reel: Pick<Reel, 'bucket' | 'tags'>, cats: ReelCategory[]): boolean {
   return (
-    reel.bucket === 'Claude & Coding' ||
+    isClaudeFirst(reel) ||
     reel.tags.some((t) => CLAUDE_TAG.test(t)) ||
-    cats.some((c) => c.side === 'claude' || /claude/i.test(c.name))
+    cats.some((c) => isPurposeId(c.id) || c.side === 'claude' || /claude/i.test(c.name))
   );
 }
 
 export type SideFilter = 'all' | Side;
 
+/** All / Work / Personal never show a Claude-first reel; the Claude lane shows every Claude reel. */
 export const inSide = (reel: Pick<Reel, 'bucket' | 'tags'>, side: SideFilter, cats: ReelCategory[], prefs: DivisionSides): boolean =>
-  side === 'all' ? true : side === 'claude' ? isClaudeReel(reel, cats) : sidesOf(reel, cats, prefs).includes(side);
+  side === 'claude'
+    ? isClaudeReel(reel, cats)
+    : !isClaudeFirst(reel) && (side === 'all' || sidesOf(reel, cats, prefs).includes(side));
+
+/**
+ * The Claude lane: one group per existing section in CLAUDE_PURPOSES order
+ * (empty ones too, so every header shows), then every Claude reel in no
+ * section under UNSORTED_LANE. A reel in two sections shows in both.
+ */
+export function claudeLane(reels: Reel[], cats: ReelCategory[], sort: SortMode): ReelGroup[] {
+  const byId = new Map(cats.map((c) => [c.id, c]));
+  const inAny = new Set<string>();
+  const groups: ReelGroup[] = [];
+  for (const p of CLAUDE_PURPOSES) {
+    const c = byId.get(p.id);
+    if (!c) continue;
+    const ids = new Set(c.reelIds);
+    const list = reels.filter((r) => ids.has(r.id));
+    list.forEach((r) => inAny.add(r.id));
+    groups.push({ id: c.id, name: c.name, reels: sortReels(list, sort) });
+  }
+  groups.push({ id: 'unsorted', name: UNSORTED_LANE, reels: sortReels(reels.filter((r) => !inAny.has(r.id)), sort) });
+  return groups;
+}
+
+/** The test doc used to prove the re-eval flow; never counted. */
+const REEVAL_TEST_ID = 'zz-bs-test';
+
+/** Reels waiting for Muse's re-check, most recently requested first. */
+export const reevalQueue = (reels: Reel[]): Reel[] =>
+  reels
+    .filter((r) => r.reevalRequested && r.id !== REEVAL_TEST_ID)
+    .sort((a, b) => (b.reevalRequestedAt ?? '').localeCompare(a.reevalRequestedAt ?? ''));
