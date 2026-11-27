@@ -135,4 +135,10 @@ assert.deepEqual(sidesOf({ bucket: null }, [], {}), ['work', 'personal']);
 assert.equal(inSide({ bucket: 'Opportunities' }, 'personal', [], {}), false);
 assert.equal(inSide({ bucket: 'Opportunities' }, 'all', [], {}), true);
 
+// Re-evaluation request.
+assert.equal(bare.reevalRequested, false);
+const re = normalizeReel('q', { isBS: false, reevalRequested: true, reevalRequestedAt: { toDate: () => new Date('2026-11-29T00:00:00Z') } });
+assert.equal(re.reevalRequested, true);
+assert.equal(re.reevalRequestedAt, '2026-11-29T00:00:00.000Z');
+
 console.log('reels logic: all passed');

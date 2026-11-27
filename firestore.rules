@@ -73,14 +73,23 @@ service cloud.firestore {
 
     // The Reels Library is written by Muse through the Admin SDK, which
     // bypasses these rules. From a page, only JasMehr's own account may
-    // archive/restore a reel (the `archived` field alone, as a bool) or delete
-    // one. No create, and Muse's fields can't be edited from the app.
+    // archive/restore a reel, send it back for re-evaluation ("Not BS":
+    // isBS -> false, reevalRequested -> true, reevalRequestedAt -> server
+    // time; only Muse clears the request), or delete it. No create, and every
+    // other field stays Muse's.
     match /users/{userId}/reels/{reelId} {
+      function reelOwnerEdit() {
+        let changed = request.resource.data.diff(resource.data).affectedKeys();
+        return changed.hasOnly(['archived', 'isBS', 'reevalRequested', 'reevalRequestedAt'])
+          && (!changed.hasAny(['archived']) || request.resource.data.archived is bool)
+          && (!changed.hasAny(['isBS']) || request.resource.data.isBS == false)
+          && (!changed.hasAny(['reevalRequested']) || request.resource.data.reevalRequested == true)
+          && (!changed.hasAny(['reevalRequestedAt']) || request.resource.data.reevalRequestedAt == request.time);
+      }
       allow read: if isOwner(userId);
       allow update: if isOwner(userId)
         && userId == 'dBZTvCHfyiPHFLjHxv2ckf37iOr2'
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['archived'])
-        && request.resource.data.archived is bool;
+        && reelOwnerEdit();
       allow delete: if isOwner(userId)
         && userId == 'dBZTvCHfyiPHFLjHxv2ckf37iOr2';
     }

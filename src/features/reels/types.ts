@@ -72,6 +72,13 @@ export interface Reel {
   forYou: string;
   /** Set from the page; archived reels leave every view except Archived. */
   archived: boolean;
+  /**
+   * Set from the page ("Not BS — re-evaluate") together with isBS = false.
+   * Muse re-researches the reel, writes the new review and clears it; the
+   * page never clears it.
+   */
+  reevalRequested: boolean;
+  reevalRequestedAt: string | null;
 }
 
 /** Which half of life a reel belongs to; the Reels page can show one at a time. */

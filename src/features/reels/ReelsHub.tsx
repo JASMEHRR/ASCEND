@@ -29,6 +29,7 @@ import {
   ExternalLink,
   Film,
   Flag,
+  RotateCcw,
   Link2,
   Loader2,
   Search,
@@ -45,6 +46,7 @@ import {
   deleteCategory,
   deleteReel,
   renameCategory,
+  requestReeval,
   setCategorySide,
   setDivisionSide,
   setReelArchived,
@@ -125,6 +127,7 @@ export default function ReelsHub() {
       loadError={loadError}
       setArchived={(id, archived) => (uid ? setReelArchived(uid, id, archived) : noUser())}
       remove={(id) => (uid ? deleteReel(uid, id) : noUser())}
+      reeval={(id) => (uid ? requestReeval(uid, id) : noUser())}
       cats={cats}
       divisionSides={sides}
       catApi={catApi}
@@ -183,6 +186,7 @@ export function ReelsView({
   loadError,
   setArchived,
   remove,
+  reeval,
   cats = [],
   divisionSides = {},
   catApi,
@@ -191,6 +195,8 @@ export function ReelsView({
   loadError: string | null;
   setArchived: (id: string, archived: boolean) => Promise<void>;
   remove: (id: string) => Promise<void>;
+  /** "Not BS — re-evaluate". */
+  reeval?: (id: string) => Promise<void>;
   cats?: ReelCategory[];
   divisionSides?: DivisionSides;
   catApi?: CategoryApi;
@@ -310,6 +316,14 @@ export function ReelsView({
     moveOff(r);
     setArchived(r.id, false).catch(fail('restore'));
   };
+  const notBS = (r: Reel) => {
+    if (!reeval) return;
+    reeval(r.id).then(
+      () => toast.show({ kind: 'info', title: 'Sent back to Muse', message: `"${r.title}" is un-flagged and queued for a fresh review.` }),
+      fail('send it for re-evaluation'),
+    );
+  };
+
   const undoLast = () => {
     if (!undo) return;
     const u = undo;
@@ -655,6 +669,7 @@ export function ReelsView({
           onTag={pickTag}
           onArchive={() => (selected.archived ? restore(selected) : archive(selected))}
           onDelete={() => setConfirmDelete(selected)}
+          onNotBS={reeval ? () => notBS(selected) : null}
           catNames={catsOf(selected.id).map((c) => c.name)}
           onCategorize={catApi ? () => setSheetFor(selected.id) : null}
         />
@@ -904,6 +919,20 @@ function BlockHeading({ children, className = 'text-white' }: { children: ReactN
   return <p className={`text-[15px] font-black uppercase leading-tight tracking-[0.12em] ${className}`}>{children}</p>;
 }
 
+/** The reel is in Muse's re-check queue (set by "Not BS — re-evaluate", cleared by Muse). */
+function ReevalBadge({ compact = false }: { compact?: boolean }) {
+  return (
+    <span
+      title="Re-evaluation requested: Muse will re-check this reel"
+      className={`inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-400/45 bg-amber-500/15 font-bold uppercase tracking-wide text-amber-200 ${
+        compact ? 'px-2 py-0.5 text-[11px]' : 'px-2.5 py-1 text-[11.5px]'
+      }`}
+    >
+      <RotateCcw size={compact ? 10 : 12} /> {compact ? 'Re-eval requested' : 'Re-evaluation requested'}
+    </span>
+  );
+}
+
 function BsBadge() {
   return (
     <span className="inline-flex items-center gap-1 rounded-full border border-red-400/40 bg-red-500/15 px-2 py-0.5 text-[12px] font-bold uppercase tracking-wide text-red-300">
@@ -944,6 +973,7 @@ function ReelRow({
             {reel.author && <span>{reel.author}</span>}
             {reel.sharedAt && <span>· {formatShared(reel.sharedAt)}</span>}
             {reel.isBS && <BsBadge />}
+            {reel.reevalRequested && <ReevalBadge compact />}
             {reel.links.length > 0 && (
               <span className="inline-flex items-center gap-1 text-white/50">
                 <Link2 size={12} /> {reel.links.length} link{reel.links.length === 1 ? '' : 's'}
@@ -987,6 +1017,7 @@ function ReelDetail({
   onDelete,
   catNames,
   onCategorize,
+  onNotBS,
 }: {
   reel: Reel;
   backLabel: string;
@@ -1000,11 +1031,27 @@ function ReelDetail({
   onDelete: () => void;
   catNames: string[];
   onCategorize: (() => void) | null;
+  onNotBS: (() => void) | null;
 }) {
   const ig = safeLink(reel.igUrl);
   const headline = headlineOf(reel);
   // The yes/no text: Muse's personal verdict when it has one, else the review.
   const verdictText = reel.forYou || reel.verdict;
+  // BS reels get "Not BS — re-evaluate"; once sent, a badge takes its place.
+  const notBsButton = (size: 'sm' | 'lg') =>
+    onNotBS && (
+      <button
+        onClick={onNotBS}
+        title="Un-flag and ask Muse for a fresh review"
+        className={`flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-amber-400/50 bg-amber-500/15 font-black uppercase tracking-wide text-amber-100 hover:bg-amber-500/30 ${
+          size === 'lg' ? 'px-4 py-2.5 text-[13px]' : 'px-2.5 py-1.5 text-[11.5px]'
+        }`}
+      >
+        <RotateCcw size={size === 'lg' ? 15 : 12} strokeWidth={2.5} /> Not BS — re-evaluate
+      </button>
+    );
+  const phoneAction = reel.isBS ? notBsButton('sm') : reel.reevalRequested ? <ReevalBadge /> : null;
+  const deskAction = reel.isBS ? notBsButton('lg') : reel.reevalRequested ? <ReevalBadge /> : null;
   const navBtn =
     'flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/70 hover:text-white disabled:cursor-default disabled:opacity-30';
   return (
@@ -1056,12 +1103,16 @@ function ReelDetail({
           <div className="flex items-center gap-2 lg:hidden">
             <ScoreBadge score={reel.score} />
             {reel.isBS && <BsBadge />}
-            <p className={`text-[11.5px] font-black uppercase tracking-[0.14em] ${reel.forYou ? 'text-brand-300' : 'text-white/45'}`}>
-              {reel.forYou ? 'For you' : 'Verdict'}
-            </p>
+            {phoneAction ?? (
+              <p className={`text-[11.5px] font-black uppercase tracking-[0.14em] ${reel.forYou ? 'text-brand-300' : 'text-white/45'}`}>
+                {reel.forYou ? 'For you' : 'Verdict'}
+              </p>
+            )}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto pr-1 custom-scrollbar max-lg:max-h-[13dvh]">
-            <p className={`hidden text-[11.5px] font-black uppercase tracking-[0.14em] lg:block ${reel.forYou ? 'text-brand-300' : 'text-white/45'}`}>
+            <p
+              className={`text-[11.5px] font-black uppercase tracking-[0.14em] ${phoneAction ? '' : 'hidden'} lg:block ${reel.forYou ? 'text-brand-300' : 'text-white/45'}`}
+            >
               {reel.forYou ? 'For you' : 'Verdict'}
             </p>
             <p className="text-[14.5px] leading-relaxed text-white/90 lg:mt-1 lg:text-[16px]">{verdictText || 'No verdict yet.'}</p>
@@ -1072,6 +1123,7 @@ function ReelDetail({
               {reel.isBS && <BsBadge />}
             </span>
             <span className="hidden flex-1 lg:block" />
+            {deskAction && <span className="hidden lg:contents">{deskAction}</span>}
             <button
               onClick={onDelete}
               className="flex cursor-pointer items-center gap-1.5 rounded-full border border-red-400/50 bg-red-500/25 px-5 py-2.5 text-[14px] font-black uppercase tracking-wide text-red-100 hover:bg-red-500/40 lg:order-last"

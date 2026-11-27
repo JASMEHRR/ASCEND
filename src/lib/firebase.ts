@@ -22,7 +22,7 @@ import {
   type User,
   type UserCredential,
 } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 import fallbackConfig from '../../firebase-config.json';
 
 const env = import.meta.env as Record<string, string | undefined>;
@@ -41,7 +41,15 @@ const databaseId = env.VITE_FIREBASE_DATABASE_ID ?? fallbackConfig.firestoreData
 const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
-export const db = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
+/**
+ * On-device cache (IndexedDB), shared across tabs. Re-opening a page re-uses
+ * what is cached and, within ~30 minutes, Firestore only bills the docs that
+ * changed rather than re-reading the whole collection: the Reels listener
+ * alone is 1,000+ docs per load. Where IndexedDB is unavailable (some private
+ * windows) the SDK falls back to memory on its own.
+ */
+const firestoreSettings = { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) };
+export const db = databaseId ? initializeFirestore(app, firestoreSettings, databaseId) : initializeFirestore(app, firestoreSettings);
 
 const googleProvider = new GoogleAuthProvider();
 

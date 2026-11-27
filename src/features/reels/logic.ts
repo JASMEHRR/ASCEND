@@ -84,6 +84,8 @@ export function normalizeReel(id: string, raw: Record<string, unknown>): Reel {
     links,
     forYou: str(raw.forYou),
     archived: raw.archived === true,
+    reevalRequested: raw.reevalRequested === true,
+    reevalRequestedAt: isoOrNull(raw.reevalRequestedAt),
   };
 }
 

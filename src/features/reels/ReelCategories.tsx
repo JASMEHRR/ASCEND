@@ -48,6 +48,7 @@ function SidePicker({ value, onChange, label }: { value: Side; onChange: (s: Sid
       {(['work', 'personal'] as Side[]).map((s) => (
         <button
           key={s}
+          type="button"
           role="radio"
           aria-checked={value === s}
           onClick={() => onChange(s)}

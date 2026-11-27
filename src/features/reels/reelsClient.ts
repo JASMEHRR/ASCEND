@@ -2,11 +2,12 @@
  * Reels storage (client Firestore), `users/{uid}/reels/{id}`.
  *
  * A live listener so reels Muse writes appear without a refresh. The page
- * can do exactly two writes: flip `archived` (updateDoc with that one field,
- * so Muse's fields are never touched) and delete a reel. firestore.rules
- * rejects anything wider, and never allows create.
+ * can only: flip `archived`, send a reel back for re-evaluation (`isBS` off,
+ * `reevalRequested` on, `reevalRequestedAt` = server time), and delete a reel.
+ * Each is an updateDoc of just those fields, so Muse's fields are never
+ * touched; firestore.rules rejects anything wider and never allows create.
  */
-import { addDoc, arrayRemove, arrayUnion, collection, deleteDoc, doc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
+import { addDoc, arrayRemove, arrayUnion, collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { cleanCatName, normalizeCategory, normalizeDivisionSides, normalizeReel } from './logic';
 import type { DivisionSides, Reel, ReelBucket, ReelCategory, Side } from './types';
@@ -24,6 +25,11 @@ export function subscribeReels(uid: string, onData: (items: Reel[]) => void, onE
 
 export async function setReelArchived(uid: string, id: string, archived: boolean): Promise<void> {
   await updateDoc(doc(db, 'users', uid, 'reels', id), { archived });
+}
+
+/** "Not BS — re-evaluate": un-flags the reel and puts it in Muse's re-check queue. */
+export async function requestReeval(uid: string, id: string): Promise<void> {
+  await updateDoc(doc(db, 'users', uid, 'reels', id), { isBS: false, reevalRequested: true, reevalRequestedAt: serverTimestamp() });
 }
 
 export async function deleteReel(uid: string, id: string): Promise<void> {
