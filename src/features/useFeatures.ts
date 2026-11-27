@@ -3,6 +3,7 @@ import type { OSState } from '../types';
 import {
   FEATURES,
   isFeatureEnabled,
+  visibleTo,
   type FeatureId,
   type FeatureModule,
 } from './registry';
@@ -45,6 +46,8 @@ function applyOrder(mods: FeatureModule[], order: string[] | undefined): Feature
 export function useFeatures(
   state: OSState | null,
   updateState: (updater: (prev: OSState) => OSState) => void,
+  /** Signed-in uid; owner-only modules stay hidden from everyone else. */
+  uid?: string | null,
 ): FeaturesApi {
   const isEnabled = useCallback((id: FeatureId) => isFeatureEnabled(state, id), [state]);
 
@@ -70,8 +73,8 @@ export function useFeatures(
 
   // Every enabled nav module, in the user's chosen order.
   const navAll = useMemo(
-    () => applyOrder(FEATURES.filter((f) => f.nav && f.status === 'active' && isFeatureEnabled(state, f.id)), state?.navOrder),
-    [state],
+    () => applyOrder(FEATURES.filter((f) => f.nav && f.status === 'active' && visibleTo(f, uid) && isFeatureEnabled(state, f.id)), state?.navOrder),
+    [state, uid],
   );
 
   const isNavHidden = useCallback((id: FeatureId) => (state?.navHidden ?? []).includes(id), [state]);
@@ -93,7 +96,7 @@ export function useFeatures(
     (id: FeatureId, dir: -1 | 1) => {
       updateState((prev) => {
         const current = applyOrder(
-          FEATURES.filter((f) => f.nav && f.status === 'active' && isFeatureEnabled(prev, f.id)),
+          FEATURES.filter((f) => f.nav && f.status === 'active' && visibleTo(f, uid) && isFeatureEnabled(prev, f.id)),
           prev.navOrder,
         ).map((f) => f.id);
         const i = current.indexOf(id);
@@ -103,7 +106,7 @@ export function useFeatures(
         return { ...prev, navOrder: current };
       });
     },
-    [updateState],
+    [updateState, uid],
   );
 
   const resetNav = useCallback(
@@ -111,7 +114,7 @@ export function useFeatures(
     [updateState],
   );
 
-  const toggleable = useMemo(() => FEATURES.filter((f) => !f.core && f.status === 'active'), []);
+  const toggleable = useMemo(() => FEATURES.filter((f) => !f.core && f.status === 'active' && visibleTo(f, uid)), [uid]);
 
   return { isEnabled, toggle, setEnabled, navModules, toggleable, navAll, isNavHidden, toggleNavHidden, moveNav, resetNav };
 }

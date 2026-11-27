@@ -106,7 +106,7 @@ const FIELD_SCREENS: FieldScreen[] = [
  * the count and the names from FEATURES means the page cannot drift from the
  * product: add a module and the pitch updates itself.
  */
-const SHIPPED_MODULES = FEATURES_REGISTRY.filter((m) => m.status === 'active' && m.nav);
+const SHIPPED_MODULES = FEATURES_REGISTRY.filter((m) => m.status === 'active' && m.nav && !m.ownerOnly);
 
 const FEATURES = [
   {

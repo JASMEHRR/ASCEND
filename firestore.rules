@@ -39,6 +39,7 @@ service cloud.firestore {
       allow read, write: if isOwner(userId)
         && collection != 'googleTokens'
         && collection != 'internships'
+        && collection != 'reels'
         && collection != 'jobs'
         && collection != 'status';
     }
@@ -68,6 +69,13 @@ service cloud.firestore {
         && (!('notes' in request.resource.data)
             || (request.resource.data.notes is string && request.resource.data.notes.size() <= 5000))
         && request.resource.data.updatedAt is string;
+    }
+
+    // The Reels Library is written only by Muse through the Admin SDK, which
+    // bypasses these rules. The owner's browser may read it; no page may
+    // create, change or delete a reel.
+    match /users/{userId}/reels/{reelId} {
+      allow read: if isOwner(userId);
     }
 
     // --- Arena: shared habit rooms -------------------------------------

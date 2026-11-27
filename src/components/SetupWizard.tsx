@@ -274,7 +274,7 @@ export default function SetupWizard({ state, updateState, fallbackName, onDone }
                   Only what you pick shows up in the sidebar. Everything here can be turned on later.
                 </p>
                 <div className="mt-5 max-h-[260px] space-y-1.5 overflow-y-auto custom-scrollbar pr-1">
-                  {FEATURES.filter((f) => !f.core && f.status === 'active').map((f) => {
+                  {FEATURES.filter((f) => !f.core && f.status === 'active' && !f.ownerOnly).map((f) => {
                     const Icon = f.icon;
                     const on = enabled[f.id];
                     return (

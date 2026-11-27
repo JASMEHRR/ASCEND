@@ -14,6 +14,7 @@ export type View =
   | 'timetable'
   | 'attendance'
   | 'internships'
+  | 'reels'
   | 'custom';
 
 export const VIEW_LABELS: Record<View, string> = {
@@ -28,6 +29,7 @@ export const VIEW_LABELS: Record<View, string> = {
   timetable: 'Timetable',
   attendance: 'Attendance',
   internships: 'Internships',
+  reels: 'Reels Library',
   custom: 'My Modules',
 };
 

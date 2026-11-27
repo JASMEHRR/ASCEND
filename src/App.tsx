@@ -11,7 +11,7 @@ import { useDialog } from './context/DialogContext';
 import { useCloudSync } from './hooks/useCloudSync';
 import { useStreak } from './hooks/useStreak';
 import { useFeatures } from './features/useFeatures';
-import { isFeatureEnabled, type FeatureId, type FeatureModule } from './features/registry';
+import { FEATURE_MAP, OWNER_UID, isFeatureEnabled, visibleTo, type FeatureId, type FeatureModule } from './features/registry';
 import { disciplineScore } from './lib/discipline';
 import JarvisDashboard from './features/jarvis/ui/JarvisDashboard';
 import AtmosphereBackdrop, { getAutoAtmosphereId, atmosphereFromCustom, ATMOSPHERES } from './components/AtmosphereBackdrop';
@@ -47,6 +47,7 @@ const CustomModulesHub = lazy(() => import('./features/custom/CustomModulesHub')
 const TimetableHub = lazy(() => import('./features/timetable/TimetableHub'));
 const AttendanceHub = lazy(() => import('./features/attendance/AttendanceHub'));
 const InternshipsHub = lazy(() => import('./features/internships/InternshipsHub'));
+const ReelsHub = lazy(() => import('./features/reels/ReelsHub'));
 
 type View =
   | 'dashboard'
@@ -60,6 +61,7 @@ type View =
   | 'timetable'
   | 'attendance'
   | 'internships'
+  | 'reels'
   | 'custom';
 
 const REWARDS_LIST = [
@@ -133,7 +135,7 @@ function HeaderAccount() {
 export default function App() {
   const { user, initializing } = useAuth();
   const { state, updateState } = useCloudSync(user?.uid ?? null);
-  const features = useFeatures(state, updateState);
+  const features = useFeatures(state, updateState, user?.uid);
 
   const [view, setView] = useState<View>('dashboard');
   const [, setTimeTick] = useState(0);
@@ -197,10 +199,11 @@ export default function App() {
 
   // If the active view's module gets disabled, fall back to the Jarvis home.
   useEffect(() => {
-    if (view !== 'dashboard' && !isFeatureEnabled(state, view as FeatureId)) {
+    const mod = FEATURE_MAP[view as FeatureId];
+    if (view !== 'dashboard' && (!isFeatureEnabled(state, view as FeatureId) || (mod && !visibleTo(mod, user?.uid)))) {
       setView('dashboard');
     }
-  }, [state, view]);
+  }, [state, view, user?.uid]);
 
   // --- Auth / load gates (all hooks above run unconditionally) ---
   if (initializing) return <FullScreenLoader label="Connecting…" />;
@@ -397,6 +400,7 @@ export default function App() {
                 {view === 'timetable' && <TimetableHub />}
                 {view === 'attendance' && <AttendanceHub />}
                 {view === 'internships' && <InternshipsHub />}
+                {view === 'reels' && user?.uid === OWNER_UID && <ReelsHub />}
                 {view === 'custom' && <CustomModulesHub />}
               </Suspense>
           </motion.div>

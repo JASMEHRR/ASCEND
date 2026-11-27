@@ -15,6 +15,7 @@ import {
   CalendarDays,
   CalendarCheck,
   Briefcase,
+  Film,
 } from 'lucide-react';
 import type { OSState } from '../types';
 
@@ -42,6 +43,7 @@ export type FeatureId =
   | 'timetable'
   | 'attendance'
   | 'internships'
+  | 'reels'
   | 'custom';
 
 export interface FeatureModule {
@@ -62,6 +64,11 @@ export interface FeatureModule {
    * `label` when a module's name is already short enough.
    */
   short?: string;
+  /**
+   * Only JasMehr's account sees it (nav, settings, setup, landing). Used for
+   * pages built around data only Muse writes for him.
+   */
+  ownerOnly?: boolean;
   /** Enabled for new users before they customise anything. */
   defaultEnabled: boolean;
   /**
@@ -228,6 +235,20 @@ export const FEATURES: FeatureModule[] = [
     status: 'active',
   },
   {
+    id: 'reels',
+    label: 'Reels Library',
+    description: 'Every reel you sent Muse, reviewed and sorted into buckets.',
+    icon: Film,
+    nav: true,
+    // In the phone bar (now ten wide) since the phone is where reels get
+    // looked at; other accounts never see it, so their bar is unchanged.
+    mobile: true,
+    short: 'Reels',
+    ownerOnly: true,
+    defaultEnabled: true,
+    status: 'active',
+  },
+  {
     id: 'custom',
     label: 'My Modules',
     description: 'Custom trackers, counters, lists, and charts — built by you or by Jarvis on request.',
@@ -237,6 +258,12 @@ export const FEATURES: FeatureModule[] = [
     status: 'active',
   },
 ];
+
+/** JasMehr's account, the one Muse writes to (same UID as bridge-routes.ts). */
+export const OWNER_UID = 'dBZTvCHfyiPHFLjHxv2ckf37iOr2';
+
+/** Whether this signed-in account may see a module at all. */
+export const visibleTo = (f: FeatureModule, uid: string | null | undefined): boolean => !f.ownerOnly || uid === OWNER_UID;
 
 export const FEATURE_MAP: Record<FeatureId, FeatureModule> = FEATURES.reduce(
   (acc, f) => {

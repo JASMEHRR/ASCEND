@@ -16,3 +16,11 @@
 - Claims: one lock document per job version (users/{uid}/jobs/{id}/claims/v<n>) using Admin create(), so a version cannot be claimed twice. No transactions needed.
 - Test routes /test-job and /test-review let the bridge play Muse for proof, ONLY on jobs it made (requestedBy 'bridge-test'). Undo: delete those two routes.
 - Frames: one per shot, taken at the middle of each narrated line (timeline.json), plus one sheet of all shots.
+
+## 2026-11-27 Reels Library
+- Owner-only module: `ownerOnly` in registry.ts hides it from nav, Settings, setup and the landing page for every account except OWNER_UID. Undo: drop `ownerOnly` on the reels entry.
+- firestore.rules: `users/{uid}/reels` is read-only from the browser; only Muse (Admin SDK) writes. If Muse writes as the signed-in user, add an owner write rule there.
+- Added to the phone bar, which is now ten icons for JasMehr only. Hide one from Settings navigation to trim it.
+- "Top rated" = score 8 or more and not flagged BS. Change TOP_SCORE in src/features/reels/logic.ts.
+- A tag chip filters across all buckets and overrides the tab; picking a tab clears it.
+- Sample docs have ids starting `sample-`; remove with `npx tsx tools/seed-reels.ts --remove`.
