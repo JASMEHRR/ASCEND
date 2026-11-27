@@ -167,4 +167,6 @@ Path: `users/{uid}/reels/{id}`. Muse writes every field; the app only sets `arch
 
 When you enrich a reel, write with merge (`set(data, { merge: true })` or `update`), never a full `set` without merge, so a reel JasMehr archived stays archived. Never write `archived` yourself. A doc that is gone was deleted by him on purpose: don't recreate it.
 
+Re-evaluation queue: when JasMehr taps "Not BS, re-evaluate", the app writes `isBS: false`, `reevalRequested: true`, `reevalRequestedAt` (server time) and nothing else. Muse queries `reevalRequested == true`, re-researches, writes the fresh review and sets `reevalRequested: false`. Rules stop the app from clearing it or re-flagging `isBS`.
+
 Fields the page reads beyond the v1 list: `subcat` (string), `links` (array of `{ label, url: string|null, paid: boolean, note }`), `forYou` (string; leave it out until written, the block is hidden when empty).
