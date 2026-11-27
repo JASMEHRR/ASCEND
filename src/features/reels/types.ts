@@ -73,3 +73,22 @@ export interface Reel {
   /** Set from the page; archived reels leave every view except Archived. */
   archived: boolean;
 }
+
+/** Which half of life a reel belongs to; the Reels page can show one at a time. */
+export const SIDES = ['work', 'personal'] as const;
+export type Side = (typeof SIDES)[number];
+
+/**
+ * JasMehr's own category (Anime, Claude...), at `users/{uid}/reelCats/{id}`.
+ * Written only from the app; Muse never touches it, so a reel Muse rewrites
+ * keeps its categories. A reel can sit in several.
+ */
+export interface ReelCategory {
+  id: string;
+  name: string;
+  side: Side;
+  reelIds: string[];
+}
+
+/** Work/Personal per Muse division, at `users/{uid}/reelPrefs/sides`; unset ones use the defaults. */
+export type DivisionSides = Partial<Record<ReelBucket, Side>>;

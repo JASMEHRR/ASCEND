@@ -32,6 +32,7 @@ import {
   Link2,
   Loader2,
   Search,
+  Tag,
   Trash2,
   Undo2,
   VideoOff,
@@ -39,15 +40,33 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
-import { deleteReel, setReelArchived, subscribeReels } from './reelsClient';
+import {
+  createCategory,
+  deleteCategory,
+  deleteReel,
+  renameCategory,
+  setCategorySide,
+  setDivisionSide,
+  setReelArchived,
+  setReelsInCategory,
+  subscribeCategories,
+  subscribeDivisionSides,
+  subscribeReels,
+} from './reelsClient';
+import { CategorySheet, ManageCategories, SIDE_LABEL, SideBadge, SideSwitch } from './ReelCategories';
 import {
   TABS,
   countTabs,
   divisions,
   embedUrl,
+  categoryIndex,
+  divisionSide,
   groupBy,
   headlineOf,
+  inSide,
   inTab,
+  sortCategories,
+  type SideFilter,
   matchesSearch,
   safeLink,
   scoreTone,
@@ -58,7 +77,7 @@ import {
   type SortMode,
   type TabId,
 } from './logic';
-import type { ClaimStatus, Reel, ReelLink } from './types';
+import type { ClaimStatus, DivisionSides, Reel, ReelBucket, ReelCategory, ReelLink, Side } from './types';
 
 export default function ReelsHub() {
   const { user } = useAuth();
@@ -79,16 +98,61 @@ export default function ReelsHub() {
     );
   }, [uid]);
 
+  const [cats, setCats] = useState<ReelCategory[]>([]);
+  const [sides, setSides] = useState<DivisionSides>({});
+  useEffect(() => {
+    if (!uid) return;
+    const offCats = subscribeCategories(uid, setCats, () => undefined);
+    const offSides = subscribeDivisionSides(uid, setSides);
+    return () => {
+      offCats();
+      offSides();
+    };
+  }, [uid]);
+
   const noUser = () => Promise.reject(new Error('Not signed in.'));
+  const catApi: CategoryApi = {
+    create: (name, side, reelIds) => (uid ? createCategory(uid, name, side, reelIds) : noUser()),
+    setSide: (id, side) => (uid ? setCategorySide(uid, id, side) : noUser()),
+    rename: (id, name) => (uid ? renameCategory(uid, id, name) : noUser()),
+    remove: (id) => (uid ? deleteCategory(uid, id) : noUser()),
+    setReels: (id, reelIds, on) => (uid ? setReelsInCategory(uid, id, reelIds, on) : noUser()),
+    setDivisionSide: (bucket, side) => (uid ? setDivisionSide(uid, bucket, side) : noUser()),
+  };
   return (
     <ReelsView
       items={items}
       loadError={loadError}
       setArchived={(id, archived) => (uid ? setReelArchived(uid, id, archived) : noUser())}
       remove={(id) => (uid ? deleteReel(uid, id) : noUser())}
+      cats={cats}
+      divisionSides={sides}
+      catApi={catApi}
     />
   );
 }
+
+/** The category writes the page can make (all on JasMehr's own reelCats / reelPrefs). */
+export interface CategoryApi {
+  create: (name: string, side: Side, reelIds?: string[]) => Promise<string>;
+  setSide: (id: string, side: Side) => Promise<void>;
+  rename: (id: string, name: string) => Promise<void>;
+  remove: (id: string) => Promise<void>;
+  setReels: (id: string, reelIds: string[], on: boolean) => Promise<void>;
+  setDivisionSide: (bucket: ReelBucket, side: Side) => Promise<void>;
+}
+
+type ViewId = TabId | 'home' | 'archived' | `cat:${string}`;
+
+const SIDE_KEY = 'ascend_reels_side';
+const readSide = (): SideFilter => {
+  try {
+    const v = localStorage.getItem(SIDE_KEY);
+    return v === 'work' || v === 'personal' ? v : 'all';
+  } catch {
+    return 'all';
+  }
+};
 
 /** How far a card has to travel before letting go archives or deletes it. */
 const SWIPE_PX = 90;
@@ -119,15 +183,24 @@ export function ReelsView({
   loadError,
   setArchived,
   remove,
+  cats = [],
+  divisionSides = {},
+  catApi,
 }: {
   items: Reel[] | null;
   loadError: string | null;
   setArchived: (id: string, archived: boolean) => Promise<void>;
   remove: (id: string) => Promise<void>;
+  cats?: ReelCategory[];
+  divisionSides?: DivisionSides;
+  catApi?: CategoryApi;
 }) {
   const toast = useToast();
-  const [view, setView] = useState<TabId | 'home' | 'archived'>('home');
-  const [undo, setUndo] = useState<Reel | null>(null);
+  const [view, setView] = useState<ViewId>('home');
+  const [undo, setUndo] = useState<{ label: string; strong: string; revert: () => Promise<void> } | null>(null);
+  const [side, setSideState] = useState<SideFilter>(readSide);
+  const [sheetFor, setSheetFor] = useState<string | null>(null);
+  const [showManage, setShowManage] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<Reel | null>(null);
   const [tag, setTag] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -135,10 +208,39 @@ export function ReelsView({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const topRef = useRef<HTMLDivElement>(null);
 
-  // Archived reels drop out of every count and view except Archived.
-  const all = useMemo(() => (items ?? []).filter((r) => !r.archived), [items]);
-  const archivedList = useMemo(() => sortReels((items ?? []).filter((r) => r.archived), 'newest'), [items]);
+  // His categories per reel, and whether a reel is Work, Personal or both.
+  const catIdx = useMemo(() => categoryIndex(cats), [cats]);
+  const catsOf = (id: string) => catIdx.get(id) ?? [];
+  const showsOn = (r: Reel, s: SideFilter) => inSide(r, s, catIdx.get(r.id) ?? [], divisionSides);
+  // Archived reels drop out of every count and view except Archived; the
+  // Work / Personal switch scopes everything, Archived included.
+  const live = useMemo(() => (items ?? []).filter((r) => !r.archived), [items]);
+  const sideCounts = useMemo(
+    () => ({ all: live.length, work: live.filter((r) => showsOn(r, 'work')).length, personal: live.filter((r) => showsOn(r, 'personal')).length }),
+    [live, catIdx, divisionSides],
+  );
+  const all = useMemo(() => live.filter((r) => showsOn(r, side)), [live, side, catIdx, divisionSides]);
+  const archivedList = useMemo(
+    () => sortReels((items ?? []).filter((r) => r.archived && showsOn(r, side)), 'newest'),
+    [items, side, catIdx, divisionSides],
+  );
   const inArchive = view === 'archived';
+  const viewCat = view.startsWith('cat:') ? (cats.find((c) => c.id === view.slice(4)) ?? null) : null;
+  const countIn = (pool: Reel[]) => {
+    const ids = new Set(pool.map((r) => r.id));
+    return new Map(cats.map((c) => [c.id, c.reelIds.filter((id) => ids.has(id)).length]));
+  };
+  const catCounts = useMemo(() => countIn(all), [cats, all]);
+  const liveCatCounts = useMemo(() => countIn(live), [cats, live]);
+  const setSide = (v: SideFilter) => {
+    setSideState(v);
+    setSelectedId(null);
+    try {
+      localStorage.setItem(SIDE_KEY, v);
+    } catch {
+      /* private mode: just not remembered */
+    }
+  };
   // Looked up by id on every render, so a live update keeps the same reel
   // open; one archived or restored out of the current view closes.
   const selected = selectedId ? ((inArchive ? archivedList : all).find((r) => r.id === selectedId) ?? null) : null;
@@ -155,11 +257,17 @@ export function ReelsView({
     }
     if (view === 'home') return [];
     if (view === 'archived') return [{ name: '', reels: archivedList }];
+    if (view.startsWith('cat:')) {
+      if (!viewCat) return [];
+      const ids = new Set(viewCat.reelIds);
+      return groupBy(all.filter((r) => ids.has(r.id)), (r) => r.bucket ?? '', sort);
+    }
     if (view === 'all') return groupBy(all, (r) => r.bucket ?? '', sort);
-    const list = all.filter((r) => inTab(r, view));
-    if (view === 'top' || view === 'bs') return [{ name: '', reels: sortReels(list, sort) }];
+    const tab = view as TabId;
+    const list = all.filter((r) => inTab(r, tab));
+    if (tab === 'top' || tab === 'bs') return [{ name: '', reels: sortReels(list, sort) }];
     return groupBy(list, (r) => r.subcat, sort);
-  }, [all, archivedList, querying, tag, search, view, sort]);
+  }, [all, archivedList, querying, tag, search, view, viewCat, sort]);
   const resultCount = groups.reduce((n, g) => n + g.reels.length, 0);
   // The list in reading order, for ← / → and for "next reel" after a removal.
   const flat = useMemo(() => groups.flatMap((g) => g.reels), [groups]);
@@ -192,7 +300,7 @@ export function ReelsView({
 
   const archive = (r: Reel) => {
     moveOff(r);
-    setUndo(r);
+    setUndo({ label: 'Archived', strong: r.title, revert: () => setArchived(r.id, false) });
     setArchived(r.id, true).catch((err) => {
       setUndo(null);
       fail('archive')(err);
@@ -202,11 +310,35 @@ export function ReelsView({
     moveOff(r);
     setArchived(r.id, false).catch(fail('restore'));
   };
-  const undoArchive = () => {
+  const undoLast = () => {
     if (!undo) return;
-    const r = undo;
+    const u = undo;
     setUndo(null);
-    setArchived(r.id, false).catch(fail('undo'));
+    u.revert().catch(fail('undo'));
+  };
+
+  // --- his categories ---
+  const quickAdd = (name: string, s: Side) =>
+    catApi
+      ?.create(name, s)
+      .then(() => toast.show({ kind: 'info', title: `Made "${name}"`, message: 'Open a reel and tap 🏷, or use "Put all in…" on any list.' }))
+      .catch(fail('make the category'));
+  /** Puts every reel in the current list into a category; Undo takes back only the ones it added. */
+  const putAllIn = (catId: string, reels: Reel[] = flat) => {
+    if (catId === '__new') return setShowManage(true);
+    const cat = cats.find((c) => c.id === catId);
+    if (!cat || !catApi) return;
+    const already = new Set(cat.reelIds);
+    const added = reels.map((r) => r.id).filter((id) => !already.has(id));
+    if (added.length === 0) {
+      toast.show({ kind: 'info', title: 'Already there', message: `All ${reels.length} are in ${cat.name}.` });
+      return;
+    }
+    setUndo({ label: `Put ${added.length} in`, strong: cat.name, revert: () => catApi.setReels(cat.id, added, false) });
+    catApi.setReels(cat.id, added, true).catch((err) => {
+      setUndo(null);
+      fail('add to the category')(err);
+    });
   };
   const confirmRemove = () => {
     const r = confirmDelete;
@@ -219,7 +351,7 @@ export function ReelsView({
     );
   };
 
-  const open = (next: TabId | 'home' | 'archived') => {
+  const open = (next: ViewId) => {
     setView(next);
     setTag(null);
     setSearch('');
@@ -230,11 +362,19 @@ export function ReelsView({
     setSelectedId(null);
   };
 
-  const heading = querying ? 'Results' : view === 'home' ? null : view === 'archived' ? 'Archived' : tabLabel(view);
+  const heading = querying
+    ? 'Results'
+    : view === 'home'
+      ? null
+      : view === 'archived'
+        ? 'Archived'
+        : view.startsWith('cat:')
+          ? (viewCat?.name ?? 'Category')
+          : tabLabel(view as TabId);
 
   // Desktop keys while a reel is open: ← → move, Backspace/Delete remove (asks), A archive, Esc back.
   useEffect(() => {
-    if (!selected || confirmDelete) return;
+    if (!selected || confirmDelete || sheetFor || showManage) return;
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -243,6 +383,7 @@ export function ReelsView({
       else if (e.key === 'ArrowLeft') step(-1);
       else if (e.key === 'Backspace' || e.key === 'Delete') setConfirmDelete(selected);
       else if (e.key === 'a' || e.key === 'A') (selected.archived ? restore : archive)(selected);
+      else if (e.key === 'c' || e.key === 'C') setSheetFor(selected.id);
       else if (e.key === 'Escape') setSelectedId(null);
       else return;
       e.preventDefault();
@@ -315,6 +456,28 @@ export function ReelsView({
           )}
         </div>
 
+        <SideSwitch value={side} onChange={setSide} counts={sideCounts} />
+
+        {(view !== 'home' || querying) && !inArchive && flat.length > 0 && catApi && (
+          <label className="relative w-fit">
+            <span className="sr-only">Put every reel in this list into a category</span>
+            <select
+              value=""
+              onChange={(e) => putAllIn(e.target.value, flat)}
+              className="cursor-pointer appearance-none rounded-full border border-white/10 bg-white/[0.04] py-2 pl-3 pr-8 text-[13px] font-semibold text-white/75 outline-none focus:border-brand-400/50"
+            >
+              <option value="">🏷 Put all {flat.length} in…</option>
+              {sortCategories(cats).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({SIDE_LABEL[c.side]})
+                </option>
+              ))}
+              <option value="__new">+ New category…</option>
+            </select>
+            <ChevronDown size={12} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-white/40" />
+          </label>
+        )}
+
         {tag && (
           <div className="flex items-center gap-2 text-[13px] text-white/55">
             Tag across all divisions:
@@ -341,7 +504,7 @@ export function ReelsView({
               <SpecialTile label="🚩 BS" count={counts.bs} danger onClick={() => open('bs')} />
             </div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-              {divs.map((d) => (
+              {divs.filter((d) => side === 'all' || d.count > 0).map((d) => (
                 <button
                   key={d.bucket}
                   onClick={() => open(d.bucket)}
@@ -358,8 +521,9 @@ export function ReelsView({
                       </span>
                     )}
                   </span>
-                  <span className="text-[12.5px] font-semibold text-white/45">
+                  <span className="flex items-center gap-2 text-[12.5px] font-semibold text-white/45">
                     {d.count} reel{d.count === 1 ? '' : 's'}
+                    <SideBadge side={divisionSide(d.bucket, divisionSides)} />
                   </span>
                   {d.subcats.length > 0 && (
                     <span className="line-clamp-2 text-[12.5px] leading-snug text-white/55">{d.subcats.join(' · ')}</span>
@@ -367,6 +531,54 @@ export function ReelsView({
                 </button>
               ))}
             </div>
+            {catApi && (
+              <section aria-label="My categories">
+                <div className="mb-1.5 flex items-center gap-2 px-1">
+                  <p className="font-mono text-[12px] font-bold uppercase tracking-widest text-white/45">My categories</p>
+                  <span className="flex-1" />
+                  <button onClick={() => setShowManage(true)} className="cursor-pointer text-[13px] font-semibold text-brand-300 hover:underline">
+                    {cats.length ? 'Manage' : '+ New'}
+                  </button>
+                </div>
+                {cats.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-white/15 p-3.5 text-[13px] leading-snug text-white/55">
+                    Sort reels your own way (a reel can be in several), and mark each category Work or Personal so the switch above can split them.
+                    <div className="mt-2.5 flex flex-wrap gap-1.5">
+                      <button onClick={() => quickAdd('Anime', 'personal')} className="cursor-pointer rounded-full border border-white/12 bg-white/[0.05] px-3 py-1.5 text-[13px] font-semibold text-white/80 hover:text-white">
+                        + Anime · Personal
+                      </button>
+                      <button onClick={() => quickAdd('Claude', 'work')} className="cursor-pointer rounded-full border border-white/12 bg-white/[0.05] px-3 py-1.5 text-[13px] font-semibold text-white/80 hover:text-white">
+                        + Claude · Work
+                      </button>
+                      <button onClick={() => setShowManage(true)} className="cursor-pointer rounded-full border border-white/12 bg-white/[0.05] px-3 py-1.5 text-[13px] font-semibold text-white/80 hover:text-white">
+                        + Your own
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+                    {sortCategories(cats)
+                      .filter((c) => side === 'all' || c.side === side)
+                      .map((c) => (
+                        <button
+                          key={c.id}
+                          onClick={() => open(`cat:${c.id}`)}
+                          className="flex cursor-pointer flex-col gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-left transition-colors hover:border-white/20 hover:bg-white/[0.06]"
+                        >
+                          <span className="flex min-w-0 items-center gap-1.5 text-[14px] font-bold text-white">
+                            <Tag size={13} className="shrink-0 text-white/40" />
+                            <span className="truncate">{c.name}</span>
+                          </span>
+                          <span className="flex items-center gap-2 text-[12.5px] font-semibold text-white/45">
+                            {catCounts.get(c.id) ?? 0} reel{catCounts.get(c.id) === 1 ? '' : 's'}
+                            <SideBadge side={c.side} />
+                          </span>
+                        </button>
+                      ))}
+                  </div>
+                )}
+              </section>
+            )}
             {tags.length > 0 && (
               <div>
                 <p className="mb-1.5 px-1 font-mono text-[12px] font-bold uppercase tracking-widest text-white/45">Tags</p>
@@ -391,9 +603,29 @@ export function ReelsView({
           groups.map((g) => (
             <section key={g.name || 'flat'} className="flex flex-col gap-1.5">
               {g.name && (
-                <h3 className="flex items-baseline gap-2 px-1">
+                <h3 className="flex items-center gap-2 px-1">
                   <span className="font-mono text-[12px] font-bold uppercase tracking-widest text-white/60">{g.name}</span>
                   <span className="font-mono text-[12px] text-white/40">{g.reels.length}</span>
+                  <span className="flex-1" />
+                  {catApi && !inArchive && groups.length > 1 && (
+                    <label className="relative shrink-0">
+                      <span className="sr-only">Put the {g.reels.length} reels in {g.name} into a category</span>
+                      <select
+                        value=""
+                        onChange={(e) => putAllIn(e.target.value, g.reels)}
+                        className="cursor-pointer appearance-none rounded-full border border-white/8 bg-transparent py-1 pl-2.5 pr-6 text-[12px] font-semibold text-white/50 outline-none hover:text-white focus:border-brand-400/50"
+                      >
+                        <option value="">🏷 Put in…</option>
+                        {sortCategories(cats).map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} ({SIDE_LABEL[c.side]})
+                          </option>
+                        ))}
+                        <option value="__new">+ New category…</option>
+                      </select>
+                      <ChevronDown size={11} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-white/35" />
+                    </label>
+                  )}
                 </h3>
               )}
               {g.reels.map((r) => (
@@ -403,7 +635,7 @@ export function ReelsView({
                   onSwipeLeft={() => (r.archived ? restore(r) : archive(r))}
                   onSwipeRight={() => setConfirmDelete(r)}
                 >
-                  <ReelRow reel={r} selected={r.id === selectedId} onSelect={() => setSelectedId(r.id)} activeTag={tag} onTag={pickTag} />
+                  <ReelRow reel={r} cats={catsOf(r.id)} selected={r.id === selectedId} onSelect={() => setSelectedId(r.id)} activeTag={tag} onTag={pickTag} />
                 </SwipeRow>
               ))}
             </section>
@@ -423,6 +655,35 @@ export function ReelsView({
           onTag={pickTag}
           onArchive={() => (selected.archived ? restore(selected) : archive(selected))}
           onDelete={() => setConfirmDelete(selected)}
+          catNames={catsOf(selected.id).map((c) => c.name)}
+          onCategorize={catApi ? () => setSheetFor(selected.id) : null}
+        />
+      )}
+
+      {sheetFor && catApi && (items ?? []).some((r) => r.id === sheetFor) && (
+        <CategorySheet
+          reelTitle={(items ?? []).find((r) => r.id === sheetFor)?.title ?? ''}
+          cats={cats}
+          inCats={new Set(catsOf(sheetFor).map((c) => c.id))}
+          onToggle={(c, on) => void catApi.setReels(c.id, [sheetFor], on).catch(fail('update the category'))}
+          onCreate={(name, s) => catApi.create(name, s, [sheetFor]).catch(fail('make the category'))}
+          onClose={() => setSheetFor(null)}
+        />
+      )}
+      {showManage && catApi && (
+        <ManageCategories
+          cats={cats}
+          counts={liveCatCounts}
+          divisionSides={divisionSides}
+          onCreate={(name, s) => catApi.create(name, s).catch(fail('make the category'))}
+          onSide={(c, s) => void catApi.setSide(c.id, s).catch(fail('change the category'))}
+          onRename={(c, name) => void catApi.rename(c.id, name).catch(fail('rename the category'))}
+          onDelete={(c) => {
+            if (view === `cat:${c.id}`) open('home');
+            void catApi.remove(c.id).catch(fail('delete the category'));
+          }}
+          onDivisionSide={(b, s) => void catApi.setDivisionSide(b, s).catch(fail('move the division'))}
+          onClose={() => setShowManage(false)}
         />
       )}
 
@@ -433,10 +694,10 @@ export function ReelsView({
             className="fixed left-1/2 z-[60] flex w-[min(24rem,calc(100vw-1.5rem))] -translate-x-1/2 items-center gap-3 rounded-2xl border border-white/12 bg-app/90 px-4 py-3 shadow-lg backdrop-blur-md bottom-[calc(5.75rem+env(safe-area-inset-bottom))] md:bottom-6"
           >
             <p className="min-w-0 flex-1 truncate text-[13px] text-white/80">
-              Archived <span className="font-semibold text-white">{undo.title}</span>
+              {undo.label} <span className="font-semibold text-white">{undo.strong}</span>
             </p>
             <button
-              onClick={undoArchive}
+              onClick={undoLast}
               className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.08] px-3 py-2 text-[13px] font-bold text-white hover:bg-white/15"
             >
               <Undo2 size={13} /> Undo
@@ -653,12 +914,14 @@ function BsBadge() {
 
 function ReelRow({
   reel,
+  cats,
   selected,
   onSelect,
   activeTag,
   onTag,
 }: {
   reel: Reel;
+  cats: ReelCategory[];
   selected: boolean;
   onSelect: () => void;
   activeTag: string | null;
@@ -687,6 +950,11 @@ function ReelRow({
               </span>
             )}
             {reel.links.some((l) => l.paid) && <PaidBadge />}
+            {cats.map((c) => (
+              <span key={c.id} className="inline-flex items-center gap-1 rounded-full bg-white/[0.07] px-2 py-0.5 text-[11.5px] font-semibold text-white/75">
+                <Tag size={10} /> {c.name}
+              </span>
+            ))}
           </span>
         </span>
       </button>
@@ -717,6 +985,8 @@ function ReelDetail({
   onTag,
   onArchive,
   onDelete,
+  catNames,
+  onCategorize,
 }: {
   reel: Reel;
   backLabel: string;
@@ -728,6 +998,8 @@ function ReelDetail({
   onTag: (tag: string) => void;
   onArchive: () => void;
   onDelete: () => void;
+  catNames: string[];
+  onCategorize: (() => void) | null;
 }) {
   const ig = safeLink(reel.igUrl);
   const headline = headlineOf(reel);
@@ -745,7 +1017,19 @@ function ReelDetail({
           <ArrowLeft size={14} className="shrink-0" /> <span className="truncate">{backLabel}</span>
         </button>
         <span className="flex-1" />
-        <span className="hidden text-[12px] text-white/35 lg:inline">← → move · Del remove · A archive</span>
+        <span className="hidden text-[12px] text-white/35 xl:inline">← → move · Del remove · A archive · C category</span>
+        {onCategorize && (
+          <button
+            onClick={onCategorize}
+            title="Put in a category (C)"
+            aria-label={catNames.length ? `Categories: ${catNames.join(', ')}` : 'Put in a category'}
+            className="flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 text-[13px] font-semibold text-white/75 hover:text-white"
+          >
+            <Tag size={14} />
+            <span className="hidden max-w-[14rem] truncate sm:inline">{catNames.length ? catNames.join(', ') : 'Category'}</span>
+            {catNames.length > 0 && <span className="font-mono text-[12px] sm:hidden">{catNames.length}</span>}
+          </button>
+        )}
         {position && (
           <span className="font-mono text-[12px] text-white/45">
             {position.at} / {position.of}
@@ -812,6 +1096,7 @@ function ReelDetail({
             {reel.author && <span>{reel.author}</span>}
             {reel.sharedAt && <span>· {formatShared(reel.sharedAt)}</span>}
             {reel.bucket && <span>· {reel.bucket}{reel.subcat ? ` › ${reel.subcat}` : ''}</span>}
+            {catNames.length > 0 && <span>· 🏷 {catNames.join(', ')}</span>}
           </p>
         </div>
         {reel.whatItIs && reel.whatItIs !== headline && <Detail label="What this reel is about">{reel.whatItIs}</Detail>}

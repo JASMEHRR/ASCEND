@@ -3,7 +3,20 @@
  * counts, tag/search filtering, sorting and link safety. No Firebase or React
  * here, so it runs under plain `tsx` in logic.test.ts.
  */
-import { CLAIM_STATUSES, REEL_BUCKETS, type ClaimStatus, type Reel, type ReelBucket, type ReelClaim, type ReelLink, type ReelSource } from './types';
+import {
+  CLAIM_STATUSES,
+  REEL_BUCKETS,
+  SIDES,
+  type ClaimStatus,
+  type DivisionSides,
+  type Reel,
+  type ReelBucket,
+  type ReelCategory,
+  type ReelClaim,
+  type ReelLink,
+  type ReelSource,
+  type Side,
+} from './types';
 
 const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
 
@@ -243,3 +256,71 @@ export function embedUrl(igUrl: string): string | null {
   const kind = m[1] === 'p' ? 'p' : m[1] === 'tv' ? 'tv' : 'reel';
   return `https://www.instagram.com/${kind}/${m[2]}/embed/`;
 }
+
+// --- Work / Personal and JasMehr's own categories -----------------------------
+
+/** Where each Muse division sits until he moves it. */
+export const DEFAULT_DIVISION_SIDE: Record<ReelBucket, Side> = {
+  Opportunities: 'work',
+  'Claude & Coding': 'work',
+  'Video & Animation': 'work',
+  'AI Models & Agents': 'work',
+  'Business & Creator': 'work',
+  'Trading & Finance': 'personal',
+  'Desktop, Voice & Home': 'personal',
+  'Deals & Shopping': 'personal',
+  'Entertainment & Explainers': 'personal',
+};
+
+export const CAT_NAME_MAX = 40;
+
+/** Trimmed, single-spaced, at most CAT_NAME_MAX characters. */
+export const cleanCatName = (name: string): string => name.replace(/\s+/g, ' ').trim().slice(0, CAT_NAME_MAX);
+
+const asSide = (v: unknown): Side | null => (SIDES.includes(v as Side) ? (v as Side) : null);
+
+export function normalizeCategory(id: string, raw: Record<string, unknown>): ReelCategory {
+  return {
+    id,
+    name: cleanCatName(str(raw.name)) || 'Untitled',
+    side: asSide(raw.side) ?? 'personal',
+    reelIds: Array.isArray(raw.reelIds) ? [...new Set(raw.reelIds.filter((x): x is string => typeof x === 'string'))] : [],
+  };
+}
+
+export function normalizeDivisionSides(raw: Record<string, unknown> | undefined): DivisionSides {
+  const out: DivisionSides = {};
+  for (const b of REEL_BUCKETS) {
+    const s = asSide(raw?.[b]);
+    if (s) out[b] = s;
+  }
+  return out;
+}
+
+export const divisionSide = (bucket: ReelBucket, prefs: DivisionSides): Side => prefs[bucket] ?? DEFAULT_DIVISION_SIDE[bucket];
+
+/** Work categories first, then by name. */
+export const sortCategories = (cats: ReelCategory[]): ReelCategory[] =>
+  [...cats].sort((a, b) => (a.side === b.side ? a.name.localeCompare(b.name) : a.side === 'work' ? -1 : 1));
+
+/** reel id -> the categories it is in. */
+export function categoryIndex(cats: ReelCategory[]): Map<string, ReelCategory[]> {
+  const map = new Map<string, ReelCategory[]>();
+  for (const c of sortCategories(cats)) for (const id of c.reelIds) map.set(id, [...(map.get(id) ?? []), c]);
+  return map;
+}
+
+/**
+ * A reel's side(s): his own categories decide when it has any (it can be both,
+ * e.g. Anime + Claude); otherwise its Muse division does. A reel with neither
+ * shows on both sides, so nothing is ever hidden by accident.
+ */
+export function sidesOf(reel: Pick<Reel, 'bucket'>, cats: ReelCategory[], prefs: DivisionSides): Side[] {
+  if (cats.length) return [...new Set(cats.map((c) => c.side))];
+  return reel.bucket ? [divisionSide(reel.bucket, prefs)] : [...SIDES];
+}
+
+export type SideFilter = 'all' | Side;
+
+export const inSide = (reel: Pick<Reel, 'bucket'>, side: SideFilter, cats: ReelCategory[], prefs: DivisionSides): boolean =>
+  side === 'all' || sidesOf(reel, cats, prefs).includes(side);

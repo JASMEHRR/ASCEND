@@ -4,6 +4,15 @@
  *   npx tsx src/features/reels/logic.test.ts
  */
 import assert from 'node:assert/strict';
+import {
+  categoryIndex,
+  cleanCatName,
+  inSide,
+  normalizeCategory,
+  normalizeDivisionSides,
+  sidesOf,
+  sortCategories,
+} from './logic';
 import { EMPTY_FILTERS, countTabs, divisions, embedUrl, groupBy, headlineOf, topTags, matchesFilters, normalizeReel, safeLink, scoreTone, sortReels } from './logic';
 import { SEED_REELS } from './seedReels';
 
@@ -103,5 +112,27 @@ assert.equal(headlineOf({ oneLine: 'Real tool.', whatItIs: 'A. B.', title: 'T' }
 assert.equal(headlineOf({ oneLine: '', whatItIs: 'Costs $8.79/mo. Renews higher.', title: 'T' }), 'Costs $8.79/mo.');
 assert.equal(headlineOf({ oneLine: '', whatItIs: 'No full stop here', title: 'T' }), 'No full stop here');
 assert.equal(headlineOf({ oneLine: '', whatItIs: '', title: 'T' }), 'T');
+
+// Own categories and Work / Personal.
+const anime = normalizeCategory('c1', { name: '  Anime   picks ', side: 'personal', reelIds: ['r1', 'r1', 3] });
+const claude = normalizeCategory('c2', { name: 'Claude', side: 'work', reelIds: ['r1', 'r2'] });
+assert.equal(anime.name, 'Anime picks');
+assert.deepEqual(anime.reelIds, ['r1']);
+assert.equal(normalizeCategory('c3', { side: 'nope' }).side, 'personal');
+assert.equal(cleanCatName('x'.repeat(60)).length, 40);
+assert.deepEqual(sortCategories([anime, claude]).map((c) => c.id), ['c2', 'c1']);
+const idx = categoryIndex([anime, claude]);
+assert.deepEqual(idx.get('r1')!.map((c) => c.name), ['Claude', 'Anime picks']);
+const prefs = normalizeDivisionSides({ 'Claude & Coding': 'personal', Bogus: 'work', Opportunities: 'x' });
+assert.deepEqual(prefs, { 'Claude & Coding': 'personal' });
+// Own categories win; a reel in a Work and a Personal category shows on both sides.
+assert.deepEqual(sidesOf({ bucket: 'Entertainment & Explainers' }, idx.get('r1')!, {}).sort(), ['personal', 'work']);
+// No own category: its division decides (default, or his override).
+assert.deepEqual(sidesOf({ bucket: 'Entertainment & Explainers' }, [], {}), ['personal']);
+assert.deepEqual(sidesOf({ bucket: 'Claude & Coding' }, [], {}), ['work']);
+assert.deepEqual(sidesOf({ bucket: 'Claude & Coding' }, [], prefs), ['personal']);
+assert.deepEqual(sidesOf({ bucket: null }, [], {}), ['work', 'personal']);
+assert.equal(inSide({ bucket: 'Opportunities' }, 'personal', [], {}), false);
+assert.equal(inSide({ bucket: 'Opportunities' }, 'all', [], {}), true);
 
 console.log('reels logic: all passed');
