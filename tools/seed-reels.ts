@@ -72,7 +72,7 @@ async function main() {
               author: '@sample.live',
               sharedAt: new Date().toISOString(),
               bucket: 'Deals & Shopping',
-              tags: ['live-test'],
+              tags: ['live-test', 'mcp'],
               score: 7,
               isBS: false,
               oneLine: 'Sample: this card should appear without a refresh.',
