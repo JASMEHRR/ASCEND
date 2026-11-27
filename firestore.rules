@@ -71,11 +71,18 @@ service cloud.firestore {
         && request.resource.data.updatedAt is string;
     }
 
-    // The Reels Library is written only by Muse through the Admin SDK, which
-    // bypasses these rules. The owner's browser may read it; no page may
-    // create, change or delete a reel.
+    // The Reels Library is written by Muse through the Admin SDK, which
+    // bypasses these rules. From a page, only JasMehr's own account may
+    // archive/restore a reel (the `archived` field alone, as a bool) or delete
+    // one. No create, and Muse's fields can't be edited from the app.
     match /users/{userId}/reels/{reelId} {
       allow read: if isOwner(userId);
+      allow update: if isOwner(userId)
+        && userId == 'dBZTvCHfyiPHFLjHxv2ckf37iOr2'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['archived'])
+        && request.resource.data.archived is bool;
+      allow delete: if isOwner(userId)
+        && userId == 'dBZTvCHfyiPHFLjHxv2ckf37iOr2';
     }
 
     // --- Arena: shared habit rooms -------------------------------------
