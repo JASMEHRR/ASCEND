@@ -641,7 +641,9 @@ function ReelRow({
         <ScoreBadge score={reel.score} />
         <span className="min-w-0 flex-1">
           <span className="block text-[14px] font-semibold leading-snug text-white">{reel.title}</span>
-          <span className="mt-0.5 line-clamp-2 block text-[13px] font-bold leading-snug text-white/85">{headlineOf(reel)}</span>
+          {headlineOf(reel) !== reel.title && (
+            <span className="mt-0.5 line-clamp-2 block text-[13px] font-bold leading-snug text-white/85">{headlineOf(reel)}</span>
+          )}
           <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-white/45">
             {reel.author && <span>{reel.author}</span>}
             {reel.sharedAt && <span>· {formatShared(reel.sharedAt)}</span>}
