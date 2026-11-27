@@ -3,8 +3,9 @@
  * sent to Muse for review.
  *
  * Muse (his separate agent) writes and updates every field through its own
- * Admin SDK credentials. The browser only reads; firestore.rules allows no
- * write of any kind from a page.
+ * Admin SDK credentials. The browser may only flip `archived` and delete a
+ * reel (firestore.rules enforces that split); it never creates one or edits
+ * Muse's fields.
  */
 
 export const REEL_BUCKETS = [
@@ -34,6 +35,16 @@ export interface ReelSource {
   url: string;
 }
 
+/** Every product, repo, tool or service a reel mentions. */
+export interface ReelLink {
+  label: string;
+  /** Null when there is nothing to open (a subscription, an offline store). */
+  url: string | null;
+  paid: boolean;
+  /** The catch: price, renewal, beta status, "#ad". */
+  note: string;
+}
+
 export interface Reel {
   id: string;
   igUrl: string;
@@ -56,4 +67,9 @@ export interface Reel {
   sources: ReelSource[];
   nextAction: string;
   status: 'ready' | 'pending';
+  links: ReelLink[];
+  /** Muse's verdict on whether this reel helps JasMehr; '' until backfilled. */
+  forYou: string;
+  /** Set from the page; archived reels leave every view except Archived. */
+  archived: boolean;
 }

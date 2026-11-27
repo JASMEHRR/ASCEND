@@ -77,4 +77,25 @@ assert.equal(embedUrl(''), null);
 assert.equal(embedUrl('https://evil.com/reel/ABC/'), null);
 assert.equal(embedUrl('https://www.instagram.com/someuser/'), null);
 
+// Links, forYou, archived.
+const rich = normalizeReel('r', {
+  links: [
+    { label: 'Repo', url: 'https://github.com/x/y', paid: false, note: 'Free' },
+    { label: 'VPS', url: null, paid: true, note: '$8.79/mo' },
+    { note: 'no label or url' },
+    'junk',
+  ],
+  forYou: '  Not for you.  ',
+  archived: true,
+});
+assert.equal(rich.links.length, 2);
+assert.equal(rich.links[1].url, null);
+assert.equal(rich.links[1].paid, true);
+assert.equal(rich.forYou, 'Not for you.');
+assert.equal(rich.archived, true);
+const bare = normalizeReel('b', {});
+assert.deepEqual(bare.links, []);
+assert.equal(bare.forYou, '');
+assert.equal(bare.archived, false);
+
 console.log('reels logic: all passed');

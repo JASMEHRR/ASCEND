@@ -5,9 +5,10 @@ Firestore is the only meeting point. Everything lives under JasMehr's own user:
 
 | Who | Writes with | May write |
 |---|---|---|
-| Muse | its own Admin SDK key | `jobs/*` (create, redo, approve, cancel), `status/muse`, `internships/*`, `leads/*` |
+| Muse | its own Admin SDK key | `jobs/*` (create, redo, approve, cancel), `status/muse`, `internships/*`, `leads/*`, `reels/*` |
 | Laptop bridge | `/api/bridge` with the bridge key (no Admin key on the laptop) | its claim and result on `jobs/*`, `status/laptop` |
 | Ascend app (browser) | JasMehr's sign-in | reads `jobs` and `status`; writes neither |
+| Ascend app (browser) | JasMehr's sign-in | `reels/*`: only the `archived` field, and delete |
 
 Types: `src/features/muse/types.ts`. Rules for the laptop: `bridge-logic.ts`.
 
@@ -158,3 +159,11 @@ When Muse picks it up:
 1. Send JasMehr the list in `text`, one line per internship, with its link.
 2. Apply to the ones in `apply-queue` before the deadline if you can; say which ones need him.
 3. Close the doc (`status: "processed"`) as with any other coach-inbox task.
+
+## Reels Library
+
+Path: `users/{uid}/reels/{id}`. Muse writes every field; the app only sets `archived` (true/false) and may delete a doc.
+
+When you enrich a reel, write with merge (`set(data, { merge: true })` or `update`), never a full `set` without merge, so a reel JasMehr archived stays archived. Never write `archived` yourself. A doc that is gone was deleted by him on purpose: don't recreate it.
+
+Fields the page reads beyond the v1 list: `subcat` (string), `links` (array of `{ label, url: string|null, paid: boolean, note }`), `forYou` (string; leave it out until written, the block is hidden when empty).

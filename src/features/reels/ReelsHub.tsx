@@ -7,14 +7,38 @@
  * in a side pane (stacked video-first on a phone) with its review under it.
  * Search and tags always work across every division.
  *
- * Muse writes the reviews; this page only reads them live. It is owner-only:
+ * Swipe a card left to archive it (Undo bar), right to delete it (asks
+ * first); the opened reel has the same two as buttons for desktop. Archived
+ * reels leave every count and view and collect under Archived.
+ *
+ * Muse writes the reviews; this page reads them live and may only flip
+ * `archived` or delete a reel. It is owner-only:
  * the module is hidden from every other account (registry `ownerOnly`) and the
  * rules only let a user read their own `reels`, which only Muse fills.
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { AlertTriangle, ArrowLeft, ChevronDown, ChevronRight, ExternalLink, Film, Flag, Loader2, Search, VideoOff, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import {
+  AlertTriangle,
+  Archive,
+  ArchiveRestore,
+  ArrowLeft,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  Film,
+  Flag,
+  Link2,
+  Loader2,
+  Search,
+  Trash2,
+  Undo2,
+  VideoOff,
+  X,
+} from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { subscribeReels } from './reelsClient';
+import { useToast } from '../../context/ToastContext';
+import { deleteReel, setReelArchived, subscribeReels } from './reelsClient';
 import {
   TABS,
   countTabs,
@@ -32,7 +56,7 @@ import {
   type SortMode,
   type TabId,
 } from './logic';
-import type { ClaimStatus, Reel } from './types';
+import type { ClaimStatus, Reel, ReelLink } from './types';
 
 export default function ReelsHub() {
   const { user } = useAuth();
@@ -53,8 +77,20 @@ export default function ReelsHub() {
     );
   }, [uid]);
 
-  return <ReelsView items={items} loadError={loadError} />;
+  const noUser = () => Promise.reject(new Error('Not signed in.'));
+  return (
+    <ReelsView
+      items={items}
+      loadError={loadError}
+      setArchived={(id, archived) => (uid ? setReelArchived(uid, id, archived) : noUser())}
+      remove={(id) => (uid ? deleteReel(uid, id) : noUser())}
+    />
+  );
 }
+
+/** How far a card has to travel before letting go archives or deletes it. */
+const SWIPE_PX = 90;
+const UNDO_MS = 6000;
 
 const SCORE_STYLE: Record<ScoreTone, string> = {
   high: 'bg-emerald-500/15 text-emerald-300 border-emerald-400/35',
@@ -78,17 +114,34 @@ const tabLabel = (id: TabId) => TABS.find((t) => t.id === id)?.label ?? id;
 const isNarrow = () => typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches;
 
 /** Display side: home tiles, division sections, the reel pane. Knows nothing about Firestore. */
-export function ReelsView({ items, loadError }: { items: Reel[] | null; loadError: string | null }) {
-  const [view, setView] = useState<TabId | 'home'>('home');
+export function ReelsView({
+  items,
+  loadError,
+  setArchived,
+  remove,
+}: {
+  items: Reel[] | null;
+  loadError: string | null;
+  setArchived: (id: string, archived: boolean) => Promise<void>;
+  remove: (id: string) => Promise<void>;
+}) {
+  const toast = useToast();
+  const [view, setView] = useState<TabId | 'home' | 'archived'>('home');
+  const [undo, setUndo] = useState<Reel | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<Reel | null>(null);
   const [tag, setTag] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<SortMode>('score');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const topRef = useRef<HTMLDivElement>(null);
 
-  const all = useMemo(() => items ?? [], [items]);
-  // Looked up by id on every render, so a live update keeps the same reel open.
-  const selected = selectedId ? (all.find((r) => r.id === selectedId) ?? null) : null;
+  // Archived reels drop out of every count and view except Archived.
+  const all = useMemo(() => (items ?? []).filter((r) => !r.archived), [items]);
+  const archivedList = useMemo(() => sortReels((items ?? []).filter((r) => r.archived), 'newest'), [items]);
+  const inArchive = view === 'archived';
+  // Looked up by id on every render, so a live update keeps the same reel
+  // open; one archived or restored out of the current view closes.
+  const selected = selectedId ? ((inArchive ? archivedList : all).find((r) => r.id === selectedId) ?? null) : null;
   const counts = useMemo(() => countTabs(all), [all]);
   const divs = useMemo(() => divisions(all), [all]);
   const tags = useMemo(() => topTags(all), [all]);
@@ -101,11 +154,12 @@ export function ReelsView({ items, loadError }: { items: Reel[] | null; loadErro
       return groupBy(hits, (r) => r.bucket ?? '', sort);
     }
     if (view === 'home') return [];
+    if (view === 'archived') return [{ name: '', reels: archivedList }];
     if (view === 'all') return groupBy(all, (r) => r.bucket ?? '', sort);
     const list = all.filter((r) => inTab(r, view));
     if (view === 'top' || view === 'bs') return [{ name: '', reels: sortReels(list, sort) }];
     return groupBy(list, (r) => r.subcat, sort);
-  }, [all, querying, tag, search, view, sort]);
+  }, [all, archivedList, querying, tag, search, view, sort]);
   const resultCount = groups.reduce((n, g) => n + g.reels.length, 0);
 
   // Opening a reel on a phone swaps the list for the reel; start it at the top.
@@ -113,7 +167,46 @@ export function ReelsView({ items, loadError }: { items: Reel[] | null; loadErro
     if (selectedId && isNarrow()) topRef.current?.scrollIntoView({ block: 'start' });
   }, [selectedId]);
 
-  const open = (next: TabId | 'home') => {
+  // The undo bar lives a few seconds after each archive.
+  useEffect(() => {
+    if (!undo) return;
+    const t = window.setTimeout(() => setUndo(null), UNDO_MS);
+    return () => window.clearTimeout(t);
+  }, [undo]);
+
+  const fail = (what: string) => (err: unknown) =>
+    toast.show({ kind: 'warning', title: `Couldn't ${what}`, message: (err as Error).message || 'Try again in a moment.' });
+
+  const archive = (r: Reel) => {
+    if (selectedId === r.id) setSelectedId(null);
+    setUndo(r);
+    setArchived(r.id, true).catch((err) => {
+      setUndo(null);
+      fail('archive')(err);
+    });
+  };
+  const restore = (r: Reel) => {
+    if (selectedId === r.id) setSelectedId(null);
+    setArchived(r.id, false).catch(fail('restore'));
+  };
+  const undoArchive = () => {
+    if (!undo) return;
+    const r = undo;
+    setUndo(null);
+    setArchived(r.id, false).catch(fail('undo'));
+  };
+  const confirmRemove = () => {
+    const r = confirmDelete;
+    setConfirmDelete(null);
+    if (!r) return;
+    if (selectedId === r.id) setSelectedId(null);
+    remove(r.id).then(
+      () => toast.show({ kind: 'info', title: 'Deleted', message: r.title }),
+      fail('delete'),
+    );
+  };
+
+  const open = (next: TabId | 'home' | 'archived') => {
     setView(next);
     setTag(null);
     setSearch('');
@@ -124,7 +217,7 @@ export function ReelsView({ items, loadError }: { items: Reel[] | null; loadErro
     setSelectedId(null);
   };
 
-  const heading = querying ? 'Results' : view === 'home' ? null : tabLabel(view);
+  const heading = querying ? 'Results' : view === 'home' ? null : view === 'archived' ? 'Archived' : tabLabel(view);
 
   return (
     <div ref={topRef} className="mx-auto flex w-full max-w-6xl scroll-mt-4 gap-5 pb-8">
@@ -252,9 +345,16 @@ export function ReelsView({ items, loadError }: { items: Reel[] | null; loadErro
                 </div>
               </div>
             )}
+            <button
+              onClick={() => open('archived')}
+              className="flex w-fit cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-[13px] font-semibold text-white/60 hover:text-white"
+            >
+              <Archive size={14} /> Archived <span className="font-mono text-[12px] text-white/40">{archivedList.length}</span>
+            </button>
+            <p className="px-1 text-[12px] text-white/35">On a phone: swipe a reel left to archive it, right to delete it.</p>
           </>
         ) : resultCount === 0 ? (
-          <Message>Nothing here matches.</Message>
+          <Message>{inArchive && !querying ? 'Nothing archived. Swipe a reel left to archive it.' : 'Nothing here matches.'}</Message>
         ) : (
           groups.map((g) => (
             <section key={g.name || 'flat'} className="flex flex-col gap-1.5">
@@ -265,7 +365,14 @@ export function ReelsView({ items, loadError }: { items: Reel[] | null; loadErro
                 </h3>
               )}
               {g.reels.map((r) => (
-                <ReelRow key={r.id} reel={r} selected={r.id === selectedId} onSelect={() => setSelectedId(r.id)} activeTag={tag} onTag={pickTag} />
+                <SwipeRow
+                  key={r.id}
+                  leftLabel={r.archived ? 'Restore' : 'Archive'}
+                  onSwipeLeft={() => (r.archived ? restore(r) : archive(r))}
+                  onSwipeRight={() => setConfirmDelete(r)}
+                >
+                  <ReelRow reel={r} selected={r.id === selectedId} onSelect={() => setSelectedId(r.id)} activeTag={tag} onTag={pickTag} />
+                </SwipeRow>
               ))}
             </section>
           ))
@@ -274,9 +381,177 @@ export function ReelsView({ items, loadError }: { items: Reel[] | null; loadErro
 
       {selected && (
         <aside className="w-full lg:sticky lg:top-0 lg:max-h-[calc(100dvh-7rem)] lg:w-[400px] lg:shrink-0 lg:self-start lg:overflow-y-auto custom-scrollbar">
-          <ReelDetail reel={selected} onClose={() => setSelectedId(null)} activeTag={tag} onTag={pickTag} />
+          <ReelDetail
+            reel={selected}
+            onClose={() => setSelectedId(null)}
+            activeTag={tag}
+            onTag={pickTag}
+            onArchive={() => (selected.archived ? restore(selected) : archive(selected))}
+            onDelete={() => setConfirmDelete(selected)}
+          />
         </aside>
       )}
+
+      {undo &&
+        createPortal(
+          <div
+            role="status"
+            className="fixed left-1/2 z-[60] flex w-[min(24rem,calc(100vw-1.5rem))] -translate-x-1/2 items-center gap-3 rounded-2xl border border-white/12 bg-app/90 px-4 py-3 shadow-lg backdrop-blur-md bottom-[calc(5.75rem+env(safe-area-inset-bottom))] md:bottom-6"
+          >
+            <p className="min-w-0 flex-1 truncate text-[13px] text-white/80">
+              Archived <span className="font-semibold text-white">{undo.title}</span>
+            </p>
+            <button
+              onClick={undoArchive}
+              className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.08] px-3 py-2 text-[13px] font-bold text-white hover:bg-white/15"
+            >
+              <Undo2 size={13} /> Undo
+            </button>
+          </div>,
+          document.body,
+        )}
+
+      {confirmDelete &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[70] flex items-end justify-center bg-black/60 p-3 backdrop-blur-sm sm:items-center"
+            onClick={() => setConfirmDelete(null)}
+          >
+            <div
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="reel-delete-title"
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-sm rounded-2xl border border-white/12 bg-app p-4 shadow-xl"
+            >
+              <p id="reel-delete-title" className="text-[15px] font-bold text-white">
+                Delete this reel for good?
+              </p>
+              <p className="mt-1 text-[13px] leading-snug text-white/60">
+                <span className="text-white/85">{confirmDelete.title}</span> and its review are removed and can't be brought back.
+                Archive keeps it out of the way instead.
+              </p>
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  autoFocus
+                  onClick={() => setConfirmDelete(null)}
+                  className="cursor-pointer rounded-full border border-white/12 bg-white/[0.06] px-4 py-2 text-[13px] font-semibold text-white/80 hover:bg-white/10"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmRemove}
+                  className="flex cursor-pointer items-center gap-1.5 rounded-full border border-red-400/40 bg-red-500/20 px-4 py-2 text-[13px] font-bold text-red-200 hover:bg-red-500/30"
+                >
+                  <Trash2 size={13} /> Delete
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+    </div>
+  );
+}
+
+/**
+ * Touch swipe on a card: left past SWIPE_PX archives (or restores, in
+ * Archived), right asks to delete. Only touch and pen drag; a mouse clicks as
+ * normal, and desktop uses the buttons in the opened reel. A mostly vertical
+ * move is left to the page scroll.
+ */
+function SwipeRow({
+  children,
+  leftLabel,
+  onSwipeLeft,
+  onSwipeRight,
+}: {
+  children: ReactNode;
+  leftLabel: string;
+  onSwipeLeft: () => void;
+  onSwipeRight: () => void;
+}) {
+  const [dx, setDx] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const start = useRef<{ x: number; y: number } | null>(null);
+  const swiped = useRef(false);
+
+  const reset = () => {
+    start.current = null;
+    setDragging(false);
+    setDx(0);
+  };
+
+  const onDown = (e: ReactPointerEvent) => {
+    if (e.pointerType === 'mouse') return;
+    start.current = { x: e.clientX, y: e.clientY };
+    swiped.current = false;
+  };
+  const onMove = (e: ReactPointerEvent) => {
+    const s = start.current;
+    if (!s) return;
+    const mx = e.clientX - s.x;
+    const my = e.clientY - s.y;
+    if (!dragging) {
+      if (Math.abs(my) > 10 && Math.abs(my) > Math.abs(mx)) {
+        start.current = null;
+        return;
+      }
+      if (Math.abs(mx) < 10) return;
+      setDragging(true);
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    }
+    setDx(mx);
+  };
+  const onUp = () => {
+    if (dragging) {
+      swiped.current = true;
+      if (dx <= -SWIPE_PX) onSwipeLeft();
+      else if (dx >= SWIPE_PX) onSwipeRight();
+    }
+    reset();
+  };
+
+  const past = Math.abs(dx) >= SWIPE_PX;
+  return (
+    <div className="relative overflow-hidden rounded-2xl">
+      {dx !== 0 && (
+        <div
+          aria-hidden
+          className={`absolute inset-0 flex items-center px-5 text-[13px] font-bold uppercase tracking-wide ${
+            dx > 0
+              ? `justify-start ${past ? 'bg-red-500/35 text-red-100' : 'bg-red-500/15 text-red-300'}`
+              : `justify-end ${past ? 'bg-brand-500/35 text-white' : 'bg-brand-500/15 text-brand-300'}`
+          }`}
+        >
+          {dx > 0 ? (
+            <span className="flex items-center gap-1.5">
+              <Trash2 size={15} /> Delete
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5">
+              {leftLabel} <Archive size={15} />
+            </span>
+          )}
+        </div>
+      )}
+      <div
+        onPointerDown={onDown}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerCancel={reset}
+        onClickCapture={(e) => {
+          if (swiped.current) {
+            e.preventDefault();
+            e.stopPropagation();
+            swiped.current = false;
+          }
+        }}
+        style={{ transform: dx ? `translateX(${dx}px)` : undefined, touchAction: 'pan-y' }}
+        className={`relative bg-app ${dragging ? '' : 'transition-transform duration-200'}`}
+      >
+        {children}
+      </div>
     </div>
   );
 }
@@ -321,6 +596,19 @@ function ScoreBadge({ score, size = 'sm' }: { score: number | null; size?: 'sm' 
   );
 }
 
+function PaidBadge() {
+  return (
+    <span className="inline-flex items-center rounded-full border border-amber-400/50 bg-amber-500/20 px-2 py-0.5 text-[11.5px] font-black uppercase tracking-wider text-amber-200">
+      Paid
+    </span>
+  );
+}
+
+/** Block-letter section heading, used for the about headline and FOR YOU. */
+function BlockHeading({ children, className = 'text-white' }: { children: ReactNode; className?: string }) {
+  return <p className={`text-[15px] font-black uppercase leading-tight tracking-[0.12em] ${className}`}>{children}</p>;
+}
+
 function BsBadge() {
   return (
     <span className="inline-flex items-center gap-1 rounded-full border border-red-400/40 bg-red-500/15 px-2 py-0.5 text-[12px] font-bold uppercase tracking-wide text-red-300">
@@ -356,6 +644,12 @@ function ReelRow({
             {reel.author && <span>{reel.author}</span>}
             {reel.sharedAt && <span>· {formatShared(reel.sharedAt)}</span>}
             {reel.isBS && <BsBadge />}
+            {reel.links.length > 0 && (
+              <span className="inline-flex items-center gap-1 text-white/50">
+                <Link2 size={12} /> {reel.links.length} link{reel.links.length === 1 ? '' : 's'}
+              </span>
+            )}
+            {reel.links.some((l) => l.paid) && <PaidBadge />}
           </span>
           {reel.oneLine && <span className="mt-1 line-clamp-2 block text-[13px] leading-snug text-white/65">{reel.oneLine}</span>}
         </span>
@@ -377,11 +671,15 @@ function ReelDetail({
   onClose,
   activeTag,
   onTag,
+  onArchive,
+  onDelete,
 }: {
   reel: Reel;
   onClose: () => void;
   activeTag: string | null;
   onTag: (tag: string) => void;
+  onArchive: () => void;
+  onDelete: () => void;
 }) {
   const ig = safeLink(reel.igUrl);
   return (
@@ -394,6 +692,18 @@ function ReelDetail({
           <ArrowLeft size={14} /> Back
         </button>
         <span className="flex-1" />
+        <button
+          onClick={onArchive}
+          className="flex cursor-pointer items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-[13px] font-semibold text-white/75 hover:text-white"
+        >
+          {reel.archived ? <ArchiveRestore size={14} /> : <Archive size={14} />} {reel.archived ? 'Restore' : 'Archive'}
+        </button>
+        <button
+          onClick={onDelete}
+          className="flex cursor-pointer items-center gap-1.5 rounded-full border border-red-400/30 bg-red-500/10 px-3 py-2 text-[13px] font-semibold text-red-300 hover:bg-red-500/20"
+        >
+          <Trash2 size={14} /> Delete
+        </button>
         <button
           onClick={onClose}
           aria-label="Close reel"
@@ -419,7 +729,29 @@ function ReelDetail({
       </div>
 
       <div className="flex flex-col gap-3 text-[13px] leading-relaxed text-white/70">
-        {reel.whatItIs && <Detail label="What this video is for">{reel.whatItIs}</Detail>}
+        {reel.whatItIs && (
+          <div>
+            <BlockHeading>What this reel is about</BlockHeading>
+            <p className="mt-1">{reel.whatItIs}</p>
+          </div>
+        )}
+        {reel.links.length > 0 && (
+          <Detail label={`Links (${reel.links.length})`}>
+            <ul className="mt-1 flex flex-col gap-1.5">
+              {reel.links.map((l, i) => (
+                <li key={i}>
+                  <LinkRow link={l} />
+                </li>
+              ))}
+            </ul>
+          </Detail>
+        )}
+        {reel.forYou && (
+          <div className="rounded-xl border border-brand-400/35 bg-brand-500/[0.08] p-3">
+            <BlockHeading className="text-brand-300">For you</BlockHeading>
+            <p className="mt-1.5 text-white/85">{reel.forYou}</p>
+          </div>
+        )}
         {reel.claims.length > 0 && (
           <Detail label="What it claims vs what's true">
             <ul className="mt-1 flex flex-col gap-2">
@@ -543,6 +875,31 @@ function VideoBox({ igUrl }: { igUrl: string }) {
         className={`h-full w-full border-0 transition-opacity ${state === 'ready' ? 'opacity-100' : 'opacity-0'}`}
       />
     </div>
+  );
+}
+
+/** One mentioned product/tool. Paid ones get an amber border and badge so they can't be missed. */
+function LinkRow({ link }: { link: ReelLink }) {
+  const href = link.url ? safeLink(link.url) : null;
+  const body = (
+    <>
+      <span className="flex items-start gap-2">
+        <span className={`min-w-0 flex-1 font-semibold ${href ? 'text-brand-300' : 'text-white/85'}`}>
+          {link.label || href}
+          {href && <ExternalLink size={12} className="ml-1 inline align-[-1px]" />}
+        </span>
+        {link.paid && <PaidBadge />}
+      </span>
+      {link.note && <span className={`mt-0.5 block text-[12.5px] leading-snug ${link.paid ? 'text-amber-100/80' : 'text-white/50'}`}>{link.note}</span>}
+    </>
+  );
+  const cls = `block rounded-xl border p-2.5 ${link.paid ? 'border-amber-400/45 bg-amber-500/[0.08]' : 'border-white/8 bg-white/[0.02]'}`;
+  return href ? (
+    <a href={href} target="_blank" rel="noopener noreferrer" className={`${cls} hover:bg-white/[0.05]`}>
+      {body}
+    </a>
+  ) : (
+    <div className={cls}>{body}</div>
   );
 }
 

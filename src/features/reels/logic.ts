@@ -3,7 +3,7 @@
  * counts, tag/search filtering, sorting and link safety. No Firebase or React
  * here, so it runs under plain `tsx` in logic.test.ts.
  */
-import { CLAIM_STATUSES, REEL_BUCKETS, type ClaimStatus, type Reel, type ReelBucket, type ReelClaim, type ReelSource } from './types';
+import { CLAIM_STATUSES, REEL_BUCKETS, type ClaimStatus, type Reel, type ReelBucket, type ReelClaim, type ReelLink, type ReelSource } from './types';
 
 const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
 
@@ -47,6 +47,9 @@ export function normalizeReel(id: string, raw: Record<string, unknown>): Reel {
   const sources: ReelSource[] = asObjects(raw.sources)
     .map((s) => ({ label: str(s.label), url: str(s.url) }))
     .filter((s) => s.url || s.label);
+  const links: ReelLink[] = asObjects(raw.links)
+    .map((l) => ({ label: str(l.label), url: str(l.url) || null, paid: l.paid === true, note: str(l.note) }))
+    .filter((l) => l.label || l.url);
   return {
     id,
     igUrl: str(raw.igUrl),
@@ -65,6 +68,9 @@ export function normalizeReel(id: string, raw: Record<string, unknown>): Reel {
     sources,
     nextAction: str(raw.nextAction),
     status: raw.status === 'pending' ? 'pending' : 'ready',
+    links,
+    forYou: str(raw.forYou),
+    archived: raw.archived === true,
   };
 }
 

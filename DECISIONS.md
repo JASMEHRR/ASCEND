@@ -27,3 +27,6 @@
 - 2026-11-28 Reels v3: home is division tiles; a division groups by `subcat` (biggest first, empty as Other last); All groups by division. Default sort inside is by score.
 - 2026-11-28 Reels v3: the video is Instagram's /embed/ page, one iframe only for the selected reel. If it hasn't loaded in 12s, or the link isn't an Instagram reel/post, the fallback box shows. Change EMBED_TIMEOUT_MS in ReelsHub.tsx.
 - 2026-11-28 Reels v3: search and tags always search every division and show results grouped by division.
+- 2026-11-28 Reels v5: swipe is touch/pen only (left archive, right delete after a confirm, 90px); desktop uses Archive/Delete buttons in the opened reel. In Archived, swipe left restores.
+- 2026-11-28 Reels v5: rules let only JasMehr's uid update `archived` (bool, nothing else) and delete reels; still no create. Muse must merge-write so `archived` survives (docs/MUSE-LINKS.md).
+- 2026-11-28 Reels v5: the v4 brief (block-letters headline) never reached this session; "WHAT THIS REEL IS ABOUT" and "FOR YOU" use one shared BlockHeading in ReelsHub.tsx.
