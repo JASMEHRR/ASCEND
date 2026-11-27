@@ -4,7 +4,7 @@
  *   npx tsx src/features/reels/logic.test.ts
  */
 import assert from 'node:assert/strict';
-import { EMPTY_FILTERS, countTabs, matchesFilters, normalizeReel, safeLink, scoreTone, sortReels } from './logic';
+import { EMPTY_FILTERS, countTabs, divisions, embedUrl, groupBy, topTags, matchesFilters, normalizeReel, safeLink, scoreTone, sortReels } from './logic';
 import { SEED_REELS } from './seedReels';
 
 const reels = SEED_REELS.map((s) => normalizeReel(s.id, s.data));
@@ -52,5 +52,29 @@ assert.equal(scoreTone(1), 'low');
 assert.equal(scoreTone(null), 'none');
 assert.equal(safeLink('javascript:alert(1)'), null);
 assert.equal(safeLink('https://instagram.com/reel/x'), 'https://instagram.com/reel/x');
+
+// Subcategory sections: biggest first, missing subcat last as Other.
+const withSub = [
+  normalizeReel('a', { bucket: 'Claude & Coding', subcat: 'Skills', score: 5 }),
+  normalizeReel('b', { bucket: 'Claude & Coding', subcat: 'Skills', score: 9 }),
+  normalizeReel('c', { bucket: 'Claude & Coding', subcat: '', score: 10 }),
+  normalizeReel('d', { bucket: 'Claude & Coding', subcat: 'Prompts', score: 1 }),
+];
+const groups = groupBy(withSub, (r) => r.subcat, 'score');
+assert.deepEqual(groups.map((g) => g.name), ['Skills', 'Prompts', 'Other']);
+assert.deepEqual(groups[0].reels.map((r) => r.id), ['b', 'a']);
+const cc = divisions(withSub).find((d) => d.bucket === 'Claude & Coding')!;
+assert.equal(cc.count, 4);
+assert.equal(cc.topScore, 10);
+assert.deepEqual(cc.subcats, ['Skills', 'Prompts', 'Other']);
+assert.equal(topTags(reels, 1)[0].count, 1);
+
+// Embed links.
+assert.equal(embedUrl('https://www.instagram.com/reel/ABC_12-x/?igsh=1'), 'https://www.instagram.com/reel/ABC_12-x/embed/');
+assert.equal(embedUrl('https://instagram.com/p/XYZ/'), 'https://www.instagram.com/p/XYZ/embed/');
+assert.equal(embedUrl('https://www.instagram.com/someuser/reel/QQ1/'), 'https://www.instagram.com/reel/QQ1/embed/');
+assert.equal(embedUrl(''), null);
+assert.equal(embedUrl('https://evil.com/reel/ABC/'), null);
+assert.equal(embedUrl('https://www.instagram.com/someuser/'), null);
 
 console.log('reels logic: all passed');

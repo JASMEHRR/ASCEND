@@ -54,6 +54,7 @@ export function normalizeReel(id: string, raw: Record<string, unknown>): Reel {
     author: str(raw.author),
     sharedAt: isoOrNull(raw.sharedAt),
     bucket,
+    subcat: str(raw.subcat),
     tags,
     score,
     isBS: raw.isBS === true,
@@ -153,4 +154,76 @@ export function safeLink(link: string): string | null {
   } catch {
     return null;
   }
+}
+
+// --- Divisions and subcategories ---------------------------------------------
+
+export const OTHER_SUBCAT = 'Other';
+
+export interface Division {
+  bucket: ReelBucket;
+  count: number;
+  topScore: number | null;
+  /** Distinct subcats, biggest first. */
+  subcats: string[];
+}
+
+export function divisions(reels: Reel[]): Division[] {
+  return REEL_BUCKETS.map((bucket) => {
+    const mine = reels.filter((r) => r.bucket === bucket);
+    const scores = mine.map((r) => r.score).filter((s): s is number => s !== null);
+    return {
+      bucket,
+      count: mine.length,
+      topScore: scores.length ? Math.max(...scores) : null,
+      subcats: groupBy(mine, (r) => r.subcat, 'score').map((g) => g.name),
+    };
+  });
+}
+
+export interface ReelGroup {
+  name: string;
+  reels: Reel[];
+}
+
+/**
+ * Groups reels into headed sections: biggest section first, ties by name,
+ * an empty key always last as "Other". Nothing is hardcoded, so new subcats
+ * Muse adds show up on their own.
+ */
+export function groupBy(reels: Reel[], key: (r: Reel) => string, sort: SortMode): ReelGroup[] {
+  const map = new Map<string, Reel[]>();
+  for (const r of reels) {
+    const k = key(r).trim();
+    map.set(k, [...(map.get(k) ?? []), r]);
+  }
+  return [...map.entries()]
+    .sort(([a, ra], [b, rb]) => (a === '' ? 1 : 0) - (b === '' ? 1 : 0) || rb.length - ra.length || a.localeCompare(b))
+    .map(([k, list]) => ({ name: k || OTHER_SUBCAT, reels: sortReels(list, sort) }));
+}
+
+/** Most used tags across the library, for the chips on the home view. */
+export function topTags(reels: Reel[], limit = 16): { tag: string; count: number }[] {
+  const n = new Map<string, number>();
+  for (const r of reels) for (const t of r.tags) n.set(t, (n.get(t) ?? 0) + 1);
+  return [...n.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([tag, count]) => ({ tag, count }));
+}
+
+/**
+ * Instagram's embed page for a reel or post: /reel/CODE/ -> /reel/CODE/embed/,
+ * /p/CODE/ -> /p/CODE/embed/. Null for anything that isn't an Instagram
+ * reel/post link, so the page shows its fallback instead of a broken frame.
+ */
+export function embedUrl(igUrl: string): string | null {
+  const safe = safeLink(igUrl);
+  if (!safe) return null;
+  const u = new URL(safe);
+  if (!/(^|\.)instagram\.com$/i.test(u.hostname)) return null;
+  const m = u.pathname.match(/^\/(?:[\w.]+\/)?(reels?|p|tv)\/([A-Za-z0-9_-]+)/);
+  if (!m) return null;
+  const kind = m[1] === 'p' ? 'p' : m[1] === 'tv' ? 'tv' : 'reel';
+  return `https://www.instagram.com/${kind}/${m[2]}/embed/`;
 }

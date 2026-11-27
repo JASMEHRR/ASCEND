@@ -43,6 +43,8 @@ export interface Reel {
   sharedAt: string | null;
   /** Null when Muse wrote a bucket outside the fixed list; shows under All only. */
   bucket: ReelBucket | null;
+  /** Subcategory inside the bucket, chosen by Muse; '' when missing. */
+  subcat: string;
   tags: string[];
   /** 0 to 10, or null when unrated. */
   score: number | null;

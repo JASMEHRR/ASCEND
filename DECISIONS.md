@@ -24,3 +24,6 @@
 - "Top rated" = score 8 or more and not flagged BS. Change TOP_SCORE in src/features/reels/logic.ts.
 - A tag chip filters across all buckets and overrides the tab; picking a tab clears it.
 - Sample docs have ids starting `sample-`; remove with `npx tsx tools/seed-reels.ts --remove`.
+- 2026-11-28 Reels v3: home is division tiles; a division groups by `subcat` (biggest first, empty as Other last); All groups by division. Default sort inside is by score.
+- 2026-11-28 Reels v3: the video is Instagram's /embed/ page, one iframe only for the selected reel. If it hasn't loaded in 12s, or the link isn't an Instagram reel/post, the fallback box shows. Change EMBED_TIMEOUT_MS in ReelsHub.tsx.
+- 2026-11-28 Reels v3: search and tags always search every division and show results grouped by division.
