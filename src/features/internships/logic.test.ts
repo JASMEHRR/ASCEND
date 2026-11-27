@@ -117,10 +117,15 @@ const counts = countInternships(
     item({ id: 'c', deadlineText: 'Rolling' }),
     item({ id: 'd', deadlineText: '24 Nov 2026' }),
     item({ id: 'e', status: 'skipped', deadlineText: '24 Nov 2026' }),
+    item({ id: 'f', deadlineText: '22 Nov 2026' }),
+    item({ id: 'g', status: 'skipped', deadlineText: '22 Nov 2026' }),
   ],
   now,
 );
-assert.deepEqual(counts, { total: 5, queued: 1, applied: 1, closingSoon: 2 });
+// Due today counts only open entries (f), not the skipped one (g).
+assert.deepEqual(counts, { total: 7, queued: 1, applied: 1, closingSoon: 3, dueToday: 1 });
+assert.equal(matchesFilters(item({ id: 'f2', deadlineText: '22 Nov 2026' }), { ...EMPTY_FILTERS, dueToday: true }, now), true);
+assert.equal(matchesFilters(item({ id: 'd2', deadlineText: '24 Nov 2026' }), { ...EMPTY_FILTERS, dueToday: true }, now), false);
 
 console.log('internships logic: all tests passed');
 

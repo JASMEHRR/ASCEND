@@ -344,6 +344,8 @@ export interface InternshipFilters {
   autoOnly: boolean;
   /** Still open (to review or queued) and closing within 7 days: same rule as the counter. */
   dueSoon: boolean;
+  /** Still open and the deadline is today: same rule as the Due today section. */
+  dueToday: boolean;
 }
 
 export const EMPTY_FILTERS: InternshipFilters = {
@@ -353,6 +355,7 @@ export const EMPTY_FILTERS: InternshipFilters = {
   fundedOnly: false,
   autoOnly: false,
   dueSoon: false,
+  dueToday: false,
 };
 
 const isOpen = (item: Pick<Internship, 'status'>): boolean => item.status === 'to-review' || item.status === 'apply-queue';
@@ -360,6 +363,7 @@ const isOpen = (item: Pick<Internship, 'status'>): boolean => item.status === 't
 export function matchesFilters(item: Internship, f: InternshipFilters, now: Date = new Date()): boolean {
   if (f.status !== 'all' && item.status !== f.status) return false;
   if (f.dueSoon && !(isOpen(item) && isClosingSoon(item, now))) return false;
+  if (f.dueToday && !isDueToday(item, now)) return false;
   if (f.remoteOnly && !/remote/i.test(item.locationMode)) return false;
   if (f.fundedOnly && !item.fullyFunded) return false;
   if (f.autoOnly && !item.autoApply) return false;
@@ -374,16 +378,20 @@ export interface InternshipCounts {
   applied: number;
   /** Still-open entries (to review or queued) whose deadline is within 7 days. */
   closingSoon: number;
+  /** Still-open entries whose deadline is today. */
+  dueToday: number;
 }
 
 export function countInternships(items: Internship[], now: Date = new Date()): InternshipCounts {
   let queued = 0;
   let applied = 0;
   let closingSoon = 0;
+  let dueToday = 0;
   for (const i of items) {
+    if (isDueToday(i, now)) dueToday += 1;
     if (i.status === 'apply-queue') queued += 1;
     if (i.status === 'applied') applied += 1;
     if (isOpen(i) && isClosingSoon(i, now)) closingSoon += 1;
   }
-  return { total: items.length, queued, applied, closingSoon };
+  return { total: items.length, queued, applied, closingSoon, dueToday };
 }

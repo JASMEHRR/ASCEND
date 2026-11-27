@@ -219,7 +219,7 @@ export function InternshipsView({
   const revealHidden = showHidden || filters.status === 'skipped' || filters.status === 'closed';
   const visibleSections = SECTION_ORDER.filter((s) => sections[s.id].length > 0 && (s.id !== 'hidden' || revealHidden));
   const filtersActive =
-    filters.search.trim() !== '' || filters.status !== 'all' || filters.remoteOnly || filters.fundedOnly || filters.autoOnly || filters.dueSoon;
+    filters.search.trim() !== '' || filters.status !== 'all' || filters.remoteOnly || filters.fundedOnly || filters.autoOnly || filters.dueSoon || filters.dueToday;
 
   // Sends the whole of today's list, not just what the filters show.
   const askMuseForToday = async () => {
@@ -254,7 +254,7 @@ export function InternshipsView({
       </div>
 
       {/* The counters double as quick filters; Total clears everything. */}
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-5 gap-2">
         <StatTile label="Total" value={counts.total} on={!filtersActive} onClick={() => setFilters(EMPTY_FILTERS)} />
         <StatTile
           label="Queued"
@@ -268,6 +268,13 @@ export function InternshipsView({
           value={counts.applied}
           on={filters.status === 'applied'}
           onClick={() => setFilters((f) => ({ ...EMPTY_FILTERS, status: f.status === 'applied' ? 'all' : 'applied' }))}
+        />
+        <StatTile
+          label="Due today"
+          value={counts.dueToday}
+          danger={counts.dueToday > 0}
+          on={filters.dueToday}
+          onClick={() => setFilters((f) => ({ ...EMPTY_FILTERS, dueToday: !f.dueToday }))}
         />
         <StatTile
           label={`Due in ${SOON_DAYS}d`}
