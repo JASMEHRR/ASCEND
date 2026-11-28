@@ -5,6 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import {
+  implementTask,
   verdictGroups,
   CLAUDE_PURPOSES,
   UNSORTED_LANE,
@@ -205,5 +206,12 @@ const vg = verdictGroups(
 );
 assert.deepEqual(vg.map((g) => [g.name, g.reels.map((r) => r.id)]), [['Not BS', ['v3']], ['Paid', ['v2']], ['BS', ['v1']]]);
 assert.deepEqual(verdictGroups([normalizeReel('v4', {})], 'score').map((g) => g.name), ['Not BS']);
+
+// Implement task text.
+const task = implementTask(normalizeReel('reel-7', { title: 'Free MCP setup', igUrl: 'https://www.instagram.com/reel/X/', links: [{ label: 'VPS', paid: true, note: '$5/mo' }] }));
+assert.ok(task.includes('Ascend reel id: reel-7'));
+assert.ok(task.includes('VPS (PAID): $5/mo'));
+assert.ok(task.includes('without asking him first'));
+assert.ok(!/[–—]/.test(task));
 
 console.log('reels logic: all passed');

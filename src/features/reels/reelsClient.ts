@@ -32,6 +32,22 @@ export async function requestReeval(uid: string, id: string): Promise<void> {
   await updateDoc(doc(db, 'users', uid, 'reels', id), { isBS: false, reevalRequested: true, reevalRequestedAt: serverTimestamp() });
 }
 
+/**
+ * "Implement": a task in Muse's inbox (users/{uid}/coach-inbox, same shape as
+ * Jarvis's mirror) asking Muse to do what the reel shows. Muse closes it.
+ */
+export async function sendImplementTask(uid: string, reelId: string, text: string): Promise<void> {
+  await addDoc(collection(db, 'users', uid, 'coach-inbox'), {
+    text,
+    task: 'Implement what this reel shows for JasMehr, safely, then report back.',
+    kind: 'implement-reel',
+    reelId,
+    channel: 'app-text',
+    status: 'pending',
+    createdAt: serverTimestamp(),
+  });
+}
+
 export async function deleteReel(uid: string, id: string): Promise<void> {
   await deleteDoc(doc(db, 'users', uid, 'reels', id));
 }

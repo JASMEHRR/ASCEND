@@ -104,3 +104,13 @@ To cut background load and clutter, JasMehr turned off: Stocks & Finance (includ
 - **Internships**: a new "Due today" stat next to "Due in 7d" (open entries whose deadline is today). Nothing changes for you.
 - **Sidebar**: on desktop, the left navigation now rests as a slim icon rail and opens on hover.
 - **Docs in the repo** (if you can read it): `docs/MUSE-LINKS.md` is the field and permission reference; `DECISIONS.md` lists every product decision with how to undo it.
+
+## 9. NEW: "Implement" tasks in your inbox
+
+An opened reel now has an **Implement** button (key I). One tap drops a task into `users/{uid}/coach-inbox` with `kind: "implement-reel"`, `reelId`, `status: "pending"`, and a `text` that holds the reel's title, link, what it is, your verdict, your suggested next action and the tools it mentions (paid ones marked PAID).
+
+What you do with one:
+- Do what the reel shows, adapted to his real setup. First check it is real, safe and worth it; if not, tell him why and stop.
+- Never pay for, subscribe to or sign up for anything, and never share his details, without asking him first. Prefer free options.
+- If it needs his laptop, use the laptop bridge job flow (`jobs/*`).
+- When done: tell him what you did and what is left for him, write the result into that reel's `nextAction` (merge write), and close the inbox doc as you do for other tasks (`status: "processed"`).

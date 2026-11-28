@@ -30,6 +30,7 @@ import {
   ExternalLink,
   Film,
   Flag,
+  Zap,
   RotateCcw,
   Link2,
   Loader2,
@@ -49,6 +50,7 @@ import {
   ensurePurpose,
   renameCategory,
   requestReeval,
+  sendImplementTask,
   setCategorySide,
   setDivisionSide,
   setReelArchived,
@@ -67,6 +69,7 @@ import {
   categoryIndex,
   claudeLane,
   verdictGroups,
+  implementTask,
   isPurposeId,
   isClaudeFirst,
   reevalQueue,
@@ -137,6 +140,7 @@ export default function ReelsHub() {
       setArchived={(id, archived) => (uid ? setReelArchived(uid, id, archived) : noUser())}
       remove={(id) => (uid ? deleteReel(uid, id) : noUser())}
       reeval={(id) => (uid ? requestReeval(uid, id) : noUser())}
+      implement={(r) => (uid ? sendImplementTask(uid, r.id, implementTask(r)) : noUser())}
       cats={cats ?? []}
       catsReady={cats !== null}
       divisionSides={sides}
@@ -198,6 +202,7 @@ export function ReelsView({
   setArchived,
   remove,
   reeval,
+  implement,
   cats = [],
   catsReady = false,
   divisionSides = {},
@@ -209,6 +214,8 @@ export function ReelsView({
   remove: (id: string) => Promise<void>;
   /** "Not BS — re-evaluate". */
   reeval?: (id: string) => Promise<void>;
+  /** "Implement": asks Muse to do what the reel shows. */
+  implement?: (r: Reel) => Promise<void>;
   cats?: ReelCategory[];
   /** True once the categories listener has answered (so missing means missing). */
   catsReady?: boolean;
@@ -356,6 +363,24 @@ export function ReelsView({
     moveOff(r);
     setArchived(r.id, false).catch(fail('restore'));
   };
+  // Reels sent to Muse to implement in this visit (the button turns into "Sent").
+  const [implemented, setImplemented] = useState<Set<string>>(() => new Set());
+  const doImplement = (r: Reel) => {
+    if (!implement || implemented.has(r.id)) return;
+    setImplemented((prev) => new Set(prev).add(r.id));
+    implement(r).then(
+      () => toast.show({ kind: 'info', title: 'Sent to Muse', message: `Muse will try to implement "${r.title}" and report back.` }),
+      (err) => {
+        setImplemented((prev) => {
+          const next = new Set(prev);
+          next.delete(r.id);
+          return next;
+        });
+        fail('send it to Muse')(err);
+      },
+    );
+  };
+
   const notBS = (r: Reel) => {
     if (!reeval) return;
     reeval(r.id).then(
@@ -464,6 +489,7 @@ export function ReelsView({
       else if (e.key === 'Backspace' || e.key === 'Delete') setConfirmDelete(selected);
       else if (e.key === 'a' || e.key === 'A') (selected.archived ? restore : archive)(selected);
       else if (e.key === 'c' || e.key === 'C') setSheetFor(selected.id);
+      else if (e.key === 'i' || e.key === 'I') doImplement(selected);
       else if (e.key === 'Escape') setSelectedId(null);
       else return;
       e.preventDefault();
@@ -768,6 +794,8 @@ export function ReelsView({
           onArchive={() => (selected.archived ? restore(selected) : archive(selected))}
           onDelete={() => setConfirmDelete(selected)}
           onNotBS={reeval ? () => notBS(selected) : null}
+          onImplement={implement ? () => doImplement(selected) : null}
+          implementSent={implemented.has(selected.id)}
           catNames={catsOf(selected.id).map((c) => c.name)}
           sortChoices={sortChoices}
           inCatIds={new Set(catsOf(selected.id).map((c) => c.id))}
@@ -1122,6 +1150,8 @@ function ReelDetail({
   sortChoices,
   inCatIds,
   onToggleCat,
+  onImplement,
+  implementSent,
 }: {
   reel: Reel;
   backLabel: string;
@@ -1139,11 +1169,28 @@ function ReelDetail({
   sortChoices: ReelCategory[];
   inCatIds: Set<string>;
   onToggleCat: ((cat: ReelCategory, on: boolean) => void) | null;
+  onImplement: (() => void) | null;
+  implementSent: boolean;
 }) {
   const ig = safeLink(reel.igUrl);
   const headline = headlineOf(reel);
   // The yes/no text: Muse's personal verdict when it has one, else the review.
   const verdictText = reel.forYou || reel.verdict;
+  // "Implement": Muse tries to do what the reel shows.
+  const implementBtn = onImplement && (
+    <button
+      onClick={onImplement}
+      disabled={implementSent}
+      title="Ask Muse to do what this reel shows (I)"
+      className={`flex shrink-0 items-center gap-1.5 rounded-full border px-4 py-2.5 text-[13px] font-black uppercase tracking-wide ${
+        implementSent
+          ? 'cursor-default border-emerald-400/35 bg-emerald-500/10 text-emerald-200'
+          : 'cursor-pointer border-brand-400/50 bg-brand-500/20 text-brand-300 hover:bg-brand-500/30'
+      }`}
+    >
+      {implementSent ? <Check size={15} strokeWidth={3} /> : <Zap size={15} />} {implementSent ? 'Sent to Muse' : 'Implement'}
+    </button>
+  );
   // "Sort into": tap to put the reel in a section or take it out (a reel can be in several).
   const sortRow =
     onToggleCat && sortChoices.length > 0 ? (
@@ -1204,7 +1251,7 @@ function ReelDetail({
           <ArrowLeft size={14} className="shrink-0" /> <span className="truncate">{backLabel}</span>
         </button>
         <span className="flex-1" />
-        <span className="hidden text-[12px] text-white/35 xl:inline">← → move · Del remove · A archive · C category</span>
+        <span className="hidden text-[12px] text-white/35 xl:inline">← → move · Del remove · A archive · C category · I implement</span>
         {onCategorize && (
           <button
             onClick={onCategorize}
@@ -1256,15 +1303,17 @@ function ReelDetail({
               {reel.forYou ? 'For you' : 'Verdict'}
             </p>
             <p className="text-[14.5px] leading-relaxed text-white/90 lg:mt-1 lg:text-[16px]">{verdictText || 'No verdict yet.'}</p>
+            {implementBtn && <div className="mt-3 lg:hidden">{implementBtn}</div>}
             {sortRow && <div className="mt-3 lg:hidden">{sortRow}</div>}
           </div>
           {sortRow && <div className="hidden lg:block">{sortRow}</div>}
-          <div className="flex items-center gap-2 border-t border-white/8 pt-2.5">
+          <div className="flex items-center gap-2 border-t border-white/8 pt-2.5 lg:flex-wrap">
             <span className="hidden items-center gap-2 lg:flex">
               <ScoreBadge score={reel.score} size="lg" />
               {reel.isBS && <BsBadge />}
             </span>
             <span className="hidden flex-1 lg:block" />
+            {implementBtn && <span className="hidden lg:contents">{implementBtn}</span>}
             {deskAction && <span className="hidden lg:contents">{deskAction}</span>}
             <button
               onClick={onDelete}

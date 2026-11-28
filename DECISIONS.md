@@ -47,3 +47,5 @@
 - 2026-11-28 Reels: inside a category or Claude section, reels are split Not BS, then Paid (any paid link), then BS. verdictGroups in logic.ts.
 - 2026-11-28 Reels: the opened reel shows "Sort into" buttons (Claude sections for a Claude reel, his own categories otherwise); tap to add or remove, using the existing category writes.
 - 2026-11-28 Reels: his own categories now sit in the same tile grid as Muse's divisions (after them, with a tag icon), plus a '+ New category' tile; the separate My categories section is gone. Claude sections never show there.
+- 2026-11-28 Reels "Implement" (button and key I): sends Muse a coach-inbox task (kind implement-reel, reelId) to do what the reel shows, safely, asking before any payment or sign-up. No rules change (coach-inbox is already the owner's). The button shows "Sent to Muse" for the rest of the visit; nothing is written to the reel itself.
+

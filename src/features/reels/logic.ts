@@ -424,3 +424,26 @@ export function verdictGroups(reels: Reel[], sort: SortMode): ReelGroup[] {
     { id: 'bs', name: 'BS', reels: sortReels(bs, sort) },
   ].filter((g) => g.reels.length > 0);
 }
+
+/**
+ * The task "Implement" sends to Muse: do what this reel shows, adapted to
+ * JasMehr's setup, safely. Plain text, no dashes, so Muse reads it as-is.
+ */
+export function implementTask(r: Reel): string {
+  const lines = [
+    `Implement this reel for JasMehr: "${r.title}"${r.author ? ` by ${r.author}` : ''}.`,
+    r.igUrl ? `Reel: ${r.igUrl}` : '',
+    `Ascend reel id: ${r.id}`,
+    r.whatItIs ? `What it is: ${r.whatItIs}` : '',
+    r.forYou || r.verdict ? `Your verdict for him: ${r.forYou || r.verdict}` : '',
+    r.nextAction ? `Next action you suggested: ${r.nextAction}` : '',
+    r.links.length
+      ? `Tools it mentions: ${r.links.map((l) => `${l.label}${l.paid ? ' (PAID)' : ''}${l.url ? ` ${l.url}` : ''}${l.note ? `: ${l.note}` : ''}`).join('; ')}`
+      : '',
+    '',
+    'Do what the reel shows, adapted to his real setup (his Claude subscription, his PCs, Muse plus Ascend, his projects). First check it is real, safe and worth it; if it is not, tell him why and stop.',
+    'Do not pay for, subscribe to or sign up for anything, and do not share his details, without asking him first. Prefer free options.',
+    'If it needs his laptop, use the laptop bridge job flow. When done, tell him what you did and what is left for him, and update the nextAction of this reel with the result.',
+  ];
+  return lines.filter((l, i) => l !== '' || i === 7).join('\n');
+}
