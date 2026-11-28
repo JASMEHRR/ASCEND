@@ -153,7 +153,7 @@ export interface CategoryApi {
   ensurePurpose: (id: string, name: string, side: Side) => Promise<void>;
 }
 
-type ViewId = TabId | 'home' | 'archived' | 'reeval' | `cat:${string}`;
+type ViewId = TabId | 'home' | 'archived' | 'reeval' | 'claude-unsorted' | `cat:${string}`;
 
 const SIDE_KEY = 'ascend_reels_side';
 const readSide = (): SideFilter => {
@@ -248,6 +248,8 @@ export function ReelsView({
   );
   const inArchive = view === 'archived';
   const viewCat = view.startsWith('cat:') ? (cats.find((c) => c.id === view.slice(4)) ?? null) : null;
+  // The Claude lane's sections (tiles on the Claude home), Unsorted last.
+  const lane = useMemo(() => (side === 'claude' ? claudeLane(all, cats, sort) : []), [side, all, cats, sort]);
   // Reels Muse is re-checking (global, whatever the switch says).
   const reevalList = useMemo(() => reevalQueue(live), [live]);
 
@@ -292,7 +294,9 @@ export function ReelsView({
       const hits = pool.filter((r) => (!tag || r.tags.includes(tag)) && matchesSearch(r, search));
       return groupBy(hits, (r) => r.bucket ?? '', sort);
     }
-    if (view === 'home') return side === 'claude' ? claudeLane(all, cats, sort) : [];
+    if (view === 'home') return [];
+    // Grouped by Muse's subcategory, so a whole group can be filed with "Put in…".
+    if (view === 'claude-unsorted') return groupBy(lane[lane.length - 1]?.reels ?? [], (r) => r.subcat || r.bucket || '', sort);
     if (view === 'archived') return [{ name: '', reels: archivedList }];
     if (view === 'reeval') return [{ name: '', reels: reevalList }];
     if (view.startsWith('cat:')) {
@@ -305,7 +309,7 @@ export function ReelsView({
     const list = all.filter((r) => inTab(r, tab));
     if (tab === 'top' || tab === 'bs') return [{ name: '', reels: sortReels(list, sort) }];
     return groupBy(list, (r) => r.subcat, sort);
-  }, [all, live, archivedList, reevalList, cats, side, querying, tag, search, view, viewCat, sort]);
+  }, [all, live, archivedList, reevalList, lane, cats, side, querying, tag, search, view, viewCat, sort]);
   const resultCount = groups.reduce((n, g) => n + g.reels.length, 0);
   // The list in reading order, for ← / → and for "next reel" after a removal.
   // A reel in two Claude sections is listed twice but stepped through once.
@@ -430,7 +434,9 @@ export function ReelsView({
       ? null
       : view === 'archived'
         ? 'Archived'
-        : view === 'reeval'
+        : view === 'claude-unsorted'
+          ? 'Claude › Unsorted'
+          : view === 'reeval'
           ? 'Re-evaluation requested'
           : view.startsWith('cat:')
           ? (viewCat?.name ?? 'Category')
@@ -583,7 +589,31 @@ export function ReelsView({
           <Message icon={<Loader2 size={16} className="animate-spin text-white/40" />}>Loading reels…</Message>
         ) : items.length === 0 ? (
           <Message>No reels on this account yet. Muse writes them here after each review.</Message>
-        ) : !querying && view === 'home' && side !== 'claude' ? (
+        ) : !querying && view === 'home' && side === 'claude' ? (
+          // Claude home: one big tile per section, tap to open it.
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {lane.map((g) => {
+              const unsortedTile = g.id === 'unsorted';
+              return (
+                <button
+                  key={g.id}
+                  onClick={() => open(unsortedTile ? 'claude-unsorted' : `cat:${g.id}`)}
+                  className={`flex min-h-[7.5rem] cursor-pointer flex-col justify-between gap-2 rounded-2xl border p-4 text-left transition-colors sm:min-h-[9rem] ${
+                    unsortedTile
+                      ? 'border-dashed border-white/25 bg-white/[0.02] hover:border-white/40'
+                      : 'border-orange-400/25 bg-orange-500/[0.06] hover:border-orange-400/45 hover:bg-orange-500/[0.1]'
+                  }`}
+                >
+                  <span className="text-[15px] font-bold leading-snug text-white">{unsortedTile ? 'Unsorted' : g.name}</span>
+                  <span className="flex items-baseline gap-1.5">
+                    <span className="text-2xl font-extrabold leading-none text-white">{g.reels.length}</span>
+                    <span className="text-[12.5px] font-semibold text-white/45">{unsortedTile ? 'waiting for Muse' : g.reels.length === 1 ? 'reel' : 'reels'}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ) : !querying && view === 'home' ? (
           <>
             <div className="grid grid-cols-3 gap-2">
               <SpecialTile label="All" count={counts.all} onClick={() => open('all')} />
