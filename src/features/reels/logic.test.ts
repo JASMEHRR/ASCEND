@@ -5,6 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import {
+  verdictGroups,
   CLAUDE_PURPOSES,
   UNSORTED_LANE,
   claudeLane,
@@ -192,5 +193,17 @@ const q = reevalQueue([
   normalizeReel('a3', {}),
 ]);
 assert.deepEqual(q.map((r) => r.id), ['a2', 'a1']);
+
+// Not BS / Paid / BS split inside a category.
+const vg = verdictGroups(
+  [
+    normalizeReel('v1', { isBS: true, links: [{ label: 'x', paid: true }] }),
+    normalizeReel('v2', { links: [{ label: 'y', url: 'https://a.b', paid: true }] }),
+    normalizeReel('v3', {}),
+  ],
+  'score',
+);
+assert.deepEqual(vg.map((g) => [g.name, g.reels.map((r) => r.id)]), [['Not BS', ['v3']], ['Paid', ['v2']], ['BS', ['v1']]]);
+assert.deepEqual(verdictGroups([normalizeReel('v4', {})], 'score').map((g) => g.name), ['Not BS']);
 
 console.log('reels logic: all passed');

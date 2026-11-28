@@ -23,6 +23,7 @@ import {
   Archive,
   ArchiveRestore,
   ArrowLeft,
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -65,6 +66,8 @@ import {
   CLAUDE_PURPOSES,
   categoryIndex,
   claudeLane,
+  verdictGroups,
+  isPurposeId,
   isClaudeFirst,
   reevalQueue,
   divisionSide,
@@ -302,7 +305,7 @@ export function ReelsView({
     if (view.startsWith('cat:')) {
       if (!viewCat) return [];
       const ids = new Set(viewCat.reelIds);
-      return groupBy(all.filter((r) => ids.has(r.id)), (r) => r.bucket ?? '', sort);
+      return verdictGroups(all.filter((r) => ids.has(r.id)), sort);
     }
     if (view === 'all') return groupBy(all, (r) => r.bucket ?? '', sort);
     const tab = view as TabId;
@@ -408,6 +411,13 @@ export function ReelsView({
     setSearch('');
     setSelectedId(null);
   };
+  // Where the open reel can be re-sorted: Claude sections for a Claude reel, his own categories otherwise.
+  const sortChoices = !selected
+    ? []
+    : inSide(selected, 'claude', catsOf(selected.id), divisionSides)
+      ? CLAUDE_PURPOSES.map((p) => cats.find((c) => c.id === p.id)).filter((c): c is ReelCategory => !!c)
+      : sortCategories(cats.filter((c) => !isPurposeId(c.id)));
+
   /** Opens a reel; a Claude-first one found from another lane opens in the Claude lane. */
   const openReel = (r: Reel) => {
     if (side !== 'claude' && isClaudeFirst(r) && view !== 'reeval' && !inArchive) {
@@ -620,34 +630,27 @@ export function ReelsView({
               <SpecialTile label="⭐ Top rated" count={counts.top} onClick={() => open('top')} />
               <SpecialTile label="🚩 BS" count={counts.bs} danger onClick={() => open('bs')} />
             </div>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-              {/* Claude & Coding lives only in the Claude lane. */}
-              {divs.filter((d) => !isClaudeFirst(d) && (side === 'all' || d.count > 0)).map((d) => (
-                <button
-                  key={d.bucket}
-                  onClick={() => open(d.bucket)}
-                  className="flex cursor-pointer flex-col gap-1.5 rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 text-left transition-colors hover:border-white/20 hover:bg-white/[0.06]"
-                >
-                  <span className="flex items-start gap-2">
-                    <span className="min-w-0 flex-1 text-[14px] font-bold leading-snug text-white">{d.bucket}</span>
-                    {d.topScore !== null && (
-                      <span
-                        title="Top score in this division"
-                        className={`shrink-0 rounded-md border px-1.5 py-0.5 font-mono text-[12px] font-bold ${SCORE_STYLE[scoreTone(d.topScore)]}`}
-                      >
-                        ★ {d.topScore}
+            {/* Same clean tile as the Claude lane: name, then the count. Claude & Coding lives only in the Claude lane. */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {divs.filter((d) => !isClaudeFirst(d) && (side === 'all' || d.count > 0)).map((d) => {
+                const dSide = divisionSide(d.bucket, divisionSides);
+                return (
+                  <button
+                    key={d.bucket}
+                    onClick={() => open(d.bucket)}
+                    className="flex min-h-[7.5rem] cursor-pointer flex-col justify-between gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-left transition-colors hover:border-white/20 hover:bg-white/[0.06] sm:min-h-[9rem]"
+                  >
+                    <span className="text-[15px] font-bold leading-snug text-white">{d.bucket}</span>
+                    <span className="flex items-baseline gap-1.5">
+                      <span className="text-2xl font-extrabold leading-none text-white">{d.count}</span>
+                      <span className="text-[12.5px] font-semibold text-white/45">{d.count === 1 ? 'reel' : 'reels'}</span>
+                      <span className={`ml-auto text-[11px] font-bold uppercase tracking-wide ${dSide === 'work' ? 'text-brand-300/70' : 'text-violet-300/70'}`}>
+                        {SIDE_LABEL[dSide]}
                       </span>
-                    )}
-                  </span>
-                  <span className="flex items-center gap-2 text-[12.5px] font-semibold text-white/45">
-                    {d.count} reel{d.count === 1 ? '' : 's'}
-                    <SideBadge side={divisionSide(d.bucket, divisionSides)} />
-                  </span>
-                  {d.subcats.length > 0 && (
-                    <span className="line-clamp-2 text-[12.5px] leading-snug text-white/55">{d.subcats.join(' · ')}</span>
-                  )}
-                </button>
-              ))}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
             {catApi && (
               <section aria-label="My categories">
@@ -776,6 +779,9 @@ export function ReelsView({
           onDelete={() => setConfirmDelete(selected)}
           onNotBS={reeval ? () => notBS(selected) : null}
           catNames={catsOf(selected.id).map((c) => c.name)}
+          sortChoices={sortChoices}
+          inCatIds={new Set(catsOf(selected.id).map((c) => c.id))}
+          onToggleCat={catApi ? (c, on) => void catApi.setReels(c.id, [selected.id], on).catch(fail('re-sort the reel')) : null}
           onCategorize={catApi ? () => setSheetFor(selected.id) : null}
         />
       )}
@@ -1123,6 +1129,9 @@ function ReelDetail({
   catNames,
   onCategorize,
   onNotBS,
+  sortChoices,
+  inCatIds,
+  onToggleCat,
 }: {
   reel: Reel;
   backLabel: string;
@@ -1137,11 +1146,37 @@ function ReelDetail({
   catNames: string[];
   onCategorize: (() => void) | null;
   onNotBS: (() => void) | null;
+  sortChoices: ReelCategory[];
+  inCatIds: Set<string>;
+  onToggleCat: ((cat: ReelCategory, on: boolean) => void) | null;
 }) {
   const ig = safeLink(reel.igUrl);
   const headline = headlineOf(reel);
   // The yes/no text: Muse's personal verdict when it has one, else the review.
   const verdictText = reel.forYou || reel.verdict;
+  // "Sort into": tap to put the reel in a section or take it out (a reel can be in several).
+  const sortRow =
+    onToggleCat && sortChoices.length > 0 ? (
+      <div className="flex flex-wrap gap-1.5">
+        <p className="w-full text-[11px] font-black uppercase tracking-[0.14em] text-white/40">Sort into</p>
+        {sortChoices.map((c) => {
+          const on = inCatIds.has(c.id);
+          return (
+            <button
+              key={c.id}
+              onClick={() => onToggleCat(c, !on)}
+              aria-pressed={on}
+              className={`cursor-pointer rounded-xl border px-3 py-2 text-[13px] font-semibold transition-colors ${
+                on ? 'border-orange-400/60 bg-orange-500/20 text-orange-100' : 'border-white/12 bg-white/[0.04] text-white/70 hover:text-white'
+              }`}
+            >
+              {on && <Check size={13} className="-ml-0.5 mr-1 inline align-[-2px]" strokeWidth={3} />}
+              {c.name}
+            </button>
+          );
+        })}
+      </div>
+    ) : null;
   // BS reels get "Not BS — re-evaluate"; once sent, a badge takes its place.
   const notBsButton = (size: 'sm' | 'lg') =>
     onNotBS && (
@@ -1231,7 +1266,9 @@ function ReelDetail({
               {reel.forYou ? 'For you' : 'Verdict'}
             </p>
             <p className="text-[14.5px] leading-relaxed text-white/90 lg:mt-1 lg:text-[16px]">{verdictText || 'No verdict yet.'}</p>
+            {sortRow && <div className="mt-3 lg:hidden">{sortRow}</div>}
           </div>
+          {sortRow && <div className="hidden lg:block">{sortRow}</div>}
           <div className="flex items-center gap-2 border-t border-white/8 pt-2.5">
             <span className="hidden items-center gap-2 lg:flex">
               <ScoreBadge score={reel.score} size="lg" />

@@ -43,3 +43,6 @@
 - 2026-11-28 Reels v8: the lane lists nine sections (reelCats/purpose-*) in a fixed order with counts, empty ones included, then "Unsorted — waiting for Muse". A section is recognised by its purpose- id, so the three new ones (side "work") don't count toward Work. His "Claude" category tile opens the lane.
 - 2026-11-28 Reels v8: a "Re-evaluation requested: N" strip on the home view lists reels Muse is re-checking; their decision screen shows a disabled requested state instead of the Not BS button. The proof doc zz-bs-test is never counted.
 - 2026-11-28 Reels: the Claude home is a grid of big section tiles (2 per row on phone, 3 on desktop) with Unsorted last; tapping one opens that section's list. Replaces the long scrolling section list from v8, at JasMehr's request.
+- 2026-11-28 Reels: Muse's division tiles now use the same clean tile as the Claude lane (name, count, small Work/Personal label); the subcategory line and top-score badge are gone.
+- 2026-11-28 Reels: inside a category or Claude section, reels are split Not BS, then Paid (any paid link), then BS. verdictGroups in logic.ts.
+- 2026-11-28 Reels: the opened reel shows "Sort into" buttons (Claude sections for a Claude reel, his own categories otherwise); tap to add or remove, using the existing category writes.

@@ -409,3 +409,18 @@ export const reevalQueue = (reels: Reel[]): Reel[] =>
   reels
     .filter((r) => r.reevalRequested && r.id !== REEVAL_TEST_ID)
     .sort((a, b) => (b.reevalRequestedAt ?? '').localeCompare(a.reevalRequestedAt ?? ''));
+
+/**
+ * Inside a category or Claude section: Not BS first, then reels that point at
+ * something paid, then BS. Empty groups are left out.
+ */
+export function verdictGroups(reels: Reel[], sort: SortMode): ReelGroup[] {
+  const bs = reels.filter((r) => r.isBS);
+  const paid = reels.filter((r) => !r.isBS && r.links.some((l) => l.paid));
+  const clean = reels.filter((r) => !r.isBS && !r.links.some((l) => l.paid));
+  return [
+    { id: 'not-bs', name: 'Not BS', reels: sortReels(clean, sort) },
+    { id: 'paid', name: 'Paid', reels: sortReels(paid, sort) },
+    { id: 'bs', name: 'BS', reels: sortReels(bs, sort) },
+  ].filter((g) => g.reels.length > 0);
+}
