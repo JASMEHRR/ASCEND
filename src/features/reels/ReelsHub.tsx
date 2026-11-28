@@ -51,6 +51,8 @@ import {
   renameCategory,
   requestReeval,
   sendImplementTask,
+  subscribeImplemented,
+  type ImplementState,
   setCategorySide,
   setDivisionSide,
   setReelArchived,
@@ -113,6 +115,8 @@ export default function ReelsHub() {
 
   const [cats, setCats] = useState<ReelCategory[] | null>(null);
   const [sides, setSides] = useState<DivisionSides>({});
+  const [implementedMap, setImplementedMap] = useState<Map<string, ImplementState>>(NO_IMPLEMENTED);
+  useEffect(() => (uid ? subscribeImplemented(uid, setImplementedMap) : undefined), [uid]);
   useEffect(() => {
     if (!uid) return;
     const offCats = subscribeCategories(uid, setCats, () => undefined);
@@ -141,6 +145,7 @@ export default function ReelsHub() {
       remove={(id) => (uid ? deleteReel(uid, id) : noUser())}
       reeval={(id) => (uid ? requestReeval(uid, id) : noUser())}
       implement={(r) => (uid ? sendImplementTask(uid, r.id, implementTask(r)) : noUser())}
+      implementedMap={implementedMap}
       cats={cats ?? []}
       catsReady={cats !== null}
       divisionSides={sides}
@@ -160,7 +165,9 @@ export interface CategoryApi {
   ensurePurpose: (id: string, name: string, side: Side) => Promise<void>;
 }
 
-type ViewId = TabId | 'home' | 'archived' | 'reeval' | 'claude-unsorted' | `cat:${string}`;
+type ViewId = TabId | 'home' | 'archived' | 'reeval' | 'implemented' | 'claude-unsorted' | `cat:${string}`;
+
+const NO_IMPLEMENTED = new Map<string, ImplementState>();
 
 const SIDE_KEY = 'ascend_reels_side';
 const readSide = (): SideFilter => {
@@ -203,6 +210,7 @@ export function ReelsView({
   remove,
   reeval,
   implement,
+  implementedMap = NO_IMPLEMENTED,
   cats = [],
   catsReady = false,
   divisionSides = {},
@@ -216,6 +224,8 @@ export function ReelsView({
   reeval?: (id: string) => Promise<void>;
   /** "Implement": asks Muse to do what the reel shows. */
   implement?: (r: Reel) => Promise<void>;
+  /** Reels already sent with Implement (from Muse's inbox). */
+  implementedMap?: Map<string, ImplementState>;
   cats?: ReelCategory[];
   /** True once the categories listener has answered (so missing means missing). */
   catsReady?: boolean;
@@ -241,7 +251,11 @@ export function ReelsView({
   const showsOn = (r: Reel, s: SideFilter) => inSide(r, s, catIdx.get(r.id) ?? [], divisionSides);
   // Archived reels drop out of every count and view except Archived; the
   // Work / Personal switch scopes everything, Archived included.
-  const live = useMemo(() => (items ?? []).filter((r) => !r.archived), [items]);
+  // Sent with Implement: these leave every list and live in the Implemented tab.
+  const [pendingImpl, setPendingImpl] = useState<Set<string>>(() => new Set());
+  const implementedIds = useMemo(() => new Set([...implementedMap.keys(), ...pendingImpl]), [implementedMap, pendingImpl]);
+  const implementedList = useMemo(() => (items ?? []).filter((r) => !r.archived && implementedIds.has(r.id)), [items, implementedIds]);
+  const live = useMemo(() => (items ?? []).filter((r) => !r.archived && !implementedIds.has(r.id)), [items, implementedIds]);
   const sideCounts = useMemo(
     () => ({
       all: live.filter((r) => showsOn(r, 'all')).length,
@@ -290,7 +304,9 @@ export function ReelsView({
   };
   // Looked up by id on every render, so a live update keeps the same reel
   // open; one archived or restored out of the current view closes.
-  const selected = selectedId ? ((inArchive ? archivedList : all).find((r) => r.id === selectedId) ?? null) : null;
+  const selected = selectedId
+    ? ((inArchive ? archivedList : view === 'implemented' ? implementedList : all).find((r) => r.id === selectedId) ?? null)
+    : null;
   const counts = useMemo(() => countTabs(all), [all]);
   const divs = useMemo(() => divisions(all), [all]);
   const tags = useMemo(() => topTags(all), [all]);
@@ -309,6 +325,13 @@ export function ReelsView({
     if (view === 'claude-unsorted') return groupBy(lane[lane.length - 1]?.reels ?? [], (r) => r.subcat || r.bucket || '', sort);
     if (view === 'archived') return [{ name: '', reels: archivedList }];
     if (view === 'reeval') return [{ name: '', reels: reevalList }];
+    if (view === 'implemented') {
+      const byNewest = (list: Reel[]) => [...list].sort((a, b) => (implementedMap.get(b.id)?.at ?? '9').localeCompare(implementedMap.get(a.id)?.at ?? '9'));
+      return [
+        { id: 'impl-wait', name: 'Waiting for Muse', reels: byNewest(implementedList.filter((r) => !implementedMap.get(r.id)?.done)) },
+        { id: 'impl-done', name: 'Done', reels: byNewest(implementedList.filter((r) => implementedMap.get(r.id)?.done)) },
+      ].filter((g) => g.reels.length > 0);
+    }
     if (view.startsWith('cat:')) {
       if (!viewCat) return [];
       const ids = new Set(viewCat.reelIds);
@@ -363,15 +386,15 @@ export function ReelsView({
     moveOff(r);
     setArchived(r.id, false).catch(fail('restore'));
   };
-  // Reels sent to Muse to implement in this visit (the button turns into "Sent").
-  const [implemented, setImplemented] = useState<Set<string>>(() => new Set());
+  // Implement: the reel moves to the Implemented tab and the next one opens.
   const doImplement = (r: Reel) => {
-    if (!implement || implemented.has(r.id)) return;
-    setImplemented((prev) => new Set(prev).add(r.id));
+    if (!implement || implementedIds.has(r.id)) return;
+    moveOff(r);
+    setPendingImpl((prev) => new Set(prev).add(r.id));
     implement(r).then(
-      () => toast.show({ kind: 'info', title: 'Sent to Muse', message: `Muse will try to implement "${r.title}" and report back.` }),
+      () => toast.show({ kind: 'info', title: 'Sent to Muse', message: `"${r.title}" moved to Implemented. Muse will report back.` }),
       (err) => {
-        setImplemented((prev) => {
+        setPendingImpl((prev) => {
           const next = new Set(prev);
           next.delete(r.id);
           return next;
@@ -473,6 +496,8 @@ export function ReelsView({
           ? 'Claude › Unsorted'
           : view === 'reeval'
           ? 'Re-evaluation requested'
+          : view === 'implemented'
+            ? 'Implemented'
           : view.startsWith('cat:')
           ? (viewCat?.name ?? 'Category')
           : tabLabel(view as TabId);
@@ -613,6 +638,9 @@ export function ReelsView({
             <button onClick={() => open('archived')} className="cursor-pointer text-[13px] font-semibold text-white/50 hover:text-white">
               Archived {archivedList.length}
             </button>
+            <button onClick={() => open('implemented')} className="cursor-pointer text-[13px] font-semibold text-white/50 hover:text-white">
+              Implemented {implementedList.length}
+            </button>
             <button onClick={() => setShowManage(true)} className="cursor-pointer text-[13px] font-semibold text-brand-300 hover:underline">
               Edit sections
             </button>
@@ -651,10 +679,11 @@ export function ReelsView({
           </div>
         ) : !querying && view === 'home' ? (
           <>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               <SpecialTile label="All" count={counts.all} onClick={() => open('all')} />
               <SpecialTile label="⭐ Top rated" count={counts.top} onClick={() => open('top')} />
               <SpecialTile label="🚩 BS" count={counts.bs} danger onClick={() => open('bs')} />
+              <SpecialTile label="⚡ Implemented" count={implementedList.length} onClick={() => open('implemented')} />
             </div>
             {catApi && (
               <div className="-mb-1 flex justify-end px-1">
@@ -795,7 +824,7 @@ export function ReelsView({
           onDelete={() => setConfirmDelete(selected)}
           onNotBS={reeval ? () => notBS(selected) : null}
           onImplement={implement ? () => doImplement(selected) : null}
-          implementSent={implemented.has(selected.id)}
+          implementSent={implementedIds.has(selected.id)}
           catNames={catsOf(selected.id).map((c) => c.name)}
           sortChoices={sortChoices}
           inCatIds={new Set(catsOf(selected.id).map((c) => c.id))}

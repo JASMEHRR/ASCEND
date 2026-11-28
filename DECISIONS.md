@@ -49,3 +49,4 @@
 - 2026-11-28 Reels: his own categories now sit in the same tile grid as Muse's divisions (after them, with a tag icon), plus a '+ New category' tile; the separate My categories section is gone. Claude sections never show there.
 - 2026-11-28 Reels "Implement" (button and key I): sends Muse a coach-inbox task (kind implement-reel, reelId) to do what the reel shows, safely, asking before any payment or sign-up. No rules change (coach-inbox is already the owner's). The button shows "Sent to Muse" for the rest of the visit; nothing is written to the reel itself.
 
+- 2026-11-28 Reels Implemented tab: a reel sent with Implement leaves every list and count (like Archive) and shows under Implemented, split Waiting for Muse / Done (Done = its coach-inbox task is processed). Read with a filtered coach-inbox query (kind implement-reel), so it survives reloads; nothing is written to the reel.

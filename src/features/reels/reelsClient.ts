@@ -7,7 +7,7 @@
  * Each is an updateDoc of just those fields, so Muse's fields are never
  * touched; firestore.rules rejects anything wider and never allows create.
  */
-import { addDoc, arrayRemove, arrayUnion, collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import { addDoc, arrayRemove, arrayUnion, collection, deleteDoc, doc, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { cleanCatName, normalizeCategory, normalizeDivisionSides, normalizeReel } from './logic';
 import type { DivisionSides, LifeSide, Reel, ReelBucket, ReelCategory, Side } from './types';
@@ -46,6 +46,38 @@ export async function sendImplementTask(uid: string, reelId: string, text: strin
     status: 'pending',
     createdAt: serverTimestamp(),
   });
+}
+
+export interface ImplementState {
+  /** Muse closed the task (status "processed" or "done"). */
+  done: boolean;
+  /** When it was sent, ISO. */
+  at: string | null;
+}
+
+/**
+ * Which reels were sent to Muse with "Implement", read from the Implement
+ * tasks in coach-inbox (a filtered query, not a full read). The latest task
+ * per reel wins.
+ */
+export function subscribeImplemented(uid: string, onData: (m: Map<string, ImplementState>) => void): () => void {
+  return onSnapshot(
+    query(collection(db, 'users', uid, 'coach-inbox'), where('kind', '==', 'implement-reel')),
+    (snap) => {
+      const m = new Map<string, ImplementState>();
+      for (const d of snap.docs) {
+        const x = d.data();
+        if (typeof x.reelId !== 'string') continue;
+        const ts = x.createdAt as { toDate?: () => Date } | undefined;
+        const at = ts?.toDate ? ts.toDate().toISOString() : null;
+        const prev = m.get(x.reelId);
+        if (prev && prev.at && at && prev.at > at) continue;
+        m.set(x.reelId, { done: x.status === 'processed' || x.status === 'done', at });
+      }
+      onData(m);
+    },
+    (err) => console.warn('[reels] implemented listener error:', err.message),
+  );
 }
 
 export async function deleteReel(uid: string, id: string): Promise<void> {
