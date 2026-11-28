@@ -630,16 +630,20 @@ export function ReelsView({
               <SpecialTile label="⭐ Top rated" count={counts.top} onClick={() => open('top')} />
               <SpecialTile label="🚩 BS" count={counts.bs} danger onClick={() => open('bs')} />
             </div>
-            {/* Same clean tile as the Claude lane: name, then the count. Claude & Coding lives only in the Claude lane. */}
+            {catApi && (
+              <div className="-mb-1 flex justify-end px-1">
+                <button onClick={() => setShowManage(true)} className="cursor-pointer text-[13px] font-semibold text-brand-300 hover:underline">
+                  Manage categories
+                </button>
+              </div>
+            )}
+            {/* One grid: Muse's divisions, then his own categories, same clean tile (name, then the count).
+                Claude & Coding and the Claude sections live only in the Claude lane. */}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               {divs.filter((d) => !isClaudeFirst(d) && (side === 'all' || d.count > 0)).map((d) => {
                 const dSide = divisionSide(d.bucket, divisionSides);
                 return (
-                  <button
-                    key={d.bucket}
-                    onClick={() => open(d.bucket)}
-                    className="flex min-h-[7.5rem] cursor-pointer flex-col justify-between gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-left transition-colors hover:border-white/20 hover:bg-white/[0.06] sm:min-h-[9rem]"
-                  >
+                  <button key={d.bucket} onClick={() => open(d.bucket)} className="flex min-h-[7.5rem] cursor-pointer flex-col justify-between gap-2 rounded-2xl border p-4 text-left transition-colors sm:min-h-[9rem] border-white/10 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.06]">
                     <span className="text-[15px] font-bold leading-snug text-white">{d.bucket}</span>
                     <span className="flex items-baseline gap-1.5">
                       <span className="text-2xl font-extrabold leading-none text-white">{d.count}</span>
@@ -651,55 +655,41 @@ export function ReelsView({
                   </button>
                 );
               })}
+              {catApi &&
+                sortCategories(cats)
+                  .filter((c) => !isPurposeId(c.id) && (side === 'all' || c.side === side))
+                  .map((c) => {
+                    const isClaudeCat = /^claude$/i.test(c.name.trim());
+                    const n = isClaudeCat ? sideCounts.claude : (catCounts.get(c.id) ?? 0);
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => (isClaudeCat ? setSide('claude') : open(`cat:${c.id}`))}
+                        className="flex min-h-[7.5rem] cursor-pointer flex-col justify-between gap-2 rounded-2xl border p-4 text-left transition-colors sm:min-h-[9rem] border-white/15 bg-white/[0.05] hover:border-white/30 hover:bg-white/[0.08]"
+                      >
+                        <span className="flex items-start gap-1.5 text-[15px] font-bold leading-snug text-white">
+                          <Tag size={14} className="mt-1 shrink-0 text-white/45" /> {c.name}
+                        </span>
+                        <span className="flex items-baseline gap-1.5">
+                          <span className="text-2xl font-extrabold leading-none text-white">{n}</span>
+                          <span className="text-[12.5px] font-semibold text-white/45">{isClaudeCat ? 'in the Claude lane' : n === 1 ? 'reel' : 'reels'}</span>
+                          <span className={`ml-auto text-[11px] font-bold uppercase tracking-wide ${c.side === 'work' ? 'text-brand-300/70' : c.side === 'personal' ? 'text-violet-300/70' : 'text-orange-300/70'}`}>
+                            {SIDE_LABEL[c.side]}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+              {catApi && (
+                <button
+                  onClick={() => setShowManage(true)}
+                  className="flex min-h-[7.5rem] cursor-pointer flex-col justify-between gap-2 rounded-2xl border p-4 text-left transition-colors sm:min-h-[9rem] items-start border-dashed border-white/20 bg-transparent text-white/60 hover:border-white/35 hover:text-white"
+                >
+                  <span className="text-[15px] font-bold leading-snug">+ New category</span>
+                  <span className="text-[12.5px] font-semibold text-white/40">Your own, Work or Personal</span>
+                </button>
+              )}
             </div>
-            {catApi && (
-              <section aria-label="My categories">
-                <div className="mb-1.5 flex items-center gap-2 px-1">
-                  <p className="font-mono text-[12px] font-bold uppercase tracking-widest text-white/45">My categories</p>
-                  <span className="flex-1" />
-                  <button onClick={() => setShowManage(true)} className="cursor-pointer text-[13px] font-semibold text-brand-300 hover:underline">
-                    {cats.length ? 'Manage' : '+ New'}
-                  </button>
-                </div>
-                {cats.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-white/15 p-3.5 text-[13px] leading-snug text-white/55">
-                    Sort reels your own way (a reel can be in several), and mark each category Work or Personal so the switch above can split them.
-                    <div className="mt-2.5 flex flex-wrap gap-1.5">
-                      <button onClick={() => quickAdd('Anime', 'personal')} className="cursor-pointer rounded-full border border-white/12 bg-white/[0.05] px-3 py-1.5 text-[13px] font-semibold text-white/80 hover:text-white">
-                        + Anime · Personal
-                      </button>
-                      <button onClick={() => quickAdd('Claude', 'work')} className="cursor-pointer rounded-full border border-white/12 bg-white/[0.05] px-3 py-1.5 text-[13px] font-semibold text-white/80 hover:text-white">
-                        + Claude · Work
-                      </button>
-                      <button onClick={() => setShowManage(true)} className="cursor-pointer rounded-full border border-white/12 bg-white/[0.05] px-3 py-1.5 text-[13px] font-semibold text-white/80 hover:text-white">
-                        + Your own
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
-                    {sortCategories(cats)
-                      .filter((c) => side === 'all' || c.side === side)
-                      .map((c) => (
-                        <button
-                          key={c.id}
-                          onClick={() => (/^claude$/i.test(c.name.trim()) ? setSide('claude') : open(`cat:${c.id}`))}
-                          className="flex cursor-pointer flex-col gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-left transition-colors hover:border-white/20 hover:bg-white/[0.06]"
-                        >
-                          <span className="flex min-w-0 items-center gap-1.5 text-[14px] font-bold text-white">
-                            <Tag size={13} className="shrink-0 text-white/40" />
-                            <span className="truncate">{c.name}</span>
-                          </span>
-                          <span className="flex items-center gap-2 text-[12.5px] font-semibold text-white/45">
-                            {/^claude$/i.test(c.name.trim()) ? `${sideCounts.claude} in the Claude lane` : `${catCounts.get(c.id) ?? 0} reel${catCounts.get(c.id) === 1 ? '' : 's'}`}
-                            <SideBadge side={c.side} />
-                          </span>
-                        </button>
-                      ))}
-                  </div>
-                )}
-              </section>
-            )}
             {tags.length > 0 && (
               <div>
                 <p className="mb-1.5 px-1 font-mono text-[12px] font-bold uppercase tracking-widest text-white/45">Tags</p>
